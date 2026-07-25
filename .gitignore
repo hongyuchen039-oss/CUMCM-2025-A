@@ -42,5 +42,9 @@ outputs/**/*.zip
 problem/*.pdf
 problem/attachments/
 
+# 原始题目与模板文件夹（仅本地保留）
+题目及模板/
+desktop.ini
+
 # 缓存
 .cache/
