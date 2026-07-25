@@ -216,7 +216,12 @@ def find_effective_intervals(scan_step: float = 0.01,
 
     boundary_func: 可选, 用于注入自定义边界函数 f(t) (默认使用
         f_distance_minus_radius 表示方案 A 点目标距离 − 10).
-    若 boundary_func 不为 None, t_detonate / t_arrival / p_point 参数被忽略.
+
+    当 boundary_func 不为空时, 它替代默认的 f_distance_minus_radius
+    作为边界函数。
+    - t_detonate 仍用于确定时间窗起点;
+    - t_arrival 仍可截断时间窗终点;
+    - p_point 不再直接参与计算, 因为几何关系由 boundary_func 自行定义。
 
     算法:
     1. 校验 scan_step (必须正且有限).

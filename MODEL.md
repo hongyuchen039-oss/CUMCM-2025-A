@@ -118,7 +118,7 @@
 
 ## Q1 点目标基线 (BASELINE / EXPERIMENTAL)
 
-> 已在 `src/q1_baseline.py` 实现并通过 `tests/test_q1_baseline.py` (29 测) 验证。
+> 已在 `src/q1_baseline.py` 实现，并通过 `tests/test_q1_baseline.py` 的 42 个本地单元测试验证。
 
 ### 1. 固定输入
 
@@ -128,7 +128,7 @@
 | M1 初始位置 M₀ | (20000, 0, 2000) m | FACTS.md §8 [官] |
 | 假目标 O | (0, 0, 0) m | FACTS.md §7 [官] |
 | 点目标代表点 P | (0, 200, 5) m | FACTS.md §15 [假设] (默认候选 = 几何中心) |
-| FY1 速度 v_U | (-120, 0, 0) m/s | 由 §9 [官] "FY1 120 m/s 朝假目标方向飞行" + "在 xy 水平面" 推导 |
+| FY1 速度 v_U | (-120, 0, 0) m/s | "120 m/s" 与 "朝假目标方向飞行" 来自 FACTS.md §2 [官]；"等高度直线飞行" 来自 FACTS.md §9 [官]；由 FY1 水平位置 (17800, 0) 指向假目标 (0, 0) 推得 v_U = (-120, 0, 0) m/s |
 | 投放时刻 t_release | 1.5 s | FACTS.md §2 [官] |
 | 起爆延迟 Δ | 3.6 s | FACTS.md §2 [官] |
 | 起爆时刻 t_detonate | t_release + Δ = 5.1 s | 由上述两 [官] 数值相加 |
