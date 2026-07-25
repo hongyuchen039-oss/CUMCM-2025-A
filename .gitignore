@@ -1,0 +1,46 @@
+﻿# 凭据
+.env
+.env.*
+*.key
+*.pem
+*.pfx
+*.token
+secrets/
+credentials/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# 编辑器和系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 临时文件
+temp/
+tmp/
+*.tmp
+*.bak
+*.log
+
+# AI内部内容
+.ai/logs/
+.ai/archive/
+
+# 审核包与压缩包
+outputs/review/
+outputs/**/*.zip
+
+# 官方题目默认仅保存在本机
+problem/*.pdf
+problem/attachments/
+
+# 缓存
+.cache/
