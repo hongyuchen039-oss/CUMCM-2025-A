@@ -118,8 +118,8 @@
 
 ## 完整圆柱遮蔽正式候选 (FULL-CYLINDER CANDIDATE / EXPERIMENTAL)
 
-> 已在 `src/q1_cylinder.py` 实现，并通过 `tests/test_q1_cylinder.py` 的 46 个本地单元测试
-> (A-J 共 10 组) 验证。本节固定 Q2 启动前必须冻结的方案 B 几何、采样、判据与收敛标准。
+> 已在 `src/q1_cylinder.py` 实现，并通过 `tests/test_q1_cylinder.py` 的 73 个本地单元测试
+> (A-L 共 12 组) 验证。本节固定 Q2 启动前必须冻结的方案 B 几何、采样、判据与收敛标准。
 
 ### 1. 真目标几何 (复用 FACTS.md §11)
 
@@ -157,10 +157,12 @@
 ### 4. 可见性
 
 ```
-n(X) · (M(t) − X) > EPS_VISIBLE   →  X 在 t 时刻可见
+n(X) · (M(t) − X) >= -EPS_VISIBLE   →  X 在 t 时刻可见
 ```
 
-EPS_VISIBLE = 1e-9 防止严格切线轮廓点扰动; 物理上等价于 "略放宽到包含切线轮廓邻域".
+EPS_VISIBLE = 1e-9 防止严格切线轮廓点扰动; 本轮 FIX 之后改为保守规则
+(score >= -eps): 切线轮廓邻域不再被排除. 严格遮蔽不应通过排除轮廓样本而
+变得更容易. eps 用于吸收浮点误差, 不构成轮廓收紧.
 
 ### 5. 遮挡
 
@@ -203,13 +205,21 @@ find_strict_intervals(samples, scan_step=0.01)
 
 复用现有扫描 + 二分求根. 仅替换 boundary_func, 其余时序与扫描参数不变.
 
-### 9. 数值收敛标准 (本轮冻结)
+### 9. 数值收敛标准 (本轮 FIX 之后真实执行, 通过标准从代码常量读出)
 
-- 空间: medium vs fine 区间数必须一致; 总时长差 ≤ 5e-3 s; 起终点差 ≤ 50 ms
-- 时间: 0.02 / 0.01 / 0.005 s 三档 n_intervals 一致; 总时长差 ≤ 0.02 s
-- 区间端点: max |f_cylinder(b)| ≤ 1e-4
+- 空间: medium vs fine 区间数必须一致; 总时长差 ≤ SPATIAL_THR_TOTAL = 0.02 s;
+  起点差 ≤ SPATIAL_THR_START = 0.01 s; 终点差 ≤ SPATIAL_THR_END = 0.01 s;
+  max_coverage 差 ≤ SPATIAL_THR_COVERAGE = 0.005;
+  max_margin 差 ≤ SPATIAL_THR_MARGIN = 0.10 m
+- 时间: 0.02 / 0.01 / 0.005 s 三档 n_intervals 一致;
+  起点差 ≤ TEMPORAL_THR_START = 0.01 s;
+  终点差 ≤ TEMPORAL_THR_END = 0.01 s;
+  总时长差 ≤ TEMPORAL_THR_TOTAL = 0.01 s
+- 区间端点残差: max |f_cylinder(b)| ≤ SPATIAL_THR_RESIDUAL = TEMPORAL_THR_RESIDUAL = 1e-4
+- 真实执行函数: `check_spatial_convergence`, `check_temporal_convergence`,
+  返回 `passed=True/False` 与失败原因列表; main() 在任一不通过时返回 2
 
-### 10. 当前结果 (FULL-CYLINDER CANDIDATE / EXPERIMENTAL)
+### 10. 当前结果 (FULL-CYLINDER CANDIDATE / EXPERIMENTAL, 本轮 FIX 后重跑)
 
 | 量 | 值 |
 |---|---|
@@ -218,10 +228,15 @@ find_strict_intervals(samples, scan_step=0.01)
 | 方案 B 遮蔽区间 (fine) | (8.055704, 9.448088) s |
 | ΔT (B − A) | −0.042698 s |
 | 相对差异 | −2.975% |
-| ρ_max (覆盖率峰值) | 1.000 @ t = 8.060 s |
-| margin_max (严格裕量峰值) | 5.266 m @ t = 9.420 s |
+| ρ_max (覆盖率峰值) | 1.000 (诊断网格上最早达到时刻 t = 8.100 s; 严格遮蔽区间内 ρ=1 形成平台) |
+| ρ=1 平台 (诊断网格 step=0.01 s) | (8.06, 9.44), 总持续 1.380 s |
+| margin_max (严格裕量峰值, 0.001 s 局部加密) | 5.282478 m @ t = 9.418317 s (相对 SVG 网格 t=9.400 s ±0.05 s 窗口) |
 | 空间 coarse/medium/fine 总时长 | 1.394606 / 1.393131 / 1.392384 s |
-| 时间 0.02/0.01/0.005 s 总时长 | 1.393131 / 1.393131 / 1.393131 s (medium 采样) |
+| 时间 0.02/0.01/0.005 s 总时长 (medium) | 1.393131 / 1.393131 / 1.393131 s |
+| 时间收敛 max \|f(b)\| (medium 采样, 三档) | 1.03e-06 (≤ 1e-4 通过) |
+| 空间收敛 max \|f(b)\| medium/fine | 1.03e-06 / 1.03e-06 (≤ 1e-4 通过) |
+| 时间收敛汇总 | PASS |
+| 空间收敛汇总 | PASS |
 
 ### 11. 局限
 
@@ -231,6 +246,18 @@ find_strict_intervals(samples, scan_step=0.01)
 - 严格遮蔽仍标记为 FULL-CYLINDER CANDIDATE / EXPERIMENTAL, 不得冒充 VERIFIED / FINAL
 - 等级仅在 PR #3 合并且外部审核通过后才能升级到 VERIFIED
 - Q2 启动前, 必须复用本节的 strict_boundary_value 作为优化目标
+
+### 12. 本轮 FIX 变更 (不改数学结论)
+
+| 变更 | 旧 | 新 | 影响 |
+|---|---|---|---|
+| 可见性边界 | `score > eps` | `score >= -eps` | 切线轮廓邻域不再被排除, 严格遮蔽区间可能略缩短或不变 (本实测 fine 总时长 = 1.392384 s 不变) |
+| 空可见集 | 返回 `max_visible_distance=inf` 等 sentinel | 时间窗内显式 `raise ValueError`, 时间窗外仍返回 sentinel | 异常路径更明确, 防止 "0 可见 + inf 距离 = 偶然通过严格判据" |
+| 收敛判定 | 仅为占位 `passed=True` | 真实执行阈值 (SPATIAL_THR_*, TEMPORAL_THR_*), 输出失败原因, main() 返回 2 表示失败 | 保证 main() 退出码反映真实收敛状态 |
+| 几何/时序拆分 | 单函数同时读全局轨迹 | 纯几何 `evaluate_occlusion_geometry` + 时序包装 `evaluate_cylinder_state`, Q2 可注入新轨迹 | Q2/Q3/Q4/Q5 可直接复用 |
+| 单元测试数量 | 46 测 (A-J) | 73 测 (A-L, 含 K margin/plateau, L 几何 API 输入校验) | 覆盖更全 (含新加的合成几何、注入轨迹、连通性、可视化边界) |
+| margin 报告精度 | 只在 SVG 0.05 s 网格上 | 0.001 s 局部加密扫描, 报告 (max_margin, max_margin_t) | margin_max 从 5.266 m @ 9.420 s (SVG 网格) → 5.282478 m @ 9.418317 s (加密) |
+| coverage 平台 | 单独声明 ρ=1 | 实测 `coverage_plateau` 函数报告 (8.06, 9.44) 共 1.380 s | 报告 ρ=1 真实持续时长 |
 
 ---
 

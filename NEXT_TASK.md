@@ -16,7 +16,7 @@
 
 ### 仅允许新建
 1. `src/q1_cylinder.py` (主程序, 复用 src/q1_baseline)
-2. `tests/test_q1_cylinder.py` (单元测试 A-J 节, 46 测)
+2. `tests/test_q1_cylinder.py` (单元测试 A-L 节, 73 测)
 3. `outputs/q1/q1_cylinder_comparison.svg` (图像产物)
 
 ### 库限制
@@ -34,22 +34,25 @@
 1. 圆柱采样总权重 = 2πR_T H_T + 2πR_T² (误差 ≤ 1e-8) ✓
 2. 法向量均为单位向量 (|n| = 1 ± 1e-12) ✓
 3. 单元中心在 (0, H_T) 严格内部, 避免公共棱边 ✓
-4. 46 个单元测试全过 ✓
+4. 73 个单元测试全过 ✓
 5. 空间三档收敛: medium vs fine 总时长差 ≤ 5e-3 s, 区间数一致 ✓
 6. 时间三档收敛: 三档起终点完全一致 ✓
-7. 区间端点 max |f_cylinder(b)| ≤ 1e-4 ✓
+7. 区间端点 max |f_cylinder(b)| ≤ 1e-4 ✓ (实测 1.03e-6)
 8. SVG 合法可解析, 含圆柱标识 + 时间对照面板 + 图例 ✓
 9. Q1 点目标基线 42/42 测试仍通过 (回归保证) ✓
 10. commit + push 到 task/TASK_003-cylinder-freeze ✓ (待执行)
 11. 更新同一 Draft PR #3 描述 ✓ (待执行)
 
-### 计算结果 (来自 src/q1_cylinder.py 当前输出)
+### 计算结果 (来自 src/q1_cylinder.py 本轮 FIX 后实测)
 - 圆柱总时长 (fine, 12288 样本): **1.392384 s**
 - 圆柱遮蔽区间 (fine): **(8.055704, 9.448088) s**
-- 最大覆盖率 ρ_max = 1.000 @ t = 8.060 s
-- 最大严格裕量 margin_max = 5.266 m @ t = 9.420 s
+- 最大覆盖率 ρ_max = 1.000 (DIAG_STEP=0.01 s 网格上最早达到 t = 8.100 s)
+- ρ=1 平台: **(8.06, 9.44) s**, 总持续 **1.380 s**
+- 最大严格裕量 margin_max (0.001 s 局部加密): **5.282478 m** @ t = **9.418317 s**
 - 空间三档总时长: coarse 1.394606, medium 1.393131, fine 1.392384 s
 - 时间三档总时长: 0.02/0.01/0.005 s 均 1.393131 s (medium 采样, 完全一致)
+- 时间收敛 max \|f(b)\| = 1.03e-6 (三档); 空间收敛 medium/fine max \|f(b)\| = 1.03e-6
+- check_spatial_convergence: PASS, check_temporal_convergence: PASS, main() 退出码 0
 - ΔT (B − A) = **−0.042698 s**, 相对差异 **−2.975%**
 - 等级: 仅 FULL-CYLINDER CANDIDATE / EXPERIMENTAL, 不得冒充 VERIFIED / FINAL
 
