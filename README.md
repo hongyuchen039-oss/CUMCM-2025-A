@@ -1,10 +1,17 @@
-﻿# CUMCM 2025 A 数学建模项目
+# CUMCM 2025 A — 烟幕干扰弹的投放策略
 
-这是一个全新的数学建模项目。
+2025 年高教社杯全国大学生数学建模竞赛 A 题。
 
-## 当前状态
+## 入口
 
-- 项目状态：TODO
-- 当前任务：建立项目结构
-- GitHub：已准备连接
-- 数学模型：尚未开始
+- [START_HERE.md](./START_HERE.md) — 当前状态、风险、需你决定
+- [MODEL.md](./MODEL.md) — 题目、模型思路、假设、局限
+- [RESULTS.md](./RESULTS.md) — 当前结果与可信等级
+- [NEXT_TASK.md](./NEXT_TASK.md) — 唯一当前任务
+- [CLAUDE.md](./CLAUDE.md) — Claude Code 长期工作规则
+- [problem/FACTS.md](./problem/FACTS.md) — 官方题目事实
+
+## 状态
+- TASK_001 审核返工完成，等待 GPT 复审
+- 数学模型：尚未冻结
+- 数值结果：暂无
