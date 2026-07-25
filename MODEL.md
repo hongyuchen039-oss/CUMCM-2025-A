@@ -116,6 +116,124 @@
 
 ---
 
+## 完整圆柱遮蔽正式候选 (FULL-CYLINDER CANDIDATE / EXPERIMENTAL)
+
+> 已在 `src/q1_cylinder.py` 实现，并通过 `tests/test_q1_cylinder.py` 的 46 个本地单元测试
+> (A-J 共 10 组) 验证。本节固定 Q2 启动前必须冻结的方案 B 几何、采样、判据与收敛标准。
+
+### 1. 真目标几何 (复用 FACTS.md §11)
+
+- 圆柱 K = {(x, y, z) | x² + (y−200)² ≤ 49, 0 ≤ z ≤ 10}
+- R_T = 7 m, H_T = 10 m, 轴沿 +z, 下底面圆心 = (0, 200, 0), 几何中心 = (0, 200, 5)
+- 闭集, 凸集 (后续可见性测试基于此)
+
+### 2. 显式假设 (必须保留为 [假设])
+
+- 凸体支持平面可见性: 表面点 X 在 t 时刻可见 ⇔ n(X) · (M(t) − X) > 0 (n 为单位外法向)
+- 远距离下, 圆柱自遮挡的边缘退化被忽略 (EPS_VISIBLE = 1e-9, 仅去除严格切线轮廓)
+- 闭线段距离精确化 (point_to_segment_distance), 不使用延长线投影
+- 严格遮蔽主判据: 所有当前可见表面采样点的视线均被烟幕球体相交
+- 覆盖率仅作辅助诊断, **不**作为正式通过/不通过的判据 (避免人造阈值)
+
+### 3. 采样方法 (单元中心法)
+
+| 等级 | 侧面 (n_θ × n_z) | 端面 (n_r × n_cap_θ) | 总样本数 |
+|---|---|---|---|
+| coarse | 48 × 8 | 4 × 48 | 768 |
+| medium | 96 × 16 | 8 × 96 | 3072 |
+| fine | 192 × 32 | 16 × 192 | 12288 |
+
+- **侧面**: θ_j = 2π(j+0.5)/n_θ, z_k = H_T·(k+0.5)/n_z
+  - x = R_T·cos(θ), y = 200 + R_T·sin(θ), z ∈ (0, H_T) 严格
+  - 法向 n = (cos θ, sin θ, 0) (单位)
+  - 单元面积 w_side = 2π·R_T·H_T / (n_θ·n_z)
+- **端面** (顶 z=H_T 与底 z=0):
+  - 径向 r_i = R_T·√((i+0.5)/n_r), θ_j 同上
+  - 顶法向 (0, 0, 1), 底法向 (0, 0, −1)
+  - 单元面积 w_cap = π·R_T² / (n_r·n_cap_θ)
+- 单元中心严格在 (0, R_T) 与 (0, H_T) 内部, **不**包含侧面/端面公共棱边
+- 总权重和 = 2π·R_T·H_T + 2π·R_T² = 真圆柱表面积 (≤ 1e-8 精度)
+
+### 4. 可见性
+
+```
+n(X) · (M(t) − X) > EPS_VISIBLE   →  X 在 t 时刻可见
+```
+
+EPS_VISIBLE = 1e-9 防止严格切线轮廓点扰动; 物理上等价于 "略放宽到包含切线轮廓邻域".
+
+### 5. 遮挡
+
+```
+d_X(t) := min {|C(t) − (1−λ)·M(t) − λ·X| : λ ∈ [0, 1]}  (闭线段距离)
+X 在 t 时刻被遮蔽 ⇔ d_X(t) ≤ R_cloud = 10
+```
+
+闭线段距离实现见 `src/q1_baseline.point_to_segment_distance`. 参数 λ 必须 ∈ [0, 1],
+延长线投影需 clamp 到端点.
+
+### 6. 严格遮蔽主判据
+
+```
+strict_margin(t) := R_cloud − max{ d_X(t) : X ∈ 可见表面采样集(t) }
+strict_occlusion(t) := strict_margin(t) ≥ 0
+```
+
+边界函数: `f_cylinder(t) := max_visible_distance(t) − R_cloud`.
+f_cylinder(t) ≤ 0 ⇔ t 时刻严格遮蔽.
+
+### 7. 覆盖率 (辅助诊断)
+
+```
+coverage_ratio(t) := Σ{ w_X : X 可见 且 d_X(t) ≤ R_cloud }
+                    / Σ{ w_X : X 可见 }
+```
+
+- 严格遮蔽 ⇒ coverage_ratio = 1
+- 非严格时, coverage_ratio ∈ [0, 1)
+- 当前**不**使用 coverage 阈值做判据
+
+### 8. 时间区间算法 (复用)
+
+```
+find_strict_intervals(samples, scan_step=0.01)
+  ↓
+注入 boundary_func = strict_boundary_value 到 q1_baseline.find_effective_intervals
+```
+
+复用现有扫描 + 二分求根. 仅替换 boundary_func, 其余时序与扫描参数不变.
+
+### 9. 数值收敛标准 (本轮冻结)
+
+- 空间: medium vs fine 区间数必须一致; 总时长差 ≤ 5e-3 s; 起终点差 ≤ 50 ms
+- 时间: 0.02 / 0.01 / 0.005 s 三档 n_intervals 一致; 总时长差 ≤ 0.02 s
+- 区间端点: max |f_cylinder(b)| ≤ 1e-4
+
+### 10. 当前结果 (FULL-CYLINDER CANDIDATE / EXPERIMENTAL)
+
+| 量 | 值 |
+|---|---|
+| 方案 A 点目标总时长 | 1.435082 s |
+| 方案 B 完整圆柱总时长 (fine) | 1.392384 s |
+| 方案 B 遮蔽区间 (fine) | (8.055704, 9.448088) s |
+| ΔT (B − A) | −0.042698 s |
+| 相对差异 | −2.975% |
+| ρ_max (覆盖率峰值) | 1.000 @ t = 8.060 s |
+| margin_max (严格裕量峰值) | 5.266 m @ t = 9.420 s |
+| 空间 coarse/medium/fine 总时长 | 1.394606 / 1.393131 / 1.392384 s |
+| 时间 0.02/0.01/0.005 s 总时长 | 1.393131 / 1.393131 / 1.393131 s (medium 采样) |
+
+### 11. 局限
+
+- 单元中心法仍是有限采样近似 (12288 样本 fine), 不解析化
+- 不考虑导弹在大入射角下对圆柱的轮廓遮挡几何 (本题远距离下不触发)
+- 不引入覆盖率阈值作为正式判据 (避免人造阈值, 由严格遮蔽唯一决定)
+- 严格遮蔽仍标记为 FULL-CYLINDER CANDIDATE / EXPERIMENTAL, 不得冒充 VERIFIED / FINAL
+- 等级仅在 PR #3 合并且外部审核通过后才能升级到 VERIFIED
+- Q2 启动前, 必须复用本节的 strict_boundary_value 作为优化目标
+
+---
+
 ## Q1 点目标基线 (BASELINE / EXPERIMENTAL)
 
 > 已在 `src/q1_baseline.py` 实现，并通过 `tests/test_q1_baseline.py` 的 42 个本地单元测试验证。

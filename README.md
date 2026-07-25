@@ -12,6 +12,9 @@
 - [problem/FACTS.md](./problem/FACTS.md) — 官方题目事实
 
 ## 状态
-- TASK_002 Q1 点目标基线实现完成, 等待外部审核
-- 数学模型：方案 A (点目标基线) 已实现; 方案 B (完整圆柱正式模型) 待 Q2 前冻结
-- 数值结果: Q1 基线 = **1.435082 s** (BASELINE / EXPERIMENTAL, 见 RESULTS.md)
+- TASK_003 完整圆柱遮蔽判定冻结与 Q1 对照实现完成, 等待外部审核
+- 数学模型: 方案 A (点目标基线) + 方案 B (完整圆柱严格遮蔽) 均已实现并对照
+- 数值结果:
+  - 方案 A Q1 基线 = **1.435082 s** (BASELINE / EXPERIMENTAL)
+  - 方案 B 完整圆柱 = **1.392384 s** (FULL-CYLINDER CANDIDATE / EXPERIMENTAL)
+  - ΔT (B − A) = **−0.042698 s** (相对差异 −2.975%, 见 RESULTS.md)
