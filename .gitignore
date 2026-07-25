@@ -46,9 +46,5 @@ problem/attachments/
 题目及模板/
 desktop.ini
 
-# Q3/Q4/Q5 生成的 result*.xlsx 由本机脚本产出，不入 Git
-result*.xlsx
-outputs/result*.xlsx
-
 # 缓存
 .cache/

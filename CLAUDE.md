@@ -52,10 +52,22 @@
 
 ## 6. 题目材料
 
-- 官方 PDF 与官方模板 ZIP/xlsx 均仅本机保留，不入 Git 暂存区，不上传 GitHub。
+区分两类材料，禁止混淆：
+
+1. **官方原始材料**（仅本机保留，不修改、不提交、不上传 GitHub）：
+   - 官方 PDF `problem/A题原题.pdf`；
+   - 官方模板 ZIP `题目及模板/2025高教社杯数学建模A题_结果模板.zip`；
+   - ZIP 内的空白 `result1.xlsx` / `result2.xlsx` / `result3.xlsx`。
+2. **项目生成的正式结果**（必须可由代码重新生成，保存到 `outputs/submission/`）：
+   - `outputs/submission/result1.xlsx`（Q3 里程碑）；
+   - `outputs/submission/result2.xlsx`（Q4 里程碑）；
+   - `outputs/submission/result3.xlsx`（Q5 里程碑）。
+   - 在对应任务的 PR 中**允许并要求**提交；
+   - 提交前必须由程序重新读回，验证文件名、工作表、表头、数据行数、单位和关键单元格内容；
+   - 不得覆盖官方空白模板。
+
 - 题目事实写入 `problem/FACTS.md`，每个事实记录 PDF 页码或附件来源。
-- 模板字段结构（result1/2/3.xlsx 表头与方向角规则）记录在 `problem/FACTS.md`。
-- 不得修改官方原模板。
+- 模板字段结构（表头与方向角规则）记录在 `problem/FACTS.md §13`。
 - 不得用网络搜索或第三方论文补全官方原题。
 - 不得把模型假设伪装成官方事实。
 - 不得猜测官方未给出的参数（如重力加速度未在 PDF 中给出时不要写 9.8）。

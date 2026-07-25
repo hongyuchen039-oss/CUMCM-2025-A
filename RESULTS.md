@@ -13,7 +13,7 @@
 ## 本轮已检查的内容
 - `git remote -v` 确认 origin 一致
 - `gh auth status` 确认已登录
-- 官方 PDF 完整读取，5 个问题要求逐字核录
+- 官方 PDF 完整读取，5 个问题要求逐项核对并结构化记录
 - 官方模板 ZIP 解压至 /tmp（**项目外**）核验表头，未修改
 - `.gitignore` 验证 `problem/*.pdf`、原 `题目及模板/`、`desktop.ini` 全部被忽略
 - 重新核对真目标坐标方向：+y，不是 +x
