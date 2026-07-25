@@ -2,7 +2,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 640" width="960" height="640" font-family="Arial, sans-serif" font-size="12">
 <rect x="0" y="0" width="960" height="640" fill="white"/>
 <text x="480" y="28" text-anchor="middle" font-size="18" font-weight="bold">Q1 Point-Target Baseline (BASELINE / EXPERIMENTAL)</text>
-<text x="480" y="610" text-anchor="middle" font-size="11" fill="gray">x-z projection | units in meters | 方案 A 点目标基线, 非完整圆柱正式结果</text>
+<text x="480" y="610" text-anchor="middle" font-size="11" fill="gray">x-z projection | units in meters | 方案 A 点目标基线, 非完整圆柱正式结果 | 云团为椭圆 (rx/ry 各按 x/z 比例缩放)</text>
 <line x1="80.0" y1="560.0" x2="920.0" y2="560.0" stroke="black"/>
 <line x1="80.0" y1="50.0" x2="80.0" y2="560.0" stroke="black"/>
 <text x="900.0" y="578.0" font-size="12">x (m)</text>
@@ -43,12 +43,12 @@
 <circle cx="784.2887804878048" cy="138.27954285714287" r="5" fill="purple" stroke="black" stroke-width="1"/>
 <text x="792.2887804878048" y="152.27954285714287" font-size="11" fill="purple">起爆点 D (t=5.1s) (17188.0, 0, 1736.496)</text>
 <polyline points="784.3,138.3 784.3,138.6 784.3,139.0 784.3,139.4 784.3,139.7 784.3,140.1 784.3,140.5 784.3,140.8 784.3,141.2 784.3,141.6 784.3,141.9 784.3,142.3 784.3,142.7 784.3,143.0 784.3,143.4 784.3,143.7 784.3,144.1 784.3,144.5 784.3,144.8 784.3,145.2 784.3,145.6 784.3,145.9 784.3,146.3 784.3,146.7 784.3,147.0 784.3,147.4 784.3,147.8 784.3,148.1 784.3,148.5 784.3,148.8 784.3,149.2 784.3,149.6 784.3,149.9 784.3,150.3 784.3,150.7 784.3,151.0 784.3,151.4 784.3,151.8 784.3,152.1 784.3,152.5 784.3,152.9" fill="none" stroke="green" stroke-width="2" stroke-dasharray="2,2"/>
-<circle cx="784.2887804878048" cy="138.27954285714287" r="0.4" fill="green" fill-opacity="0.2" stroke="green" stroke-width="1"/>
-<circle cx="784.2887804878048" cy="145.5652571428571" r="0.4" fill="green" fill-opacity="0.1" stroke="green" stroke-width="1"/>
-<circle cx="784.2887804878048" cy="152.85097142857143" r="0.4" fill="green" fill-opacity="0.05" stroke="green" stroke-width="1"/>
+<ellipse cx="784.2887804878048" cy="138.27954285714287" rx="0.4" ry="2.4" fill="green" fill-opacity="0.2" stroke="green" stroke-width="1"/>
+<ellipse cx="784.2887804878048" cy="145.5652571428571" rx="0.4" ry="2.4" fill="green" fill-opacity="0.1" stroke="green" stroke-width="1"/>
+<ellipse cx="784.2887804878048" cy="152.85097142857143" rx="0.4" ry="2.4" fill="green" fill-opacity="0.05" stroke="green" stroke-width="1"/>
 <line x1="784.3" y1="140.4" x2="784.3" y2="141.4" stroke="orange" stroke-width="4"/>
-<text x="792.2887804878048" y="132.40187583859307" font-size="10" fill="orange">遮蔽开始 t=8.0130s</text>
-<text x="792.2887804878048" y="133.44743565563476" font-size="10" fill="orange">遮蔽结束 t=9.4481s</text>
+<text x="792.2887804878048" y="130.40187583859307" font-size="10" fill="orange">遮蔽开始 t=8.0130s</text>
+<text x="792.2887804878048" y="157.44743565563476" font-size="10" fill="orange">遮蔽结束 t=9.4481s</text>
 <rect x="690.0" y="52.0" width="220" height="110" fill="white" stroke="gray" stroke-width="1"/>
 <line x1="700.0" y1="70.0" x2="720.0" y2="70.0" stroke="red" stroke-width="2"/>
 <text x="728.0" y="74.0" font-size="11">M1 轨迹</text>

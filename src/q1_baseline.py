@@ -209,25 +209,47 @@ def bisect_root(f: Callable[[float], float], lo: float, hi: float,
 def find_effective_intervals(scan_step: float = 0.01,
                               t_detonate: float = T_DETONATE,
                               t_arrival: float | None = None,
-                              p_point: Vec = P) -> List[Tuple[float, float]]:
-    """扫描 + 二分定位所有 d(t) ≤ 10 的闭区间.
+                              p_point: Vec = P,
+                              boundary_func: Callable[[float], float]
+                              | None = None) -> List[Tuple[float, float]]:
+    """扫描 + 二分定位所有 f(t) ≤ 0 的闭区间.
+
+    boundary_func: 可选, 用于注入自定义边界函数 f(t) (默认使用
+        f_distance_minus_radius 表示方案 A 点目标距离 − 10).
+    若 boundary_func 不为 None, t_detonate / t_arrival / p_point 参数被忽略.
 
     算法:
-    1. 在 [t_detonate, t_end] 上等距取 n 个采样点, 计算 f(t) = d(t) - 10
-    2. 找出所有跨零点区间 [t_i, t_{i+1}] (f(t_i)*f(t_{i+1}) ≤ 0 且 f 含负)
-    3. 用 bisect 在每个跨零段内精化零点
-    4. 配对进入 / 离开点形成区间
-    5. 处理整段全部有效 (起爆立即遮蔽 / 直至末端) 的边界情况
+    1. 校验 scan_step (必须正且有限).
+    2. 在 [t_start, t_end] 上等距取 n 个采样点, 计算 f(t).
+    3. 找出所有跨零点区间, 用 bisect 在每段内精化零点.
+    4. 配对进入 / 离开点形成区间.
+    5. 处理整段全部有效 (起始即遮蔽 / 直至末端) 的边界情况.
     """
-    t_end = t_detonate + CLOUD_DURATION
-    if t_arrival is not None:
-        t_end = min(t_end, t_arrival)
-    if t_end <= t_detonate:
+    if not isinstance(scan_step, (int, float)) or not math.isfinite(scan_step):
+        raise ValueError(f"scan_step 必须有限数值, 实际 {scan_step!r}")
+    if scan_step <= 0:
+        raise ValueError(f"scan_step 必须 > 0, 实际 {scan_step}")
+
+    if boundary_func is None:
+        t_end = t_detonate + CLOUD_DURATION
+        if t_arrival is not None:
+            t_end = min(t_end, t_arrival)
+        t_start = t_detonate
+        f = lambda t: f_distance_minus_radius(
+            t, t_detonate, t_arrival, p_point)
+    else:
+        # 自定义边界函数: 走原始 Q1 时间窗, 但 f 由用户提供
+        t_start = t_detonate
+        t_end = t_detonate + CLOUD_DURATION
+        if t_arrival is not None:
+            t_end = min(t_end, t_arrival)
+        f = boundary_func
+
+    if t_end <= t_start:
         return []
 
-    f = lambda t: f_distance_minus_radius(t, t_detonate, t_arrival, p_point)
-    n_steps = max(2, int(math.ceil((t_end - t_detonate) / scan_step)) + 1)
-    ts = [t_detonate + (t_end - t_detonate) * i / (n_steps - 1)
+    n_steps = max(2, int(math.ceil((t_end - t_start) / scan_step)) + 1)
+    ts = [t_start + (t_end - t_start) * i / (n_steps - 1)
           for i in range(n_steps)]
     fs = [f(t) for t in ts]
 
@@ -238,9 +260,7 @@ def find_effective_intervals(scan_step: float = 0.01,
     while i < n_steps - 1:
         a_in, b_in = inside[i], inside[i + 1]
         if (not a_in) and b_in:
-            # 进入遮蔽: 进入点 = 跨零点
             root_entry = bisect_root(f, ts[i], ts[i + 1])
-            # 找出下一个离开点 (扫描到 inside 变 False 或到末尾)
             j = i + 1
             while j < n_steps - 1 and inside[j + 1]:
                 j += 1
@@ -253,9 +273,7 @@ def find_effective_intervals(scan_step: float = 0.01,
         else:
             i += 1
 
-    # 处理起爆瞬间已遮蔽
     if inside[0] and (not intervals or intervals[0][0] > ts[0] + 1e-9):
-        # 找第一个离开点
         j = 0
         while j < n_steps - 1 and inside[j + 1]:
             j += 1
@@ -265,7 +283,6 @@ def find_effective_intervals(scan_step: float = 0.01,
             root_exit = t_end
         intervals.insert(0, (ts[0], root_exit))
 
-    # 合并相邻区间
     merged: List[Tuple[float, float]] = []
     for a, b in intervals:
         if merged and merged[-1][1] >= a - 1e-9:
@@ -340,7 +357,8 @@ def write_svg_plot(path: str, result: dict) -> None:
     parts.append(
         '<text x="480" y="610" text-anchor="middle" font-size="11" '
         'fill="gray">x-z projection | units in meters | '
-        '方案 A 点目标基线, 非完整圆柱正式结果</text>\n'
+        '方案 A 点目标基线, 非完整圆柱正式结果 | '
+        '云团为椭圆 (rx/ry 各按 x/z 比例缩放)</text>\n'
     )
 
     # 坐标轴
@@ -441,7 +459,8 @@ def write_svg_plot(path: str, result: dict) -> None:
     parts.append(f'<polyline points="{poly}" fill="none" stroke="green" '
                  'stroke-width="2" stroke-dasharray="2,2"/>\n')
 
-    # 云团在 t_detonate, t_detonate+10, t_detonate+20 三个时刻的圆
+    # 云团在 t_detonate, t_detonate+10, t_detonate+20 三个时刻的椭圆.
+    # 因 x 与 z 比例不同, 用 ellipse (rx, ry 分别按各自比例缩放).
     for tc, label, opacity in [
         (T_DETONATE, "t=5.1s", 0.20),
         (T_DETONATE + 10.0, "t=15.1s", 0.10),
@@ -449,9 +468,10 @@ def write_svg_plot(path: str, result: dict) -> None:
     ]:
         c = cloud_center(tc)
         sx, sy = map_x(c[0]), map_z(c[2])
-        # 半径按 10m 缩放到 SVG (简单缩放: 1m ≈ 35.5px on x-axis)
-        r_svg = 10.0 * (W / (X1 - X0))
-        parts.append(f'<circle cx="{sx}" cy="{sy}" r="{r_svg:.1f}" '
+        # rx, ry 分别按 x 和 z 的缩放比例独立计算 (10 m 物理半径)
+        rx_svg = 10.0 * (W / (X1 - X0))
+        ry_svg = 10.0 * (H / (Z1 - Z0))
+        parts.append(f'<ellipse cx="{sx}" cy="{sy}" rx="{rx_svg:.1f}" ry="{ry_svg:.1f}" '
                      f'fill="green" fill-opacity="{opacity}" '
                      f'stroke="green" stroke-width="1"/>\n')
 
@@ -465,16 +485,16 @@ def write_svg_plot(path: str, result: dict) -> None:
         bx, by = map_x(cb[0]), map_z(cb[2])
         parts.append(f'<line x1="{ax:.1f}" y1="{ay:.1f}" x2="{bx:.1f}" y2="{by:.1f}" '
                      'stroke="orange" stroke-width="4"/>\n')
-    # 起止标签
+    # 起止标签 - 上下错开避免重叠 (开始标在上方, 结束标在下方)
     if result["intervals"]:
         a, b = result["intervals"][0]
         ca = cloud_center(a)
         sx, sy = map_x(ca[0]), map_z(ca[2])
-        parts.append(f'<text x="{sx + 8}" y="{sy - 8}" font-size="10" fill="orange">'
+        parts.append(f'<text x="{sx + 8}" y="{sy - 10}" font-size="10" fill="orange">'
                      f'遮蔽开始 t={a:.4f}s</text>\n')
         cb = cloud_center(b)
         sx, sy = map_x(cb[0]), map_z(cb[2])
-        parts.append(f'<text x="{sx + 8}" y="{sy - 8}" font-size="10" fill="orange">'
+        parts.append(f'<text x="{sx + 8}" y="{sy + 16}" font-size="10" fill="orange">'
                      f'遮蔽结束 t={b:.4f}s</text>\n')
 
     # 图例
