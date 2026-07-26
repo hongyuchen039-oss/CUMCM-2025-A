@@ -5,12 +5,16 @@
 - 四变量合同: heading_rad, speed_mps, release_time_s, delay_s
 - 唯一变元; 投放点 / 起爆时刻 / 起爆点 / 云团中心轨迹均由策略推导
 - 候选合法性 (物理 / 合同) 与程序错误严格分离
-- 搜索域无损剪枝 (t_detonate > t_arrival): 标记为 pruned_zero, 目标值为 0
+  - valid=True 表示物理/项目合同合法; status 描述评估结果
+  - status 含义 (互斥): "invalid" | "pruned_zero" | "zero_window" | "ok"
+  - pruned_zero 与 zero_window 都是 valid=True (物理合法, 仅是当前目标下的零收益)
+- 搜索域无损剪枝 (t_detonate > t_arrival): 标记为 pruned_zero, valid=True, 目标值为 0
+- 地面边界 EPS_GROUND = 1e-9 m 用于吸收浮点 z=0 舍入; 不允许物理地下起爆
 - 评估窗口: [t_detonate, min(t_detonate + 20, t_arrival)]
 - 目标: 完整圆柱严格遮蔽总时长, 复用 src/q1_cylinder.find_strict_intervals
 - 三档 sample 等级 (coarse / medium / fine), 三档 scan_step 显式传入
 - Q1 固定策略回归 (heading=π, speed=120, release=1.5, delay=3.6)
-- 100 个候选本地 smoke (coarse), 仅向终端输出
+- 100 个候选本地 smoke (coarse), 仅向终端输出, candidate_source 明确标注
 
 显式不做:
 
@@ -55,6 +59,42 @@ Vec = Tuple[float, float, float]
 TrajFn = Callable[[float], Vec]
 
 
+# === Ground tolerance for absorbing floating-point z=0 rounding ===
+# EPS_GROUND = 1e-9 m
+#   - 双精度下, 起爆高度 z = u0_z - 0.5*g*delta² 的理论舍入量级约为 1e-10 m.
+#   - 取 1e-9 m 用于吸收浮点舍入, 不代表允许烟幕弹在物理地下起爆.
+#   - 不得在后续搜索中把该容差扩大成可观测的地下起爆区域.
+#   - 与 src/q1_cylinder 的 EPS_VISIBLE = 1e-9 数量级一致 (非几何意义).
+EPS_GROUND: float = 1e-9
+
+
+def classify_detonation_z(z: float) -> Tuple[bool, str, float]:
+    """3-zone classification of detonation height z.
+
+    Returns:
+        (valid, reason, normalized_z):
+          - z < -EPS_GROUND        -> (False, "detonation z=... < -EPS_GROUND", z)
+          - -EPS_GROUND <= z < 0   -> (True,  "eps-ground-normalized", 0.0)
+          - z >= 0                 -> (True,  "above-or-on-ground", z)
+
+    The normalized_z must be used as the cloud center's z-component when
+    feeding make_cloud_center_fn, so that no geometric evaluation ever sees
+    a tiny negative z from rounding.
+
+    Note: math.isfinite(z) is NOT assumed here. Callers should ensure z
+    is finite before passing (validate_strategy only checks non-finite
+    via the dataclass field scan, but here we only need classification).
+    """
+    if not math.isfinite(z):
+        # Treat as invalid; caller will already have caught non-finite inputs.
+        return False, f"detonation z={z!r} not finite", z
+    if z < -EPS_GROUND:
+        return False, f"detonation z={z:.3e} < -{EPS_GROUND:.0e}", z
+    if z < 0.0:
+        return True, "eps-ground-normalized", 0.0
+    return True, "above-or-on-ground", z
+
+
 # === Q1 锚定: 标准云团中心函数复用签名 ===
 # 云团中心公式 (FACTS.md §10):
 #   C(t) = D + (0, 0, -3 * (t - t_detonate)),   t >= t_detonate
@@ -81,15 +121,19 @@ class SingleBombStrategy:
 class SingleBombEvaluation:
     """单候选评估的结构化结果.
 
+    valid 语义: 仅表示策略在物理/合同上是否合法 (legality).
+
     status 取值 (互斥):
-      - "valid"        : 通过合法性 + 未被搜索域剪枝, intervals 是真实结果
-      - "zero_window"  : 合法但评估窗口为空 (window_end <= window_start)
-      - "pruned_zero"  : 合法但 t_detonate > t_arrival (搜索域无损剪枝)
-      - "invalid"      : 物理 / 合同非法 (非有限, 越界, 起爆 z < 0)
+      - "invalid"      : valid=False, 物理 / 合同非法 (非有限, 越界, 起爆 z < -EPS_GROUND)
+      - "pruned_zero"  : valid=True,  物理合法, 但 t_detonate > t_arrival
+                                  (对当前"到达前遮蔽目标"的搜索域无损剪枝,
+                                   不是官方物理禁令)
+      - "zero_window"  : valid=True,  物理合法, 评估窗口为空 (含 t_d == t_arrival)
+      - "ok"           : valid=True,  物理合法并已完成评估, intervals 可为空或非空
 
     注意: 程序异常 (geometry 合同错误 / 空可见集 / 类型错误) 不
     归入 "invalid", 而是由 evaluate_single_bomb_strategy 直接抛出.
-    Smoke CLI 可在外层捕获以统计 system_error.
+    Smoke CLI 可在外层捕获以统计 system_error; 系统错误**不**算入 valid=False.
     """
     strategy: SingleBombStrategy
     normalized_heading_rad: float
@@ -220,6 +264,11 @@ def validate_strategy(strategy: SingleBombStrategy) -> Tuple[bool, str]:
         (valid, reason). True if valid; reason 描述非法原因.
 
     不涉及 t_d > t_arrival 搜索域剪枝 (那是任务 八 / Section 八).
+
+    起爆高度 z 用 3-zone 分类 (classify_detonation_z):
+        z < -EPS_GROUND  -> invalid (浮点容差不足以解释的负 z)
+        z in [-EPS_GROUND, 0) -> valid (浮点舍入, 评估时规范化为 0)
+        z >= 0           -> valid
     """
     s = strategy
     if not all(math.isfinite(getattr(s, f)) for f in
@@ -231,10 +280,11 @@ def validate_strategy(strategy: SingleBombStrategy) -> Tuple[bool, str]:
         return False, f"release_time_s={s.release_time_s} < 0"
     if s.delay_s < 0.0:
         return False, f"delay_s={s.delay_s} < 0"
-    # 起爆点 z 可为 0 (边界), 但 < 0 视为非法
+    # 起爆高度 z 三区分类 (见 classify_detonation_z 合同)
     d = detonation_point(s)
-    if d[2] < 0.0:
-        return False, f"detonation z={d[2]} < 0"
+    z_valid, z_reason, _ = classify_detonation_z(d[2])
+    if not z_valid:
+        return False, z_reason
     return True, "ok"
 
 
@@ -292,7 +342,12 @@ def evaluate_single_bomb_strategy(
     n_heading = normalize_heading(strategy.heading_rad)
     r_pt = release_point(strategy, u0)
     t_d = detonation_time(strategy)
-    d_pt = detonation_point(strategy, u0)
+    d_pt_raw = detonation_point(strategy, u0)
+    # 起爆高度归一化: 仅用于云团几何评估 (避免浮点舍入负 z 进入遮挡几何)
+    _z_valid, _z_reason, z_normalized = classify_detonation_z(d_pt_raw[2])
+    # validate_strategy 已通过, 此处 z_normalized 必为有限且 >= 0
+    d_pt = (d_pt_raw[0], d_pt_raw[1], z_normalized)
+    norm_note = "" if d_pt[2] == d_pt_raw[2] else " (z normalized from near-ground)"
 
     # 4. 搜索域剪枝: t_detonate > t_arrival 无损标记
     if t_arrival is None:
@@ -301,8 +356,9 @@ def evaluate_single_bomb_strategy(
         elapsed = time.perf_counter() - t0
         return SingleBombEvaluation(
             strategy=strategy, normalized_heading_rad=n_heading,
-            valid=False, status="pruned_zero",
-            reason=f"t_detonate={t_d:.6f} > t_arrival={t_arrival:.6f}",
+            valid=True, status="pruned_zero",
+            reason=f"t_detonate={t_d:.6f} > t_arrival={t_arrival:.6f}"
+                   f"{norm_note}",
             release_point=r_pt, detonation_time_s=t_d, detonation_point=d_pt,
             evaluation_window=None, intervals=(), total_duration_s=0.0,
             sample_level=sample_level, scan_step_s=scan_step, elapsed_s=elapsed,
@@ -317,7 +373,7 @@ def evaluate_single_bomb_strategy(
         return SingleBombEvaluation(
             strategy=strategy, normalized_heading_rad=n_heading,
             valid=True, status="zero_window",
-            reason=f"window empty [{window_start:.6f}, {window_end:.6f}]",
+            reason=f"window empty [{window_start:.6f}, {window_end:.6f}]{norm_note}",
             release_point=r_pt, detonation_time_s=t_d, detonation_point=d_pt,
             evaluation_window=(window_start, window_end),
             intervals=(), total_duration_s=0.0,
@@ -330,7 +386,7 @@ def evaluate_single_bomb_strategy(
     else:
         samples_list = list(samples)
 
-    # 7. 云团中心闭包
+    # 7. 云团中心闭包 (使用归一化后的 z)
     cf = make_cloud_center_fn(strategy, d_pt)
 
     # 8. 区间求解 (复用 src/q1_cylinder; 默认 boundary_func=strict_boundary_value)
@@ -348,7 +404,7 @@ def evaluate_single_bomb_strategy(
 
     return SingleBombEvaluation(
         strategy=strategy, normalized_heading_rad=n_heading,
-        valid=True, status="ok", reason="evaluated",
+        valid=True, status="ok", reason=f"evaluated{norm_note}",
         release_point=r_pt, detonation_time_s=t_d, detonation_point=d_pt,
         evaluation_window=(window_start, window_end),
         intervals=tuple(ivs),
@@ -429,13 +485,20 @@ def run_smoke(count: int = 100, seed: int = 2025, profile: str = "coarse"
 
     仅向内存返回统计, 不写入文件, 不写入 RESULTS.md, 不写入 xlsx.
 
+    候选来源: candidate_source = "prevalidated_nonpruned"
+    - generate_candidates 在生成阶段已过滤物理非法 + t_d > t_arrival.
+    - 因此默认 smoke 的 invalid / pruned_zero 计数恒为 0; 这**不**证明
+      batch 分类路径已覆盖, 仅说明输入源已经预验证.
+    - 想覆盖这些状态请用 run_smoke_on_candidates 或 mixed-batch 测试.
+
     Args:
         count: 候选数 (本轮默认 100, 不得超过 300)
         seed: 固定 random.Random 种子
         profile: "coarse" | "medium" | "fine"
 
     Returns:
-        dict 包含 counts / timing 统计 / 临时最高 / system_errors (若有)
+        dict 包含 counts / timing 统计 / 临时最高 / system_errors (若有) /
+              exit_code (1 当 n_system_error > 0, 否则 0)
     """
     if profile not in PROFILE_GRADES:
         raise ValueError(f"profile 必须 ∈ {list(PROFILE_GRADES)}, 实际 {profile!r}")
@@ -443,19 +506,118 @@ def run_smoke(count: int = 100, seed: int = 2025, profile: str = "coarse"
     scan_step = PROFILE_SCAN_STEPS[profile]
     candidates = generate_candidates(count, seed)
 
+    res = classify_candidate_batch(candidates, sample_level=grade,
+                                    scan_step=scan_step)
+
+    return {
+        "count": count,
+        "seed": seed,
+        "profile": profile,
+        "grade": grade,
+        "scan_step": scan_step,
+        "candidate_source": "prevalidated_nonpruned",
+        "candidate_source_note": (
+            "invalid/pruned_zero classifications are not exercised by this "
+            "performance smoke (input already prevalidated)."),
+        "n_valid_ok": res["n_ok"],
+        "n_valid_zero_window": res["n_zero_window"],
+        "n_invalid": res["n_invalid"],
+        "n_pruned_zero": res["n_pruned_zero"],
+        "n_system_error": res["n_system_error"],
+        "system_errors": res["system_errors"],
+        "total_elapsed_s": res["total_elapsed_s"],
+        "mean_s": res["mean_s"],
+        "median_s": res["median_s"],
+        "p90_s": res["p90_s"],
+        "max_s": res["max_s"],
+        "best": res["best"],
+        "evaluations": res["evaluations"],
+        "exit_code": 1 if res["n_system_error"] > 0 else 0,
+    }
+
+
+def run_smoke_on_candidates(
+    candidates: Sequence[SingleBombStrategy],
+    profile: str = "coarse",
+    evaluate_fn: Callable[..., SingleBombEvaluation] | None = None,
+) -> dict:
+    """测试/显式 mixed-batch 入口.
+
+    不调用 generate_candidates; 直接评估传入 candidates.
+    candidate_source = "explicit_mixed_batch".
+    可通过 evaluate_fn 注入受控 system_error (用于测试).
+
+    Returns: 同 run_smoke, 但带 candidate_source = "explicit_mixed_batch".
+    """
+    if profile not in PROFILE_GRADES:
+        raise ValueError(f"profile 必须 ∈ {list(PROFILE_GRADES)}, 实际 {profile!r}")
+    grade = PROFILE_GRADES[profile]
+    scan_step = PROFILE_SCAN_STEPS[profile]
+
+    res = classify_candidate_batch(candidates, sample_level=grade,
+                                    scan_step=scan_step,
+                                    evaluate_fn=evaluate_fn)
+
+    return {
+        "count": len(candidates),
+        "profile": profile,
+        "grade": grade,
+        "scan_step": scan_step,
+        "candidate_source": "explicit_mixed_batch",
+        "n_valid_ok": res["n_ok"],
+        "n_valid_zero_window": res["n_zero_window"],
+        "n_invalid": res["n_invalid"],
+        "n_pruned_zero": res["n_pruned_zero"],
+        "n_system_error": res["n_system_error"],
+        "system_errors": res["system_errors"],
+        "total_elapsed_s": res["total_elapsed_s"],
+        "mean_s": res["mean_s"],
+        "median_s": res["median_s"],
+        "p90_s": res["p90_s"],
+        "max_s": res["max_s"],
+        "best": res["best"],
+        "evaluations": res["evaluations"],
+        "exit_code": 1 if res["n_system_error"] > 0 else 0,
+    }
+
+
+def classify_candidate_batch(
+    candidates: Sequence[SingleBombStrategy],
+    sample_level: str,
+    scan_step: float,
+    evaluate_fn: Callable[..., SingleBombEvaluation] | None = None,
+) -> dict:
+    """Low-level batch classifier.
+
+    单个程序异常 → n_system_error++, 继续处理后续候选.
+    不修改每个候选的合法性判断; 只统计.
+
+    Args:
+        candidates: 候选列表
+        sample_level: 采样等级
+        scan_step: 时间步长
+        evaluate_fn: 可选, 替代 evaluate_single_bomb_strategy (用于注入错误).
+                     必须接受 (strategy, sample_level=..., scan_step=...) 关键字.
+
+    Returns: dict (被 run_smoke / run_smoke_on_candidates 包装).
+    """
+    if evaluate_fn is None:
+        evaluate_fn = evaluate_single_bomb_strategy
+
     evaluations: List[SingleBombEvaluation] = []
     n_invalid = 0
     n_pruned = 0
     n_zero_window = 0
+    n_ok = 0
     n_system_error = 0
     system_errors: List[Tuple[SingleBombStrategy, str, str]] = []
 
     total_t0 = time.perf_counter()
     for cand in candidates:
         try:
-            ev = evaluate_single_bomb_strategy(cand, sample_level=grade,
-                                                scan_step=scan_step)
-        except Exception as e:  # 系统异常, 不归入 invalid, 由 smoke 统计
+            ev = evaluate_fn(cand, sample_level=sample_level,
+                              scan_step=scan_step)
+        except Exception as e:
             n_system_error += 1
             if len(system_errors) < 5:
                 system_errors.append((cand, type(e).__name__, str(e)))
@@ -467,8 +629,9 @@ def run_smoke(count: int = 100, seed: int = 2025, profile: str = "coarse"
             n_pruned += 1
         elif ev.status == "zero_window":
             n_zero_window += 1
-            evaluations.append(ev)  # 视为合法零目标
+            evaluations.append(ev)
         else:
+            n_ok += 1
             evaluations.append(ev)
     elapsed_total = time.perf_counter() - total_t0
 
@@ -488,13 +651,8 @@ def run_smoke(count: int = 100, seed: int = 2025, profile: str = "coarse"
         best = max(evaluations, key=lambda e: e.total_duration_s)
 
     return {
-        "count": count,
-        "seed": seed,
-        "profile": profile,
-        "grade": grade,
-        "scan_step": scan_step,
-        "n_valid_ok": sum(1 for e in evaluations if e.status == "ok"),
-        "n_valid_zero_window": n_zero_window,
+        "n_ok": n_ok,
+        "n_zero_window": n_zero_window,
         "n_invalid": n_invalid,
         "n_pruned_zero": n_pruned,
         "n_system_error": n_system_error,
@@ -528,18 +686,263 @@ Q1_EXPECTED = {
 
 
 # =============================================================================
+#  P1-7: 性能校准 (Foundation benchmark, NOT Search)
+# =============================================================================
+# 校准候选 (确定, 不进入 Search):
+#   1) Q1 固定锚点 (确认非零)
+#   2) Q1 邻域 (确定小扰动, 取第一例非零)
+#   3) 典型零目标候选 (几何上无法遮蔽)
+# 不得将其中最大值作为搜索结果, 不得进入 RESULTS.md, 不得生成 result*.xlsx.
+
+# Q1 邻域候选: 小且预定义的扰动 (delay/release/speed)
+Q1_NEIGHBORHOOD: Tuple[SingleBombStrategy, ...] = (
+    SingleBombStrategy(heading_rad=math.pi, speed_mps=120.0,
+                        release_time_s=1.5, delay_s=3.55),
+    SingleBombStrategy(heading_rad=math.pi, speed_mps=120.0,
+                        release_time_s=1.5, delay_s=3.7),
+    SingleBombStrategy(heading_rad=math.pi, speed_mps=120.0,
+                        release_time_s=1.5, delay_s=3.4),
+    SingleBombStrategy(heading_rad=math.pi, speed_mps=120.0,
+                        release_time_s=1.5, delay_s=4.0),
+    SingleBombStrategy(heading_rad=math.pi, speed_mps=120.0,
+                        release_time_s=1.5, delay_s=3.0),
+    SingleBombStrategy(heading_rad=math.pi, speed_mps=120.0,
+                        release_time_s=1.6, delay_s=3.6),
+    SingleBombStrategy(heading_rad=math.pi, speed_mps=121.0,
+                        release_time_s=1.5, delay_s=3.6),
+    SingleBombStrategy(heading_rad=math.pi, speed_mps=119.0,
+                        release_time_s=1.5, delay_s=3.6),
+    SingleBombStrategy(heading_rad=math.pi, speed_mps=120.0,
+                        release_time_s=1.4, delay_s=3.6),
+    SingleBombStrategy(heading_rad=math.pi, speed_mps=120.0,
+                        release_time_s=2.0, delay_s=3.6),
+    SingleBombStrategy(heading_rad=math.pi, speed_mps=120.0,
+                        release_time_s=1.5, delay_s=5.0),
+    SingleBombStrategy(heading_rad=math.pi, speed_mps=120.0,
+                        release_time_s=1.5, delay_s=2.0),
+)
+
+# 典型零目标候选 (heading=+x 远离目标, FY1 朝 +x 飞离真目标)
+ZERO_OBJECTIVE_STRATEGY = SingleBombStrategy(
+    heading_rad=0.0, speed_mps=70.0,
+    release_time_s=10.0, delay_s=1.0,
+)
+
+
+def _resolve_non_zero_neighbor(
+    scan_step: float = PROFILE_SCAN_STEPS["coarse"],
+) -> SingleBombStrategy:
+    """遍历 Q1_NEIGHBORHOOD 直到一个在 coarse profile 下 objective > 0.
+
+    若全部为 0, 返回 Q1_FIXED_STRATEGY 兜底 (Q1 锚点本身就应非零).
+    """
+    for s in Q1_NEIGHBORHOOD:
+        try:
+            ev = evaluate_single_bomb_strategy(
+                s, sample_level="coarse", scan_step=scan_step)
+            if ev.total_duration_s > 0.0:
+                return s
+        except Exception:
+            continue
+    # Q1 锚点本身一定非零 (基于已知 TASK_003 数据)
+    return Q1_FIXED_STRATEGY
+
+
+def profile_evaluation(
+    strategy: SingleBombStrategy,
+    sample_level: str,
+    scan_step: float | None = None,
+    repeat: int = 3,
+    warm_up: bool = True,
+    samples_reuse: bool = True,
+) -> dict:
+    """单策略 × 单 profile 的实测计时 (P1-7).
+
+    Args:
+        strategy: 待计时策略
+        sample_level: "coarse"/"medium"/"fine" - 真实 grade
+        scan_step: 可选显式 scan_step (默认取 PROFILE_SCAN_STEPS[level])
+        repeat: 正式重复次数 (推荐 ≥ 3)
+        warm_up: 先做一次不计时热身
+        samples_reuse: 预生成 samples 并在 warm-up + repeats 间复用
+                       (减少采样构造噪声)
+
+    Returns: dict 含 sample_level, scan_step_used, repeat, warm_up,
+        samples_reused, results[{elapsed_s,status,total_duration_s,n_intervals}],
+        median_elapsed_s, min_elapsed_s, max_elapsed_s, range_s,
+        first_status, first_total_duration_s, first_n_intervals,
+        window_length_s (若可计算)
+    """
+    if sample_level not in PROFILE_GRADES:
+        raise ValueError(f"sample_level 必须 ∈ {list(PROFILE_GRADES)}, "
+                         f"实际 {sample_level!r}")
+    if repeat < 1:
+        raise ValueError(f"repeat 必须 ≥ 1, 实际 {repeat}")
+
+    grade = sample_level
+    actual_scan = scan_step if scan_step is not None \
+        else PROFILE_SCAN_STEPS[grade]
+
+    pre_samples = None
+    if samples_reuse:
+        pre_samples = generate_cylinder_samples(**SAMPLE_GRADES[grade])
+
+    if warm_up:
+        try:
+            evaluate_single_bomb_strategy(
+                strategy, sample_level=grade, scan_step=actual_scan,
+                samples=pre_samples)
+        except Exception:
+            # warm-up 抛异常不计入正式计时; 它是构造性问题, 不代表 measure 失败
+            pass
+
+    results: List[dict] = []
+    for _ in range(repeat):
+        try:
+            ev = evaluate_single_bomb_strategy(
+                strategy, sample_level=grade, scan_step=actual_scan,
+                samples=pre_samples)
+            results.append({
+                "elapsed_s": ev.elapsed_s,
+                "status": ev.status,
+                "total_duration_s": ev.total_duration_s,
+                "n_intervals": len(ev.intervals),
+            })
+        except Exception as e:
+            results.append({"error": f"{type(e).__name__}: {e}"})
+
+    out: dict = {
+        "sample_level": grade,
+        "scan_step": actual_scan,
+        "repeat": repeat,
+        "warm_up": warm_up,
+        "samples_reused": samples_reuse,
+        "results": results,
+    }
+
+    valid_times = [r["elapsed_s"] for r in results if "elapsed_s" in r]
+    if valid_times:
+        out["median_elapsed_s"] = statistics.median(valid_times)
+        out["min_elapsed_s"] = min(valid_times)
+        out["max_elapsed_s"] = max(valid_times)
+        out["range_s"] = max(valid_times) - min(valid_times)
+
+    # 报告首个候选的 status/total/intervals, 用于合理性核对
+    first = results[0]
+    if "status" in first:
+        out["first_status"] = first["status"]
+        out["first_total_duration_s"] = first["total_duration_s"]
+        out["first_n_intervals"] = first["n_intervals"]
+
+    # 评估窗口长度 (推导量, 用于解释计时上下文)
+    try:
+        t_d = detonation_time(strategy)
+        t_arr = missile_arrival_time()
+        window_length = max(0.0, min(t_d + CLOUD_DURATION, t_arr) - t_d)
+        out["window_length_s"] = window_length
+    except Exception:
+        out["window_length_s"] = None
+
+    return out
+
+
+def run_profile_measurement(
+    strategies: Sequence[SingleBombStrategy] | None = None,
+    profiles: Sequence[str] = ("coarse", "medium", "fine"),
+    repeat: int = 3,
+    warm_up: bool = True,
+) -> List[dict]:
+    """对 candidate 集合 × profile 集合做实测 (P1-7).
+
+    默认 candidates: [Q1_FIXED_STRATEGY, first non-zero Q1 neighbor,
+                       ZERO_OBJECTIVE_STRATEGY].
+    不得作为搜索结果; 仅用于 Foundation 性能校准.
+
+    Returns: list[profile_evaluation dict]
+    """
+    if strategies is None:
+        non_zero = _resolve_non_zero_neighbor()
+        strategies = [Q1_FIXED_STRATEGY, non_zero, ZERO_OBJECTIVE_STRATEGY]
+
+    out: List[dict] = []
+    for s in strategies:
+        for p in profiles:
+            out.append(profile_evaluation(s, sample_level=p,
+                                          repeat=repeat, warm_up=warm_up))
+    return out
+
+
+# =============================================================================
 #  CLI (Section 十七)
 # =============================================================================
 def _print_help() -> None:
     print(__doc__)
     print("用法:")
     print("  python -m src.q2_single_bomb --smoke-count 100 --seed 2025 --profile coarse")
+    print("  python -m src.q2_single_bomb --profile-measure")
     print()
     print("参数:")
-    print("  --smoke-count N   候选数 (1..300, 必要)")
+    print("  --smoke-count N   候选数 (1..300, 必要, 与 --profile-measure 互斥)")
     print("  --seed N          随机种子 (默认 2025)")
     print("  --profile NAME    coarse | medium | fine (默认 coarse)")
+    print("  --profile-measure  对 Q1 锚 + Q1 邻域 + 零目标做 coarse/medium/fine 实测")
+    print("                     (Foundation 性能校准, NOT Search)")
+    print("  --repeat N        profile-measure 重复次数 (默认 3)")
     print("  -h, --help        显示本帮助")
+    print()
+    print("退出码:")
+    print("  0 = 无 system_error")
+    print("  1 = 至少 1 个 system_error")
+    print("  2 = 参数错误")
+
+
+def _print_profile_measurement(rows: List[dict], repeat: int) -> None:
+    print("=" * 100)
+    print("Q2 FOUNDATION PERFORMANCE CALIBRATION / NOT AN OPTIMIZATION RESULT")
+    print("=" * 100)
+    print("  Candidate types:")
+    print("    [1] Q1 fixed anchor (non-zero)")
+    print("    [2] Q1 neighborhood (first non-zero deterministic perturbation)")
+    print("    [3] Zero-objective candidate (geometrically cannot occlude)")
+    print(f"  Per-profile: warm-up=1, timed repeats={repeat}, samples reused")
+    print()
+    print(f"  {'candidate':<12} {'objective':<10} {'profile':<8} {'scan_step':>10} "
+          f"{'window_s':>9} {'samples':<9} {'runs':>5} {'median_s':>10} {'min-max_s':>14}")
+    print("  " + "-" * 96)
+    last_kind = None
+    for row in rows:
+        if "median_elapsed_s" not in row:
+            continue
+        kind = row.get("candidate_kind", "?")
+        if last_kind is not None and kind != last_kind:
+            print()
+        last_kind = kind
+        # 推导 candidate kind: 通过 strategy identity
+        s = row.get("strategy")
+        if s == Q1_FIXED_STRATEGY:
+            c_label = "Q1_anchor"
+        elif s == ZERO_OBJECTIVE_STRATEGY:
+            c_label = "ZERO"
+        else:
+            c_label = "Q1_neighbor"
+        first_status = row.get("first_status", "?")
+        first_total = row.get("first_total_duration_s")
+        if first_total is None or first_status != "ok":
+            obj = "n/a"
+        elif first_total > 0:
+            obj = "nonzero"
+        else:
+            obj = "zero"
+        print(f"  {c_label:<12} {obj:<10} {row['sample_level']:<8} "
+              f"{row['scan_step']:>10.4f} {row.get('window_length_s', 0):>9.3f} "
+              f"{('reused' if row['samples_reused'] else 'regen'):<9} "
+              f"{row['repeat']:>5} {row['median_elapsed_s']:>10.4f} "
+              f"{row['min_elapsed_s']:>5.3f}-{row['max_elapsed_s']:<5.3f}")
+    print()
+    print("  *** NOT AN OPTIMIZATION RESULT ***")
+    print("  *** DO NOT USE AS Q2 FINAL ANSWER ***")
+    print("  *** This table is empirical, not extrapolated. Search budget NOT frozen. ***")
+    print("=" * 100)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -551,6 +954,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     seed = 2025
     profile = "coarse"
     show_help = False
+    profile_measure = False
+    repeat = 3
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -565,7 +970,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             try:
                 smoke_count = int(argv[i + 1])
             except ValueError:
-                print(f"--smoke-count 必须整数, 实际 {argv[i + 1]!r}", file=sys.stderr)
+                print(f"--smoke-count 必须整数, 实际 {argv[i + 1]!r}",
+                      file=sys.stderr)
                 return 2
             i += 2
             continue
@@ -587,11 +993,45 @@ def main(argv: Sequence[str] | None = None) -> int:
             profile = argv[i + 1]
             i += 2
             continue
+        if a == "--profile-measure":
+            profile_measure = True
+            i += 1
+            continue
+        if a == "--repeat":
+            if i + 1 >= len(argv):
+                print("--repeat 缺少值", file=sys.stderr)
+                return 2
+            try:
+                repeat = int(argv[i + 1])
+            except ValueError:
+                print(f"--repeat 必须整数, 实际 {argv[i + 1]!r}", file=sys.stderr)
+                return 2
+            if repeat < 1:
+                print(f"--repeat 必须 ≥ 1, 实际 {repeat}", file=sys.stderr)
+                return 2
+            i += 2
+            continue
         print(f"未知参数: {a}", file=sys.stderr)
         return 2
 
     if show_help:
         _print_help()
+        return 0
+
+    if profile_measure and smoke_count is not None:
+        print("--profile-measure 与 --smoke-count 互斥", file=sys.stderr)
+        return 2
+
+    if profile_measure:
+        non_zero = _resolve_non_zero_neighbor()
+        strategies = [Q1_FIXED_STRATEGY, non_zero, ZERO_OBJECTIVE_STRATEGY]
+        rows: List[dict] = []
+        for s in strategies:
+            for p in ("coarse", "medium", "fine"):
+                row = profile_evaluation(s, sample_level=p, repeat=repeat)
+                row["strategy"] = s
+                rows.append(row)
+        _print_profile_measurement(rows, repeat)
         return 0
 
     if smoke_count is None:
@@ -615,6 +1055,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"  种子:      {seed}")
     print(f"  Profile:   {profile} (grade={PROFILE_GRADES[profile]}, "
           f"scan_step={PROFILE_SCAN_STEPS[profile]} s)")
+    print(f"  candidate_source = prevalidated_nonpruned")
+    print(f"  注: invalid / pruned_zero 分类路径不在默认 smoke 覆盖范围")
     print()
 
     res = run_smoke(count=smoke_count, seed=seed, profile=profile)
@@ -658,7 +1100,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("  *** NOT AN OPTIMIZATION RESULT ***")
         print("  *** DO NOT USE AS Q2 FINAL ANSWER ***")
     print("=" * 70)
-    return 0
+    # 退出码: 0 = 无 system_error; 1 = 至少 1 个 system_error
+    return res.get("exit_code", 0)
 
 
 if __name__ == "__main__":

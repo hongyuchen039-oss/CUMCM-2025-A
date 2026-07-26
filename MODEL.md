@@ -402,6 +402,8 @@ find_strict_intervals(samples, scan_step=0.01)
 - 条件: t_detonate > t_arrival
 - 含义: 起爆晚于 M1 到达假目标, 对到达前遮蔽目标没有正收益, 搜索时无损排除
 - 文档约束: **不得写成"题目禁止晚于到达时刻起爆"**
+- **明确说明**: 这是针对当前"到达前遮蔽目标"的**搜索域无损剪枝**, 不是官
+  方物理禁令. valid=True 表示物理/合同合法, 仅在当前目标函数下零收益.
 
 **D. 程序错误 (必须向上传播, 不得吞掉)**:
 - 几何函数合同错误 (空可见集 ValueError 等)
@@ -443,6 +445,36 @@ find_strict_intervals(samples, scan_step=0.01)
 - 不修改 TASK_003 几何核心; 不修改官方原题; 不修改重参数化
 - 不声称全局最优, 不写 `result1.xlsx`, 不进 RESULTS.md 正式数值表
 - 等级仅 FOUNDATION, Search 后才可推进到 EXPERIMENTAL, 再到 VERIFIED, 最后到 FINAL
+
+### 7. 本轮加固 (FIX commit, 7 个 P1, 仍为 NOT AN OPTIMIZATION RESULT)
+
+`valid` 仅表示物理/项目合同合法性; `status` 描述评估结果:
+
+| status | valid | 说明 |
+|---|---|---|
+| `invalid` | False | 物理/合同非法 (含 z < -EPS_GROUND) |
+| `pruned_zero` | True | 物理合法, t_detonate > t_arrival (搜索域无损剪枝, 不是官方物理禁令) |
+| `zero_window` | True | 物理合法, 评估窗口为空 |
+| `ok` | True | 物理合法, 已完成评估, intervals 可空可非空 |
+
+程序错误 (空可见集 / 类型错误 / 几何合同错误) 由 batch 统计为 `system_error`,
+**不**算入 invalid/pruned/zero/objective; CLI 退出码: 0 = 无 system_error,
+1 = ≥1 个 system_error, 2 = 参数错误.
+
+地面边界: `EPS_GROUND = 1e-9 m` (1e-10 量级浮点舍入吸收, 不允许物理地下起爆);
+3 区分类: z < -EPS → invalid, -EPS ≤ z < 0 → 归一化为 0, z ≥ 0 → 合法.
+
+性能校准 (3 候选 × 3 profile, warm-up=1, repeat=3, samples 复用):
+- Q1 锚点:  coarse 0.196 s / medium 1.85 s / fine 15.05 s
+- Q1 邻域:  coarse 0.196 s / medium 1.82 s / fine 14.86 s
+- 零目标:  coarse 0.182 s / medium 1.76 s / fine 13.63 s
+(以上为 median; Search 预算未冻结, 仅为本轮实测.)
+
+默认 smoke: `candidate_source = prevalidated_nonpruned` (生成阶段已过滤非法,
+故 invalid/pruned 计数恒为 0; 想覆盖这些状态需用 `run_smoke_on_candidates`
+或 mixed-batch 测试).
+
+仍为 NOT AN OPTIMIZATION RESULT; 仍未启动 Search; 仍未生成 result1.xlsx.
 
 ### 7. 本轮唯一入口与建议下一步
 

@@ -37,9 +37,11 @@ from src.q2_single_bomb import (
     evaluate_single_bomb_strategy,
     generate_candidates, run_smoke,
     PROFILE_GRADES, PROFILE_SCAN_STEPS,
-    Q1_FIXED_STRATEGY, Q1_EXPECTED,
+    Q1_FIXED_STRATEGY, Q1_EXPECTED, EPS_GROUND,
     main as q2_main,
 )
+
+import src.q2_single_bomb as q2
 
 
 def _vec_close(a, b, tol: float = 1e-9) -> bool:
@@ -235,26 +237,20 @@ class FDetonationTime(unittest.TestCase):
 # =============================================================================
 class GDetonationZLimits(unittest.TestCase):
 
-    def test_g01_detonation_z_zero_valid(self):
-        # u0_z = 1800, g=9.8: 找 δ 使得 1800 - 0.5*g*δ² = 0
-        # 浮点 sqrt + 二次方会丢精度; 使用 max(0, ...) 直接构造 z=0 案例
-        # 通过巨大但有效的 delay 让 0.5*g*delay² ≈ u0_z:
-        delta = math.sqrt(2.0 * U0[2] / G)
-        s = _make_strategy(release_time_s=0.5, delay_s=delta)
-        d = detonation_point(s)
-        # 浮点: 平方再算双精度, 误差约 1e-10 m. 放宽 places=4 即可.
-        self.assertAlmostEqual(d[2], 0.0, places=4)
-        # 当 z 精确 0, validate_strategy 应通过
-        # 但浮点得到 -1e-10 般严格 < 0 ⇒ 反而被拒.
-        # 因此用稍小 delta 让 z 严格 > 0 但非常接近 0.
-        s_safe = SingleBombStrategy(heading_rad=math.pi,
-                                     speed_mps=120.0,
-                                     release_time_s=0.5,
-                                     delay_s=delta * 0.5)
-        d_safe = detonation_point(s_safe)
-        self.assertGreater(d_safe[2], 0.0)
-        v, r = validate_strategy(s_safe)
-        self.assertTrue(v, f"z>0 边界应合法: r={r}")
+    def test_g01_detonation_z_zero_boundary(self):
+        # P1-2 重写: 理论 z=0 边界必须合法 (EPS_GROUND 吸收浮点舍入).
+        # 不得用 delta*0.5 等远离边界的策略冒充 z=0 测试.
+        delta_ground = math.sqrt(2.0 * U0[2] / G)
+        s = _make_strategy(release_time_s=0.5, delay_s=delta_ground)
+        d_raw = detonation_point(s)
+        # 浮点 z 接近 0 (量级 1e-10); validate 必须通过
+        v, r = validate_strategy(s)
+        self.assertTrue(v, f"理论 z=0 必须合法, 实际 reason={r}")
+        # 用于评估的 detonation_point z 必须为 0.0 (规范化)
+        ev = evaluate_single_bomb_strategy(s, sample_level="coarse",
+                                            scan_step=0.05)
+        self.assertEqual(ev.detonation_point[2], 0.0,
+                          f"理论 z=0 归一化后应为 0, 实际 {ev.detonation_point[2]}")
 
     def test_g02_detonation_z_negative_invalid(self):
         # δ 比 z=0 略大: z < 0
@@ -306,6 +302,7 @@ class HCloudCenter(unittest.TestCase):
 class IStrategyStatus(unittest.TestCase):
 
     def test_i01_search_domain_prune(self):
+        # P1-1 重写: pruned_zero 必须 valid=True (物理合法, 仅搜索域剪枝)
         # t_d > t_arrival ⇒ pruned_zero
         # 必须保证: z >= 0 (合法) AND t_release + delay > t_arrival.
         # z >= 0 ⇒ delay <= sqrt(2*1800/9.8) ≈ 19.166
@@ -321,11 +318,15 @@ class IStrategyStatus(unittest.TestCase):
         self.assertEqual(ev.status, "pruned_zero",
                           f"t_detonate={ev.detonation_time_s} "
                           f"t_arrival={t_arr} → 期望 pruned_zero, 实际 {ev.status}")
+        # P1-1: pruned_zero 必须 valid=True
+        self.assertTrue(ev.valid,
+                          "pruned_zero 必须 valid=True (P1-1)")
         self.assertEqual(ev.total_duration_s, 0.0)
         self.assertEqual(ev.intervals, ())
         self.assertGreater(len(ev.reason), 0)
 
     def test_i02_search_domain_boundary_returns_zero(self):
+        # P1-1 重写: zero_window 必须 valid=True (物理合法, 仅窗口空)
         # t_d == t_arrival → window empty → zero_window (合法 0 目标)
         # 注入 t_arrival 让边界可精确控制 (不依赖 m1 默认)
         t_arr_inj = 30.0
@@ -336,6 +337,9 @@ class IStrategyStatus(unittest.TestCase):
                                             scan_step=0.1,
                                             t_arrival=t_arr_inj)
         self.assertEqual(ev.status, "zero_window")
+        # P1-1: zero_window 必须 valid=True
+        self.assertTrue(ev.valid,
+                          "zero_window 必须 valid=True (P1-1)")
         self.assertEqual(ev.total_duration_s, 0.0)
         self.assertIsNotNone(ev.evaluation_window)
         ws, we = ev.evaluation_window
@@ -516,11 +520,12 @@ class MSmokeStats(unittest.TestCase):
         # 小规模 smoke (10 候选) 仅字段检查, 不用于报告
         res = run_smoke(count=10, seed=2025, profile="coarse")
         required = {"count", "seed", "profile", "grade", "scan_step",
+                    "candidate_source", "candidate_source_note",
                     "n_valid_ok", "n_valid_zero_window",
                     "n_invalid", "n_pruned_zero", "n_system_error",
                     "system_errors", "total_elapsed_s",
                     "mean_s", "median_s", "p90_s", "max_s",
-                    "best", "evaluations"}
+                    "best", "evaluations", "exit_code"}
         self.assertEqual(set(res.keys()), required)
 
     def test_m02_smoke_total_matches_count(self):
@@ -588,6 +593,497 @@ class NCLI(unittest.TestCase):
     def test_n06_help_returns_zero(self):
         rc = q2_main(["--help"])
         self.assertEqual(rc, 0)
+
+
+# =============================================================================
+#  P1-2 — EPS_GROUND 三区分类边界 (Section 五 + 审计 P1-2)
+# =============================================================================
+class G2DetonationZEPSGround(unittest.TestCase):
+    """P1-2: EPS_GROUND 三区分类 + 真实理论落地边界行为.
+
+    不得再用 delay=19.0 / delta*0.5 等远离理论落地点的策略冒充 z=0 测试.
+    """
+
+    def test_g2_01_theoretical_ground_zero_is_valid(self):
+        # 理论 delta_ground = sqrt(2 * u0_z / g); 浮点 z 量级 ~1e-10 m
+        delta_ground = math.sqrt(2.0 * U0[2] / G)
+        s = _make_strategy(release_time_s=0.5, delay_s=delta_ground)
+        # validate 必须通过 (EPS_GROUND 吸收浮点舍入)
+        v, r = validate_strategy(s)
+        self.assertTrue(v, f"理论 z=0 必须合法, 实际 reason={r}")
+        # 用于云团评估的 detonation_point z 必须规范化为 0.0
+        ev = evaluate_single_bomb_strategy(s, sample_level="coarse",
+                                            scan_step=0.05)
+        self.assertEqual(ev.detonation_point[2], 0.0,
+                          f"理论 z=0 应归一化为 0, 实际 {ev.detonation_point[2]}")
+
+    def test_g2_02_near_ground_negative_normalized_to_zero(self):
+        # 构造 z ≈ -0.5 * EPS_GROUND; 应合法且归一化到 0
+        delta_ground = math.sqrt(2.0 * U0[2] / G)
+        # e 使 z ≈ -0.5 * EPS_GROUND
+        # z ≈ -g * delta_ground * e; ⇒ e ≈ 0.5 * EPS_GROUND / (g * delta_ground)
+        e_half = 0.5 * EPS_GROUND / (G * delta_ground)
+        delta_half_neg = delta_ground + e_half
+        s = _make_strategy(release_time_s=0.5, delay_s=delta_half_neg)
+        d_raw = detonation_point(s)
+        # 验证 z 在 [-EPS_GROUND, 0) 区间
+        self.assertGreaterEqual(d_raw[2], -EPS_GROUND,
+                                  f"构造的 z 必须在 [-EPS_GROUND, 0), 实际 {d_raw[2]}")
+        self.assertLess(d_raw[2], 0.0)
+        # validate 合法
+        v, r = validate_strategy(s)
+        self.assertTrue(v, f"近 -EPS_GROUND/2 必须合法, 实际 reason={r}")
+        # 用于云团评估的 z 规范化为 0
+        ev = evaluate_single_bomb_strategy(s, sample_level="coarse",
+                                            scan_step=0.05)
+        self.assertEqual(ev.detonation_point[2], 0.0,
+                          f"-EPS_GROUND/2 归一化后应为 0, 实际 {ev.detonation_point[2]}")
+
+    def test_g2_03_below_minus_two_eps_invalid(self):
+        # 构造 z ≈ -2.5 * EPS_GROUND (明显地下); 必须非法
+        delta_ground = math.sqrt(2.0 * U0[2] / G)
+        e_2 = 2.5 * EPS_GROUND / (G * delta_ground)
+        delta_over = delta_ground + e_2
+        s = _make_strategy(release_time_s=0.5, delay_s=delta_over)
+        d_raw = detonation_point(s)
+        self.assertLess(d_raw[2], -2.0 * EPS_GROUND,
+                          f"构造的 z 必须 < -2*EPS_GROUND, 实际 {d_raw[2]}")
+        v, r = validate_strategy(s)
+        self.assertFalse(v, f"z < -2*EPS_GROUND 必须非法, 实际 reason={r}")
+        self.assertIn("z", r)
+
+    def test_g2_04_clearly_positive_height_valid(self):
+        # 远离地面, 显然合法
+        s = Q1_FIXED_STRATEGY
+        d = detonation_point(s)
+        self.assertGreater(d[2], 100.0)
+        v, r = validate_strategy(s)
+        self.assertTrue(v, r)
+
+    def test_g2_05_clearly_underground_invalid(self):
+        # 巨大 delay, 显然非法
+        s = _make_strategy(release_time_s=0.0, delay_s=30.0)
+        d = detonation_point(s)
+        self.assertLess(d[2], -1000.0,
+                          f"应明显地下, 实际 z={d[2]}")
+        v, r = validate_strategy(s)
+        self.assertFalse(v)
+        self.assertIn("z", r)
+
+    def test_g2_06_nextafter_below_ground_still_valid(self):
+        # delay = nextafter(delta_ground, inf): 1 ULP 上调, z 仍在 [-EPS_GROUND, 0)
+        delta_ground = math.sqrt(2.0 * U0[2] / G)
+        delta_just_above = math.nextafter(delta_ground, math.inf)
+        s = _make_strategy(release_time_s=0.5, delay_s=delta_just_above)
+        d_raw = detonation_point(s)
+        # 1 ULP 步长极小 (~1e-16), z 必在 [-EPS_GROUND, 0)
+        self.assertGreaterEqual(d_raw[2], -EPS_GROUND,
+                                  f"1 ULP nextafter 上调 z 应 ≥ -EPS_GROUND, 实际 {d_raw[2]}")
+        self.assertLess(d_raw[2], 0.0)
+        v, r = validate_strategy(s)
+        self.assertTrue(v, f"1 ULP 上调必须仍合法, 实际 reason={r}")
+        ev = evaluate_single_bomb_strategy(s, sample_level="coarse",
+                                            scan_step=0.05)
+        self.assertEqual(ev.detonation_point[2], 0.0)
+
+    def test_g2_07_nextafter_one_microsecond_above_invalid(self):
+        # delay = delta_ground + 1e-5: z 远低于 -EPS_GROUND, 必须非法
+        delta_ground = math.sqrt(2.0 * U0[2] / G)
+        delta_over = delta_ground + 1e-5
+        s = _make_strategy(release_time_s=0.5, delay_s=delta_over)
+        d_raw = detonation_point(s)
+        self.assertLess(d_raw[2], -2.0 * EPS_GROUND,
+                          f"delay + 1e-5 应让 z < -2*EPS_GROUND, 实际 {d_raw[2]}")
+        v, r = validate_strategy(s)
+        self.assertFalse(v, f"delay + 1e-5 (z 显著为负) 必须非法, 实际 reason={r}")
+
+
+# =============================================================================
+#  P1-3 — Q1 完整圆柱直接回归 (Section 六)
+# =============================================================================
+class K2DirectQ1CylinderComparison(unittest.TestCase):
+    """P1-3: Q1 完整圆柱入口 vs Q2 wrapper 的直接对照.
+
+    完全相同的 samples / sample level / scan step / missile_fn /
+    cloud_fn / window_start / window_end / t_arrival.
+    """
+
+    def test_k2_01_direct_q1_path_matches_q2_wrapper(self):
+        from src.q1_baseline import (
+            cloud_center as q1_cloud_center,
+            missile_position as q1_missile_position,
+            missile_arrival_time as q1_t_arrival,
+        )
+        from src.q1_cylinder import T_DETONATE as Q1_TD, CLOUD_DURATION as Q1_CD
+
+        s = Q1_FIXED_STRATEGY
+        sample_level = "medium"
+        scan_step = 0.01
+        t_arrival = q1_t_arrival()
+        samples = generate_cylinder_samples(**SAMPLE_GRADES[sample_level])
+
+        # Q1 默认窗口: [T_DETONATE, T_DETONATE + CLOUD_DURATION]
+        # Q2 窗口: [t_d, min(t_d + 20, t_arrival)] = [5.1, 25.1]
+        # t_arrival ≈ 66.999 > 25.1, 两窗口一致
+        q1_ws, q1_we = Q1_TD, Q1_TD + Q1_CD
+        self.assertAlmostEqual(q1_ws, 5.1, places=9)
+        self.assertAlmostEqual(q1_we, 25.1, places=9)
+
+        # === 路径 A: Q1 原完整圆柱入口 ===
+        q1_ivs = find_strict_intervals(
+            samples, scan_step=scan_step,
+            t_arrival=t_arrival,
+            missile_position_fn=q1_missile_position,
+            cloud_center_fn=q1_cloud_center,
+            window_start=q1_ws,
+            window_end=q1_we,
+        )
+
+        # === 路径 B: Q2 wrapper ===
+        ev = evaluate_single_bomb_strategy(
+            s, sample_level=sample_level, scan_step=scan_step,
+            samples=samples, t_arrival=t_arrival,
+        )
+
+        self.assertEqual(ev.status, "ok",
+                          f"Q1 策略 Q2 评估必须 status=ok, 实际 {ev.status}")
+
+        # === 比较: interval count ===
+        self.assertEqual(len(q1_ivs), len(ev.intervals),
+                          f"interval count: Q1={len(q1_ivs)} vs Q2={len(ev.intervals)}")
+
+        # === 比较: 每个区间起止点 ===
+        for (qa, qb), (q2a, q2b) in zip(q1_ivs, ev.intervals):
+            # 端点容差依据: q1_baseline.BISECT_TOL=1e-8, 二分后端点 f 残差
+            # 实测 max |f(b)| ≈ 1.03e-6 (TASK_003 数据), 临界斜率 ~10 m/s,
+            # 故端点位置精度 ~ 1e-7 s. 取 1e-6 s 作为安全端点容差.
+            self.assertLessEqual(abs(qa - q2a), 1e-6,
+                                  f"Q1[{qa:.9f}] vs Q2[{q2a:.9f}] start diff > 1e-6")
+            self.assertLessEqual(abs(qb - q2b), 1e-6,
+                                  f"Q1[{qb:.9f}] vs Q2[{q2b:.9f}] end diff > 1e-6")
+
+        # === 比较: total duration ===
+        q1_total = sum(b - a for a, b in q1_ivs)
+        # 总时长容差: 区间端点误差的合理累计 (≤ 端点容差 × 区间数)
+        self.assertLessEqual(abs(q1_total - ev.total_duration_s),
+                              1e-6 * len(q1_ivs),
+                              f"total diff: Q1={q1_total:.9f} vs Q2={ev.total_duration_s:.9f}")
+
+
+# =============================================================================
+#  P1-4 — 确定性多区间测试 (Section 七)
+# =============================================================================
+class J2MultiIntervalDeterministic(unittest.TestCase):
+    """P1-4: 拆分多区间测试为 (A) Q1 锚定非空回归 + (B) 合成多区间 boundary."""
+
+    def test_j2_01_q1_anchor_nonempty_regression(self):
+        """P1-4-A: Q1 固定策略非空回归; 显式 assertTrue(intervals),
+        并验证 sum(b-a) == total_duration_s."""
+        s = Q1_FIXED_STRATEGY
+        ev = evaluate_single_bomb_strategy(s, sample_level="coarse",
+                                            scan_step=0.05)
+        self.assertEqual(ev.status, "ok")
+        self.assertTrue(ev.intervals,
+                          "Q1 固定策略必须产生至少一段有效区间")
+        s_sum = sum(b - a for a, b in ev.intervals)
+        self.assertAlmostEqual(s_sum, ev.total_duration_s, places=9,
+                                msg=f"sum(b-a)={s_sum} vs total={ev.total_duration_s}")
+
+    def test_j2_02_synthetic_two_disjoint_intervals(self):
+        """P1-4-B: 人工多区间 boundary 函数.
+
+        f(t) = (t-1)(t-2)(t-4)(t-5)
+        在 [0, 6] 内 f ≤ 0 ⇔ t ∈ [1, 2] ∪ [4, 5]
+        通过 find_strict_intervals 注入 boundary_func, 不修改 Q1 求解器.
+        """
+        samples = generate_cylinder_samples(**SAMPLE_GRADES["coarse"])
+
+        def synthetic_bf(t: float) -> float:
+            return (t - 1.0) * (t - 2.0) * (t - 4.0) * (t - 5.0)
+
+        ivs = find_strict_intervals(
+            samples, scan_step=0.01,
+            boundary_func=synthetic_bf,
+            window_start=0.0, window_end=6.0,
+            t_arrival=6.0,
+        )
+        # 至少 2 个不连续区间
+        self.assertGreaterEqual(len(ivs), 2,
+                                  f"应保留至少两个不连续区间, 实际 {len(ivs)}: {ivs}")
+        # 总时长 = 1.0 + 1.0 = 2.0
+        total = sum(b - a for a, b in ivs)
+        self.assertAlmostEqual(total, 2.0, delta=0.05,
+                                msg=f"总时长应 ≈ 2.0, 实际 {total}")
+        # 不等于单个最长段 (1.0)
+        self.assertNotAlmostEqual(total, 1.0, places=3)
+        # 区间按起点升序
+        for i in range(1, len(ivs)):
+            self.assertLessEqual(ivs[i - 1][1], ivs[i][0] + 1e-9,
+                                  f"区间应升序: {ivs}")
+        # 两段都存在
+        starts = sorted(a for a, _ in ivs)
+        self.assertLess(abs(starts[0] - 1.0), 0.05,
+                          f"首段起点应 ≈ 1.0, 实际 {starts[0]}")
+        if len(starts) > 1:
+            self.assertLess(abs(starts[1] - 4.0), 0.05,
+                              f"次段起点应 ≈ 4.0, 实际 {starts[1]}")
+
+
+# =============================================================================
+#  P1-5 — system_error 退出码 (Section 八)
+# =============================================================================
+from unittest.mock import patch
+
+
+class N2SystemErrorExitCode(unittest.TestCase):
+    """P1-5: system_error 必须通过 main() 反映为非零退出码."""
+
+    def test_n2_01_main_returns_nonzero_with_system_errors(self):
+        """注入 evaluator 系统异常, 验证 main 返回非零."""
+        with patch("src.q2_single_bomb.evaluate_single_bomb_strategy",
+                    side_effect=RuntimeError("injected system error")):
+            rc = q2_main(["--smoke-count", "5", "--seed", "2025",
+                           "--profile", "coarse"])
+        self.assertNotEqual(rc, 0,
+                              f"system_error > 0 时 main 必须返回非零, 实际 {rc}")
+
+    def test_n2_02_main_returns_zero_without_system_errors(self):
+        """默认 smoke 无 system_error 时 main 返回 0."""
+        rc = q2_main(["--smoke-count", "10", "--seed", "2025",
+                       "--profile", "coarse"])
+        self.assertEqual(rc, 0, f"无 system_error 时 main 必须返回 0, 实际 {rc}")
+
+    def test_n2_03_system_errors_do_not_increment_other_counts(self):
+        """system_error 不污染 invalid/pruned/zero/objective 计数."""
+        original = q2.evaluate_single_bomb_strategy
+
+        # 让前 3 个候选抛, 其余正常
+        counter = [0]
+
+        def selective_eval(strategy, **kwargs):
+            counter[0] += 1
+            if counter[0] <= 3:
+                raise RuntimeError("injected for first 3")
+            return original(strategy, **kwargs)
+
+        try:
+            res = q2.run_smoke_on_candidates(
+                list(q2.generate_candidates(10, seed=2025)),
+                profile="coarse", evaluate_fn=selective_eval,
+            )
+        finally:
+            q2.evaluate_single_bomb_strategy = original
+
+        self.assertEqual(res["n_system_error"], 3,
+                          f"应 3 个 system_error, 实际 {res['n_system_error']}")
+        # 其它计数基于未抛的 7 个
+        n_sum = (res["n_valid_ok"] + res["n_valid_zero_window"]
+                  + res["n_invalid"] + res["n_pruned_zero"]
+                  + res["n_system_error"])
+        self.assertEqual(n_sum, 10)
+        # exit_code = 1
+        self.assertEqual(res["exit_code"], 1)
+
+    def test_n2_04_batch_continues_after_system_error(self):
+        """单个候选抛异常后, 后续候选仍被处理."""
+        cands = list(q2.generate_candidates(10, seed=2025))
+        target_idx = 4
+        counter = [0]
+        original = q2.evaluate_single_bomb_strategy
+
+        def selective(strategy, **kwargs):
+            counter[0] += 1
+            if counter[0] == target_idx:
+                raise RuntimeError("injected at index 4")
+            return original(strategy, **kwargs)
+
+        try:
+            res = q2.run_smoke_on_candidates(cands, profile="coarse",
+                                              evaluate_fn=selective)
+        finally:
+            q2.evaluate_single_bomb_strategy = original
+        self.assertEqual(res["n_system_error"], 1)
+        # 10 - 1 = 9 个被成功处理
+        n_sum = (res["n_valid_ok"] + res["n_valid_zero_window"]
+                  + res["n_invalid"] + res["n_pruned_zero"])
+        self.assertEqual(n_sum, 9)
+        self.assertEqual(res["exit_code"], 1)
+
+    def test_n2_05_program_errors_not_in_other_statuses(self):
+        """程序错误不算入 invalid / pruned / zero / objective."""
+        cands = list(q2.generate_candidates(5, seed=2025))
+
+        def always_raise(strategy, **kwargs):
+            raise RuntimeError("always fails")
+
+        res = q2.run_smoke_on_candidates(cands, profile="coarse",
+                                          evaluate_fn=always_raise)
+        self.assertEqual(res["n_system_error"], 5)
+        # 其它计数必须为 0
+        self.assertEqual(res["n_valid_ok"], 0)
+        self.assertEqual(res["n_valid_zero_window"], 0)
+        self.assertEqual(res["n_invalid"], 0)
+        self.assertEqual(res["n_pruned_zero"], 0)
+        self.assertIsNone(res["best"])
+        self.assertEqual(res["exit_code"], 1)
+
+
+# =============================================================================
+#  P1-6 — candidate_source + mixed-batch 8 类测试 (Section 九)
+# =============================================================================
+class PMixedBatchDeterministic(unittest.TestCase):
+    """P1-6: mixed-batch 8 类候选分别独立计数."""
+
+    def test_p01_mixed_batch_eight_categories(self):
+        """显式构造 8 类候选, 验证各 status 独立计数."""
+        import src.q2_single_bomb as q2
+        # 1. 正常合法候选
+        valid_ok = list(q2.generate_candidates(3, seed=2025))
+        # 2. 合法零目标 (heading=+x 远离目标)
+        zero_obj = [SingleBombStrategy(heading_rad=0.0, speed_mps=70.0,
+                                         release_time_s=10.0, delay_s=1.0)]
+        # 3. 速度越界
+        speed_oob = [SingleBombStrategy(heading_rad=math.pi, speed_mps=200.0,
+                                          release_time_s=1.5, delay_s=3.6)]
+        # 4. release_time_s < 0
+        release_neg = [SingleBombStrategy(heading_rad=math.pi, speed_mps=120.0,
+                                            release_time_s=-1.0, delay_s=3.6)]
+        # 5. delay_s < 0
+        delay_neg = [SingleBombStrategy(heading_rad=math.pi, speed_mps=120.0,
+                                          release_time_s=1.5, delay_s=-1.0)]
+        # 6. 明显地下起爆
+        underground = [SingleBombStrategy(heading_rad=math.pi, speed_mps=120.0,
+                                            release_time_s=1.5, delay_s=30.0)]
+        # 7. pruned_zero (valid=True)
+        t_arr = missile_arrival_time()
+        pruned = [SingleBombStrategy(heading_rad=math.pi, speed_mps=120.0,
+                                        release_time_s=t_arr - 0.5,
+                                        delay_s=1.0)]
+        # 8. controlled system_error (通过 inject)
+        sys_err_cand = list(q2.generate_candidates(1, seed=999))
+
+        cands = (valid_ok + zero_obj + speed_oob + release_neg +
+                  delay_neg + underground + pruned + sys_err_cand)
+
+        # 注入: 让最后一个 (sys_err_cand) 抛
+        n = len(cands)
+        counter = [0]
+        original = q2.evaluate_single_bomb_strategy
+
+        def selective(strategy, **kwargs):
+            counter[0] += 1
+            if counter[0] == n:
+                raise RuntimeError("injected system error")
+            return original(strategy, **kwargs)
+
+        q2.evaluate_single_bomb_strategy = selective
+        try:
+            res = q2.run_smoke_on_candidates(cands, profile="coarse",
+                                              evaluate_fn=selective)
+        finally:
+            q2.evaluate_single_bomb_strategy = original
+
+        # 候选来源
+        self.assertEqual(res["candidate_source"], "explicit_mixed_batch")
+        # invalid: speed_oob + release_neg + delay_neg + underground = 4
+        self.assertEqual(res["n_invalid"], 4,
+                          f"应 4 个 invalid, 实际 {res['n_invalid']}")
+        # pruned_zero: 1 个 (pruned)
+        self.assertEqual(res["n_pruned_zero"], 1,
+                          f"应 1 个 pruned_zero, 实际 {res['n_pruned_zero']}")
+        # system_error: 1 个 (sys_err_cand)
+        self.assertEqual(res["n_system_error"], 1,
+                          f"应 1 个 system_error, 实际 {res['n_system_error']}")
+        # success: valid_ok (3) + zero_obj (1) = 4 (status=ok 或 zero_window)
+        n_success = res["n_valid_ok"] + res["n_valid_zero_window"]
+        self.assertEqual(n_success, 4,
+                          f"应 4 个成功, 实际 {n_success}")
+        # 总数 = 4 + 1 + 1 + 4 = 10
+        n_sum = n_success + res["n_invalid"] + res["n_pruned_zero"] \
+                 + res["n_system_error"]
+        self.assertEqual(n_sum, n)
+
+        # pruned_zero 候选必须 valid=True (P1-1)
+        pruned_evs = [e for e in res["evaluations"] if e.status == "pruned_zero"]
+        for ev in pruned_evs:
+            self.assertTrue(ev.valid,
+                              "pruned_zero 必须 valid=True (P1-1)")
+
+        # exit_code = 1 (有 system_error)
+        self.assertEqual(res["exit_code"], 1)
+
+    def test_p02_default_smoke_labels_candidate_source(self):
+        """默认 smoke 的 candidate_source = prevalidated_nonpruned."""
+        res = run_smoke(count=10, seed=2025, profile="coarse")
+        self.assertEqual(res["candidate_source"], "prevalidated_nonpruned")
+        self.assertIn("invalid", res["candidate_source_note"])
+        # 默认 smoke 的 invalid/pruned 必为 0 (输入已预验证)
+        self.assertEqual(res["n_invalid"], 0)
+        self.assertEqual(res["n_pruned_zero"], 0)
+        # 正常无 system_error
+        self.assertEqual(res["n_system_error"], 0)
+        self.assertEqual(res["exit_code"], 0)
+
+
+# =============================================================================
+#  P1-7 — profile_evaluation 结构 + Foundation 性能校准 (Section 十)
+# =============================================================================
+import statistics
+
+
+class QProfileEvaluation(unittest.TestCase):
+    """P1-7: profile_evaluation 结构 + 默认 3 候选 × 3 profile."""
+
+    def test_q01_profile_evaluation_returns_required_fields(self):
+        """profile_evaluation 必须返回规定字段."""
+        res = q2.profile_evaluation(q2.Q1_FIXED_STRATEGY, sample_level="coarse",
+                                      repeat=2, warm_up=True)
+        required = {"sample_level", "scan_step", "repeat", "warm_up",
+                     "samples_reused", "results",
+                     "median_elapsed_s", "min_elapsed_s", "max_elapsed_s",
+                     "first_status", "first_total_duration_s",
+                     "first_n_intervals", "window_length_s"}
+        self.assertTrue(required.issubset(set(res.keys())),
+                          f"缺少字段: {required - set(res.keys())}")
+        # results 长度 = repeat
+        self.assertEqual(len(res["results"]), 2)
+        # median/min/max 与 results 一致
+        ts = [r["elapsed_s"] for r in res["results"]]
+        self.assertAlmostEqual(res["median_elapsed_s"], statistics.median(ts))
+        self.assertEqual(res["min_elapsed_s"], min(ts))
+        self.assertEqual(res["max_elapsed_s"], max(ts))
+        # samples_reused 字段存在
+        self.assertTrue(res["samples_reused"])
+
+    def test_q02_profile_measurement_default_three_candidates(self):
+        """run_profile_measurement 默认 3 个候选 × 3 个 profile = 9 rows."""
+        rows = q2.run_profile_measurement(repeat=2, warm_up=True)
+        self.assertEqual(len(rows), 9)
+        levels = {r["sample_level"] for r in rows}
+        self.assertEqual(levels, {"coarse", "medium", "fine"})
+        # 每个 row 至少有 median_elapsed_s (代表至少一次成功计时)
+        for r in rows:
+            self.assertIn("median_elapsed_s", r)
+
+    def test_q03_repeat_must_be_positive(self):
+        with self.assertRaises(ValueError):
+            q2.profile_evaluation(q2.Q1_FIXED_STRATEGY, sample_level="coarse",
+                                    repeat=0)
+
+    def test_q04_profile_must_be_valid(self):
+        with self.assertRaises(ValueError):
+            q2.profile_evaluation(q2.Q1_FIXED_STRATEGY,
+                                    sample_level="ultrafine", repeat=1)
+
+    def test_q05_resolve_non_zero_neighbor_returns_strategy(self):
+        """_resolve_non_zero_neighbor 必须返回 SingleBombStrategy (或 Q1 兜底)."""
+        s = q2._resolve_non_zero_neighbor()
+        self.assertIsInstance(s, SingleBombStrategy)
+        # 实际验证它产生非零
+        ev = evaluate_single_bomb_strategy(s, sample_level="coarse",
+                                            scan_step=0.05)
+        self.assertGreater(ev.total_duration_s, 0.0,
+                            f"非零邻居必须 objective > 0, 实际 {ev.total_duration_s}")
 
 
 if __name__ == "__main__":
