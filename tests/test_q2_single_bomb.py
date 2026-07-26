@@ -1056,8 +1056,13 @@ class QProfileEvaluation(unittest.TestCase):
         self.assertTrue(res["samples_reused"])
 
     def test_q02_profile_measurement_default_three_candidates(self):
-        """run_profile_measurement 默认 3 个候选 × 3 个 profile = 9 rows."""
-        rows = q2.run_profile_measurement(repeat=2, warm_up=True)
+        """run_profile_measurement 默认 3 个候选 × 3 个 profile = 9 rows.
+
+        repeat=1 是为 CI timeout (workflow unit-tests 25 min) 留余量.
+        结构断言 (len==9, levels={coarse,medium,fine}, median 字段存在)
+        与 repeat 数无关.
+        """
+        rows = q2.run_profile_measurement(repeat=1, warm_up=True)
         self.assertEqual(len(rows), 9)
         levels = {r["sample_level"] for r in rows}
         self.assertEqual(levels, {"coarse", "medium", "fine"})
