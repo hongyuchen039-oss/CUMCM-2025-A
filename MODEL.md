@@ -18,7 +18,7 @@
 每完成一问需在 `RESULTS.md` 记录数值与单位，并按"PLAN/WORKING/VERIFIED/REVIEW/FIX"
 流程更新同一任务的 Draft PR。
 
-## 当前可能采用的总体建模路线（**未冻结**）
+## 当前可能采用的总体建模路线（方案 A 与方案 B 均已实现, 方案 B 在 PR #3 等待审核冻结）
 
 ### 统一坐标系
 - 假目标为原点 (0, 0, 0)，水平面 xy，z 向上。
@@ -58,17 +58,15 @@
 - 满足上述条件即判定 t 时刻有效遮蔽。
 - **作用**：运动学对拍、几何与时序自洽性验证、Q1 数值基线。
 
-#### 方案 B：完整圆柱正式模型（**TASK_001 不冻结阈值**）
+#### 方案 B：完整圆柱正式候选 (FULL-CYLINDER CANDIDATE / EXPERIMENTAL)
 
 - 目标：考虑导弹对真目标圆柱可见表面或可见轮廓的视线集合，
   评估烟幕云团对这些视线的遮挡程度。
-- 当前 TASK_001 只冻结研究框架，不冻结最终阈值：
-  - 不得使用"任一视线被挡"作为有效遮蔽条件；
-  - 后续候选包括：
-    a. 严格遮蔽：全部选定可见轮廓视线均被烟幕遮挡；
-    b. 覆盖比例：被遮挡的可见轮廓采样点比例达到阈值；
-  - 阈值、采样方式和收敛标准在正式启用完整圆柱模型前冻结；
-  - 必须进行采样密度或数值收敛性验证。
+- 方案 A 点目标基线与方案 B 完整圆柱正式候选均已实现。
+  方案 B 当前处于 FULL-CYLINDER CANDIDATE / EXPERIMENTAL，
+  等待 PR #3 外部审核与合并；
+  合并后才正式冻结并允许进入 TASK_004。
+- 候选冻结的方案 B 几何、采样、判据与收敛标准见下文 "完整圆柱遮蔽正式候选" 章节。
 
 #### 项目路线
 
@@ -108,11 +106,161 @@
 - Q2/Q3/Q4/Q5 中"投放策略"是否包括时序（投放时刻、起爆时刻）（各 Q 任务内决定）。
 
 ## 局限
-- 当前阶段仅跑出 Q1 方案 A 点目标基线 (BASELINE / EXPERIMENTAL)；
-  完整圆柱 (方案 B) 尚未实现。
-- Q1 仅验证了一组参数，未与外部标准解对比。
-- 在完整圆柱模型实现并通过 Q2 之前, Q1 结果**不能**标为 VERIFIED 或 FINAL。
-- 方案 B 的解析实现细节待 Q2 启动前敲定。
+- 方案 A Q1 点目标基线与方案 B 完整圆柱正式候选均已实现。
+- 方案 B 当前处于 FULL-CYLINDER CANDIDATE / EXPERIMENTAL,
+  等待 PR #3 外部审核与合并; 合并后才正式冻结并允许进入 TASK_004.
+- Q1 仅验证了一组参数,未与外部标准解对比.
+- 在 PR #3 合并之前, 方案 B 结果**不能**标为 VERIFIED 或 FINAL.
+
+---
+
+## 完整圆柱遮蔽正式候选 (FULL-CYLINDER CANDIDATE / EXPERIMENTAL)
+
+> 已在 `src/q1_cylinder.py` 实现，并通过 `tests/test_q1_cylinder.py` 的 75 个本地单元测试
+> (A-L 共 12 组, 含 2 个收敛失败路径测试) 验证。
+> 本节固定 Q2 启动前必须冻结的方案 B 几何、采样、判据与收敛标准;
+> 当前层级为候选 (CANDIDATE), 待 PR #3 审核通过后正式冻结。
+
+### 1. 真目标几何 (复用 FACTS.md §11)
+
+- 圆柱 K = {(x, y, z) | x² + (y−200)² ≤ 49, 0 ≤ z ≤ 10}
+- R_T = 7 m, H_T = 10 m, 轴沿 +z, 下底面圆心 = (0, 200, 0), 几何中心 = (0, 200, 5)
+- 闭集, 凸集 (后续可见性测试基于此)
+
+### 2. 显式假设 (必须保留为 [假设])
+
+- 真目标为凸圆柱, 可见性采用支持平面判定:
+  表面点 X 在 t 时刻可见 ⇔ n(X) · (M(t) − X) >= -EPS_VISIBLE
+  (n 为单位外法向, EPS_VISIBLE = 1e-9 用于吸收浮点误差)
+- 公共棱边不直接采样, 而由相邻侧面与端面单元中心随网格加密逼近
+- 闭线段距离精确化 (point_to_segment_distance), 不使用延长线投影
+- 严格遮蔽主判据: 所有当前可见表面采样点的视线均被烟幕球体相交
+- 覆盖率仅作辅助诊断, **不**作为正式通过/不通过的判据 (避免人造阈值)
+
+### 3. 采样方法 (单元中心法)
+
+| 等级 | 侧面 (n_θ × n_z) | 端面 (n_r × n_cap_θ) | 总样本数 |
+|---|---|---|---|
+| coarse | 48 × 8 | 4 × 48 | 768 |
+| medium | 96 × 16 | 8 × 96 | 3072 |
+| fine | 192 × 32 | 16 × 192 | 12288 |
+
+- **侧面**: θ_j = 2π(j+0.5)/n_θ, z_k = H_T·(k+0.5)/n_z
+  - x = R_T·cos(θ), y = 200 + R_T·sin(θ), z ∈ (0, H_T) 严格
+  - 法向 n = (cos θ, sin θ, 0) (单位)
+  - 单元面积 w_side = 2π·R_T·H_T / (n_θ·n_z)
+- **端面** (顶 z=H_T 与底 z=0):
+  - 径向 r_i = R_T·√((i+0.5)/n_r), θ_j 同上
+  - 顶法向 (0, 0, 1), 底法向 (0, 0, −1)
+  - 单元面积 w_cap = π·R_T² / (n_r·n_cap_θ)
+- 单元中心严格在 (0, R_T) 与 (0, H_T) 内部, **不**包含侧面/端面公共棱边
+- 总权重和 = 2π·R_T·H_T + 2π·R_T² = 真圆柱表面积 (≤ 1e-8 精度)
+
+### 4. 可见性
+
+```
+n(X) · (M(t) − X) >= -EPS_VISIBLE   →  X 在 t 时刻可见
+```
+
+EPS_VISIBLE = 1e-9 仅用于吸收浮点误差, 不构成轮廓收紧.
+切线轮廓邻域 (score ≈ 0) 一律视为可见; 严格遮蔽不应通过
+排除轮廓样本而变得更容易.
+
+### 5. 遮挡
+
+```
+d_X(t) := min {|C(t) − (1−λ)·M(t) − λ·X| : λ ∈ [0, 1]}  (闭线段距离)
+X 在 t 时刻被遮蔽 ⇔ d_X(t) ≤ R_cloud = 10
+```
+
+闭线段距离实现见 `src/q1_baseline.point_to_segment_distance`. 参数 λ 必须 ∈ [0, 1],
+延长线投影需 clamp 到端点.
+
+### 6. 严格遮蔽主判据
+
+```
+strict_margin(t) := R_cloud − max{ d_X(t) : X ∈ 可见表面采样集(t) }
+strict_occlusion(t) := strict_margin(t) ≥ 0
+```
+
+边界函数: `f_cylinder(t) := max_visible_distance(t) − R_cloud`.
+f_cylinder(t) ≤ 0 ⇔ t 时刻严格遮蔽.
+
+### 7. 覆盖率 (辅助诊断)
+
+```
+coverage_ratio(t) := Σ{ w_X : X 可见 且 d_X(t) ≤ R_cloud }
+                    / Σ{ w_X : X 可见 }
+```
+
+- 严格遮蔽 ⇒ coverage_ratio = 1
+- 非严格时, coverage_ratio ∈ [0, 1)
+- 当前**不**使用 coverage 阈值做判据
+
+### 8. 时间区间算法 (复用)
+
+```
+find_strict_intervals(samples, scan_step=0.01)
+  ↓
+注入 boundary_func = strict_boundary_value 到 q1_baseline.find_effective_intervals
+```
+
+复用现有扫描 + 二分求根. 仅替换 boundary_func, 其余时序与扫描参数不变.
+
+### 9. 数值收敛标准 (本轮 FIX 之后真实执行, 通过标准从代码常量读出)
+
+- 空间: medium vs fine 区间数必须一致; 总时长差 ≤ SPATIAL_THR_TOTAL = 0.02 s;
+  起点差 ≤ SPATIAL_THR_START = 0.01 s; 终点差 ≤ SPATIAL_THR_END = 0.01 s;
+  max_coverage 差 ≤ SPATIAL_THR_COVERAGE = 0.005;
+  max_margin 差 ≤ SPATIAL_THR_MARGIN = 0.10 m
+- 时间: 0.02 / 0.01 / 0.005 s 三档 n_intervals 一致;
+  起点差 ≤ TEMPORAL_THR_START = 0.01 s;
+  终点差 ≤ TEMPORAL_THR_END = 0.01 s;
+  总时长差 ≤ TEMPORAL_THR_TOTAL = 0.01 s
+- 区间端点残差: max |f_cylinder(b)| ≤ SPATIAL_THR_RESIDUAL = TEMPORAL_THR_RESIDUAL = 1e-4
+- 真实执行函数: `check_spatial_convergence`, `check_temporal_convergence`,
+  返回 `passed=True/False` 与失败原因列表; main() 在任一不通过时返回 2
+
+### 10. 当前结果 (FULL-CYLINDER CANDIDATE / EXPERIMENTAL, 本轮 FIX 后重跑)
+
+| 量 | 值 |
+|---|---|
+| 方案 A 点目标总时长 | 1.435082 s |
+| 方案 B 完整圆柱总时长 (fine) | 1.392384 s |
+| 方案 B 遮蔽区间 (fine) | (8.055704, 9.448088) s |
+| ΔT (B − A) | −0.042698 s |
+| 相对差异 | −2.975% |
+| ρ_max (覆盖率峰值) | 1.000 |
+| ρ=1 平台 (DIAG_STEP=0.01 s 诊断网格) | 约为 (8.06, 9.44) s, 网格区间跨度 1.380 s |
+| SVG_STEP=0.05 s 绘图网格首次采到 ρ=1 | t ≈ 8.100 s (仅用于 SVG 绘图, 不作为平台精确起点) |
+| margin_max (严格裕量峰值, 0.001 s 局部网格估计) | 5.282478 m @ t = 9.418317 s (SVG 网格峰值附近 ±0.05 s 局部网格估计, 非解析极值) |
+| 空间 coarse/medium/fine 总时长 | 1.394606 / 1.393131 / 1.392384 s |
+| 时间 0.02/0.01/0.005 s 总时长 (medium) | 1.393131 / 1.393131 / 1.393131 s |
+| 时间收敛 max \|f(b)\| (medium 采样, 三档) | 1.03e-06 (≤ 1e-4 通过) |
+| 空间收敛 max \|f(b)\| medium/fine | 1.03e-06 / 1.03e-06 (≤ 1e-4 通过) |
+| 时间收敛汇总 | PASS |
+| 空间收敛汇总 | PASS |
+
+### 11. 局限
+
+- 单元中心法仍是有限采样近似 (12288 样本 fine), 不解析化
+- 不考虑导弹在大入射角下对圆柱的轮廓遮挡几何 (本题远距离下不触发)
+- 不引入覆盖率阈值作为正式判据 (避免人造阈值, 由严格遮蔽唯一决定)
+- 严格遮蔽仍标记为 FULL-CYLINDER CANDIDATE / EXPERIMENTAL, 不得冒充 VERIFIED / FINAL
+- 等级仅在 PR #3 合并且外部审核通过后才能升级到 VERIFIED
+- Q2 启动前, 必须复用本节的 strict_boundary_value 作为优化目标
+
+### 12. 本轮 FIX 变更 (不改数学结论)
+
+| 变更 | 旧 | 新 | 影响 |
+|---|---|---|---|
+| 可见性边界 | `score > eps` | `score >= -eps` | 切线轮廓邻域不再被排除, 严格遮蔽区间可能略缩短或不变 (本实测 fine 总时长 = 1.392384 s 不变) |
+| 空可见集 | 返回 `max_visible_distance=inf` 等 sentinel | 时间窗内显式 `raise ValueError`, 时间窗外仍返回 sentinel | 异常路径更明确, 防止 "0 可见 + inf 距离 = 偶然通过严格判据" |
+| 收敛判定 | 仅为占位 `passed=True` | 真实执行阈值 (SPATIAL_THR_*, TEMPORAL_THR_*), 输出失败原因, main() 返回 2 表示失败 | 保证 main() 退出码反映真实收敛状态 |
+| 几何/时序拆分 | 单函数同时读全局轨迹 | 纯几何 `evaluate_occlusion_geometry` + 时序包装 `evaluate_cylinder_state`, Q2 可注入新轨迹 | Q2/Q3/Q4/Q5 可直接复用 |
+| 单元测试数量 | 46 测 (A-J) | 75 测 (A-L, 含 K margin/plateau, L 几何 API 输入校验, +2 个收敛失败路径) | 覆盖更全 (含新加的合成几何、注入轨迹、连通性、可视化边界、失败路径) |
+| margin 报告精度 | 只在 SVG 0.05 s 网格上 | 0.001 s 局部网格估计, 报告 (max_margin, max_margin_t) | margin_max 从 5.266 m @ 9.420 s (SVG 网格) → 5.282478 m @ 9.418317 s (0.001 s 局部网格估计, 非解析极值) |
+| coverage 平台 | 单独声明 ρ=1 | 实测 `coverage_plateau` 函数报告 (8.06, 9.44) 共 1.380 s | 报告 ρ=1 真实持续时长 |
 
 ---
 
@@ -145,7 +293,8 @@
 - 忽略空气阻力、风场、烟幕弹旋转等外部扰动 (FACTS.md §12 [假设])
 - 起爆后立即以 3 m/s 下沉, 起始时间为 t_detonate (FACTS.md §15 [假设])
 - 投放与起爆时间视为理想时序, 无误差 (FACTS.md §15 [假设])
-- 遮蔽判定仅用方案 A 点目标代表点 P=(0,200,5), 不实施完整圆柱几何
+- 遮蔽判定仅用方案 A 点目标代表点 P=(0,200,5);
+  完整圆柱几何另在 src/q1_cylinder.py 中实现, 与本基线对照
 
 ### 3. 核心公式
 
@@ -190,9 +339,10 @@
 
 ### 5. 局限
 
-- 仅方案 A 点目标基线, 方案 B 完整圆柱正式模型未实现
+- 方案 B 完整圆柱正式候选已实现, 但仍标记为 FULL-CYLINDER CANDIDATE / EXPERIMENTAL,
+  等待 PR #3 外部审核与合并; 合并后才能正式冻结并允许进入 TASK_004
 - 只验证 Q1 一组参数, 未与外部标准解对比
 - 等级仅 BASELINE / EXPERIMENTAL, **不能**升级为 VERIFIED 或 FINAL,
-  除非 Q2 启动前完成完整圆柱模型并对照差异
+  除非 PR #3 合并且外部审核通过
 - 重力 g=9.8 与 9.80665 标准值差异未量化
 - 风场、云团水平漂移、起爆时序误差均按 §15 假设忽略
