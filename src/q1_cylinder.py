@@ -773,7 +773,8 @@ def refine_margin_max(samples: Sequence[SurfaceSample],
     """在 [t_approx - half_window, t_approx + half_window] 上以 step 加密扫描
     严格遮蔽裕量, 返回 (max_margin, max_margin_t).
 
-    用于报告真实连续时间最大值, 不只是 SVG 0.05 s 网格上的采样值.
+    用于报告更细局部网格估计值 (step=0.001 s), 不只是 SVG 0.05 s 网格上的采样值.
+    注意: 这是离散局部网格上的最大值, 不是解析连续极值.
     """
     a = max(window_start, t_approx - half_window)
     b = min(window_end, t_approx + half_window)

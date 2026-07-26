@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import copy
 import math
 import os
 import sys
@@ -635,6 +636,34 @@ class HSpatialConvergence(unittest.TestCase):
             self.assertLessEqual(res["per_grade"][grade]["max_residual"],
                                   SPATIAL_THR_RESIDUAL)
 
+    def test_h09_check_spatial_can_fail(self):
+        # 使用 deepcopy 构造被破坏的空间收敛结果, 不修改真实数据.
+        # 触发: 人为令 fine.total_duration 比 medium 大很多,
+        #      超过 SPATIAL_THR_TOTAL.
+        real_res = run_spatial_convergence(scan_step=DIAG_STEP)
+        bad = copy.deepcopy(real_res)
+        medium_total = bad["per_grade"]["medium"]["total_duration"]
+        # 把 fine 总时长抬高到超过 SPATIAL_THR_TOTAL + 一个明显余量.
+        delta = SPATIAL_THR_TOTAL + 0.5
+        bad["per_grade"]["fine"]["total_duration"] = medium_total + delta
+        # 同步区间终点变化避免 start/end 触发其他原因, 但保留 total 失败.
+        # 起点终点差: 拉高 fine 区间长度, 用终点往后挪 half_delta.
+        ivs = bad["per_grade"]["fine"]["intervals"]
+        if ivs:
+            a, b = ivs[0]
+            new_b = b + delta
+            bad["per_grade"]["fine"]["intervals"] = [(a, new_b)]
+
+        check = check_spatial_convergence(bad)
+        self.assertFalse(check["passed"],
+                          msg="人为破坏空间收敛应返回 passed=False")
+        self.assertTrue(len(check["reasons"]) > 0,
+                         msg=f"应至少有一条失败原因: {check['reasons']}")
+        # 真实数据未受影响
+        real_check = check_spatial_convergence(real_res)
+        self.assertTrue(real_check["passed"],
+                         msg=f"真实数据仍应通过: {real_check['reasons']}")
+
 
 # =============================================================================
 #  I 组 — 时间收敛 (多区间支持)
@@ -680,6 +709,48 @@ class ITemporalConvergence(unittest.TestCase):
             boundary_func=bf,
         )
         self.assertEqual(len(ivs), 2)
+
+    def test_i06_check_temporal_can_fail(self):
+        # 使用 deepcopy 构造被破坏的时间收敛结果, 不修改真实数据.
+        # 触发方式 1: 将一个步长的 max_residual 抬高到远超 TEMPORAL_THR_RESIDUAL.
+        samps = generate_cylinder_samples(**SAMPLE_GRADES["medium"])
+        real_res = run_temporal_convergence(samps)
+        bad = copy.deepcopy(real_res)
+        # 选第一个 step, 把它的 max_residual 抬高到远大于 TEMPORAL_THR_RESIDUAL
+        first_step = next(iter(bad["per_step"].keys()))
+        bad["per_step"][first_step]["max_residual"] = TEMPORAL_THR_RESIDUAL * 1e3
+
+        check = check_temporal_convergence(bad)
+        self.assertFalse(check["passed"],
+                          msg="人为破坏时间收敛应返回 passed=False")
+        self.assertTrue(len(check["reasons"]) > 0,
+                         msg=f"应至少有一条失败原因: {check['reasons']}")
+
+        # 触发方式 2: 把一个区间起点挪到比另一档起点早很多, 超过 TEMPORAL_THR_START
+        bad2 = copy.deepcopy(real_res)
+        steps = list(bad2["per_step"].keys())
+        if len(steps) >= 2:
+            sa, sb = steps[0], steps[1]
+            ivs_a = bad2["per_step"][sa]["intervals"]
+            ivs_b = bad2["per_step"][sb]["intervals"]
+            if ivs_a and ivs_b:
+                a_old, _ = ivs_a[0]
+                b_old, _ = ivs_b[0]
+                # 把 sa 的起点往前挪很多, 使 |a - b| 超过 TEMPORAL_THR_START
+                shift = TEMPORAL_THR_START + 0.5
+                new_a = a_old - shift
+                bad2["per_step"][sa]["intervals"] = [(new_a, ivs_a[0][1])]
+                # 不修改 sb
+            check2 = check_temporal_convergence(bad2)
+            self.assertFalse(check2["passed"],
+                              msg="人为平移区间起点应使时间收敛失败")
+            self.assertTrue(len(check2["reasons"]) > 0,
+                             msg=f"应至少有一条失败原因: {check2['reasons']}")
+
+        # 真实数据未受影响
+        real_check = check_temporal_convergence(real_res)
+        self.assertTrue(real_check["passed"],
+                         msg=f"真实数据仍应通过: {real_check['reasons']}")
 
 
 # =============================================================================
