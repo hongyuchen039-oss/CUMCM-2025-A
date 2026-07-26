@@ -1,11 +1,20 @@
 # 项目驾驶舱
 
 ## 当前阶段
-**TASK_003 完整圆柱遮蔽判定候选与 Q1 对照 (FULL-CYLINDER CANDIDATE / EXPERIMENTAL)** —
-完整圆柱正式候选已实现, 与 Q1 点目标基线对照完成, 等待审核冻结。
-等 PR #3 合并后才正式冻结并允许进入 TASK_004。
+**TASK_004 FOUNDATION (Q2 单弹评估器基础, NOT AN OPTIMIZATION RESULT)** —
+Q2 单弹策略四变量合同、合法性判断、单候选完整圆柱评估器与 100 候选
+本地 smoke 已实现, 通过 49 个本地单元测试; 现有 Q1 几何冻结保持不变
+(42 + 75 = 117 个回归测试全过).
+正式 Q2 搜索尚未启动. PR #3 / PR #4 均已合并; CI 已进入 main.
 
-## 本轮交付物
+## 本轮交付物 (TASK_004 Foundation)
+- `src/q2_single_bomb.py` — Q2 单弹评估器主程序 (Python 标准库, 复用 q1_baseline 与 q1_cylinder)
+- `tests/test_q2_single_bomb.py` — 单元测试 (49 测, 14 组 A-N, 全过)
+- `MODEL.md` — 增加"Q2 单弹策略评估合同"章节 (§ 4 变量 / 运动学 / 合法性 / 评估窗口 / 复用接口)
+- `NEXT_TASK.md` — 更新为 TASK_004 Foundation + 下一阶段 TASK_004 Search
+- `README.md` — 同步当前阶段
+
+## 本轮交付物 (历史: TASK_003, 等待 TASK_004 Search 接续)
 - `src/q1_cylinder.py` — 主程序 (Python 标准库, 仅复用 q1_baseline)
 - `tests/test_q1_cylinder.py` — 单元测试 (75 测, 12 组 A-L, 全过, 含 2 个失败路径测试)
 - `outputs/q1/q1_cylinder_comparison.svg` — x-z 投影 + 时间对照图 (`os.path.getsize` = 78857 字节 ≈ 77 KB)
@@ -83,16 +92,22 @@
 
 ## 下一任务 (本轮已唯一固定)
 
-**TASK_004: Q2 单弹最优策略** — 仅在 PR #3 合并且审核通过后启动.
+**TASK_004 Foundation 已完成** — 等 PR 审核合并.
 
 任务目的:
-- FY1 → M1 单弹最优化 (决策量: 航向, 速度, 投放点, 起爆点)
-- 优化目标: 完整圆柱严格遮蔽总时长 (方案 B 候选模型, PR #3 合并后正式冻结)
-- 起点: TASK_003 严格遮蔽边界函数 strict_boundary_value(t)
-- 输出: result1.xlsx 之前, 先冻结搜索算法与收敛标准
+- 仅建立四变量合同、合法性、单候选评估器与 smoke, **不**启动搜索
+- 现有 Q1 几何冻结保持不变 (42 + 75 = 117 个回归测试全过)
 
-不得在本轮启动 TASK_004. 完整圆柱候选审核通过 + PR #3 合并后, 才能进入 Q2 单弹优化.
+下一阶段: **TASK_004 Search** (尚未启动), 进入条件:
+- Foundation PR 审核并合并
+- CI 持续 PASS
+- 本地 Foundation smoke 性能已记入下一阶段预算
+- 搜索算法 / 收敛标准 / 性能预算重新冻结
+- 仍需外部授权才能启动 Search
+
+不得在本轮启动 TASK_004 Search.
+不得提前切换任何分支或 PR.
 
 ## 下一步只做一件事
-本轮完成 → 等 PR #3 合并 → 进入 TASK_004.
+本轮完成 → 等 Foundation PR 审核 → 等待授权后再进入 TASK_004 Search.
 不得提前切换任何分支或 PR.

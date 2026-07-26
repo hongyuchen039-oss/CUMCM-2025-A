@@ -346,3 +346,111 @@ find_strict_intervals(samples, scan_step=0.01)
   除非 PR #3 合并且外部审核通过
 - 重力 g=9.8 与 9.80665 标准值差异未量化
 - 风场、云团水平漂移、起爆时序误差均按 §15 假设忽略
+
+---
+
+## Q2 单弹策略评估合同 (TASK_004 FOUNDATION / NOT AN OPTIMIZATION RESULT)
+
+> 已在 `src/q2_single_bomb.py` 实现, 通过 `tests/test_q2_single_bomb.py` 49 个本地单元测试验证.
+> 本节固定 TASK_004 Search 启动前必须确认的合同.
+> 当前层级为 FOUNDATION (基础评估器), 尚未启动正式 Q2 搜索.
+> 等级: **TASK_004 FOUNDATION / NOT AN OPTIMIZATION RESULT**, 不得冒充 Q2 VERIFIED / FINAL.
+
+### 1. 决策变量: 4 个独立变量 (Section 五)
+
+- `heading_rad` / θ: 归一化到 [0, 2π)
+  - θ=0: +x; θ=π/2: +y; θ=π: -x; 角度逆时针为正
+  - 方向向量由 heading 推导: `u(θ) = (cosθ, sinθ, 0)` (不得独立储存)
+- `speed_mps` / v: 70 ≤ v ≤ 140 (**[官] FACTS.md §9**, 含端点)
+- `release_time_s` / t_release: t_release ≥ 0 (**[约定]**, 项目边界; 允许 t_release = 0)
+- `delay_s` / δ: δ ≥ 0 (**[约定]**, 项目边界; 允许 δ = 0)
+
+**不得重复参数化**: 飞行方向向量 / 投放点 / 起爆时刻 / 起爆点 / 云团轨迹均由上述 4 个变量推导.
+
+### 2. 运动学公式 (Section 六, 与 src/q1_baseline 一致)
+
+- FY1 初始位置: F0 = (17800, 0, 1800) (**[官] FACTS.md §8**)
+- FY1 速度: v_FY1 = v · u(θ) = (v cosθ, v sinθ, 0) (等高度直线)
+- FY1 位置: F(t) = F0 + v_FY1 · t
+- 投放点 (推导): R = F(t_release)
+- 烟幕弹初速 = FY1 当时速度 (**[假设] FACTS.md §15**: 投放瞬间共速)
+- 起爆时刻 (推导): t_d = t_release + δ
+- 起爆点 (推导): D = R + v δ u + (0, 0, -0.5 g δ²)
+  等价形式: D = F0 + v (t_release + δ) u + (0, 0, -0.5 g δ²)
+  (两种形式须由测试证明一致)
+- 重力加速度: g = 9.8 m/s² (**[假设] FACTS.md §15**, 方向 -z)
+- 云团中心 (t ≥ t_d): C(t) = D + (0, 0, -3(t - t_d))
+- 云团半径 R_cloud = 10 m, 有效持续 20 s (**[官] FACTS.md §10**)
+- 忽略: 风, 空气阻力, 水平漂移, 地面反弹, 云团形变, 触地后自动失效
+  (均按 FACTS.md §15 [假设] 处理)
+
+### 3. 候选合法性 (Section 七)
+
+**A. 物理/合同非法 (status = "invalid", 不评估)**:
+- 任意变量非有限数 (NaN / Inf)
+- speed_mps ∉ [70, 140]
+- release_time_s < 0
+- delay_s < 0
+- 起爆点 z < 0 (允许 z = 0)
+
+**B. 合法但目标值为 0 的候选**:
+- 评估窗口为空 (window_end ≤ window_start)
+- 整个窗口内严格遮蔽始终不成立
+- t_detonate = t_arrival (search-domain 边界)
+
+**C. 搜索域无损截断 (status = "pruned_zero")**:
+- 条件: t_detonate > t_arrival
+- 含义: 起爆晚于 M1 到达假目标, 对到达前遮蔽目标没有正收益, 搜索时无损排除
+- 文档约束: **不得写成"题目禁止晚于到达时刻起爆"**
+
+**D. 程序错误 (必须向上传播, 不得吞掉)**:
+- 几何函数合同错误 (空可见集 ValueError 等)
+- 参数类型编程错误 (非数值 scan_step, sample_level 不在 SAMPLE_GRADES 等)
+- 内部断言失败 / 代码 bug / 意外 I/O
+
+策略评估 (`evaluate_single_bomb_strategy`) 仅 try 评估阶段异常 (空可见集等),
+这些异常**不**被吞掉, 直接传播. Smoke CLI (`run_smoke`) 在外层捕获以计数.
+
+### 4. 评估窗口与目标函数 (Section 八)
+
+- 窗口起点: t_start = t_detonate
+- 窗口终点: t_end = min(t_detonate + 20, t_arrival)
+  当 t_end ≤ t_start 时, 目标值为 0 (合法)
+- 严格遮蔽判据: 复用 `src/q1_cylinder.strict_boundary_value`
+  `f_cylinder(t) ≤ 0 ⇔ t 时刻严格遮蔽`
+- 严格遮蔽区间: 复用 `src/q1_cylinder.find_strict_intervals`
+- 区间必须按起点升序, 无重叠, 不产生负长度, 限制在评估窗口内
+- 正式目标: `J = measure(union(I_1, I_2, ..., I_k))`
+  **不得**只保留最长区间; **不得**以 coverage 阈值代替严格遮蔽判据
+
+### 5. 复用 TASK_003 完整圆柱 (Section 十)
+
+- 通过回调注入, **不**复制一份新的圆柱几何实现:
+  - `samples`: 复用 `src/q1_cylinder.generate_cylinder_samples`
+  - `missile_position_fn`: 默认 `missile_position` (Q1 trajectory)
+  - `cloud_center_fn`: 由 `make_cloud_center_fn(strategy, D)` 生成的闭包
+  - `window_start`, `window_end`, `scan_step`: 显式传入
+- 不修改 `src/q1_cylinder.py` 即可工作 (`evaluate_single_bomb_strategy` 直接
+  调 `find_strict_intervals`, 全部参数用关键字传入)
+- 现有 75 个 Q1 cylinder 单元测试 + 42 个 Q1 baseline 测试保持全过
+- Q1 数值结果与冻结候选**不**变化
+
+### 6. 当前局限 (本轮 Foundation, 不得隐去)
+
+- 只实现单候选评估器; **尚未实现搜索算法** (网格 / 局部 / 全局)
+- **未启动 Q2 优化**; 本轮 100 个候选 smoke 中的临时最高 objective = 0 (随机策略
+  难产生遮蔽区间, 这是预期的, **不**代表最终 Q2 结果)
+- 不修改 TASK_003 几何核心; 不修改官方原题; 不修改重参数化
+- 不声称全局最优, 不写 `result1.xlsx`, 不进 RESULTS.md 正式数值表
+- 等级仅 FOUNDATION, Search 后才可推进到 EXPERIMENTAL, 再到 VERIFIED, 最后到 FINAL
+
+### 7. 本轮唯一入口与建议下一步
+
+- 主程序: `python -m src.q2_single_bomb --smoke-count 100 --seed 2025 --profile coarse`
+- 单元测试: `python -m unittest tests.test_q2_single_bomb -v`
+- 全部测试: `python -m unittest discover -s tests -p "test_*.py" -v`
+- 进入 **TASK_004 Search** 的条件:
+  1. Foundation PR 审核并合并
+  2. CI 持续 PASS
+  3. 本地 Foundation smoke 性能已记入下一阶段预算
+  4. 搜索算法 / 收敛标准 / 性能预算重新冻结
