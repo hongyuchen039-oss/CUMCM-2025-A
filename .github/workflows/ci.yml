@@ -1,0 +1,80 @@
+name: Python CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    name: Python unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Show environment
+        run: |
+          python --version
+          git status --short
+
+      - name: Compile Python sources
+        run: |
+          python -m py_compile src/q1_baseline.py
+          python -m py_compile src/q1_cylinder.py
+
+      - name: Run unit tests
+        run: |
+          python -m unittest discover -s tests -p "test_*.py" -v
+
+  smoke-test:
+    name: Q1 cylinder smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Run Q1 cylinder smoke test
+        run: |
+          python -m src.q1_cylinder /tmp/q1_cylinder_comparison.svg
+          test -s /tmp/q1_cylinder_comparison.svg
+
+      - name: Validate generated SVG
+        run: |
+          python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+
+          path = "/tmp/q1_cylinder_comparison.svg"
+          if not os.path.isfile(path):
+              raise SystemExit("SVG file was not created")
+          if os.path.getsize(path) <= 0:
+              raise SystemExit("SVG file is empty")
+
+          root = ET.parse(path).getroot()
+          if not root.tag.endswith("svg"):
+              raise SystemExit("Generated file is not an SVG")
+
+          print(f"SVG validated: {path}, {os.path.getsize(path)} bytes")
+          PY

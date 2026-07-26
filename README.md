@@ -12,8 +12,13 @@
 - [problem/FACTS.md](./problem/FACTS.md) — 官方题目事实
 
 ## 状态
-- TASK_003 完整圆柱遮蔽判定候选已实现, 与 Q1 对照完成, PR #3 audit-fix 已更新,
-  完整圆柱正式候选等待审核冻结; PR #3 合并后才允许进入 TASK_004
+
+CI：GitHub Actions 自动运行 Python 编译、单元测试与 Q1 smoke test。
+
+- TASK_003 完整圆柱遮蔽判定已完成审核并通过 PR #3 合并
+- 完整圆柱模型合同已经冻结，可供 TASK_004 复用
+- 数值结果仍保留 FULL-CYLINDER CANDIDATE / EXPERIMENTAL，不得冒充最终比赛答案
+- TASK_004 尚未启动
 - 数学模型: 方案 A (点目标基线) + 方案 B (完整圆柱严格遮蔽, FULL-CYLINDER CANDIDATE)
   均已实现并对照
 - 数值结果 (本轮 FIX 后实测):
