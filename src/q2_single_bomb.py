@@ -257,8 +257,9 @@ def make_cloud_center_fn(strategy: SingleBombStrategy, d: Vec) -> TrajFn:
 # =============================================================================
 #  Section 七: 候选合法性
 # =============================================================================
-def validate_strategy(strategy: SingleBombStrategy) -> Tuple[bool, str]:
-    """物理/合同无效检查.
+def validate_strategy(strategy: SingleBombStrategy,
+                      u0: Vec = U0) -> Tuple[bool, str]:
+    """物理/合同无效检查 (基于实际评估所用的 u0).
 
     Returns:
         (valid, reason). True if valid; reason 描述非法原因.
@@ -269,6 +270,9 @@ def validate_strategy(strategy: SingleBombStrategy) -> Tuple[bool, str]:
         z < -EPS_GROUND  -> invalid (浮点容差不足以解释的负 z)
         z in [-EPS_GROUND, 0) -> valid (浮点舍入, 评估时规范化为 0)
         z >= 0           -> valid
+
+    u0 必须使用与 evaluate_single_bomb_strategy 实际传入的同一值,
+    以保证合法性判断与实际评估的几何上下文一致 (P1-1).
     """
     s = strategy
     if not all(math.isfinite(getattr(s, f)) for f in
@@ -280,8 +284,8 @@ def validate_strategy(strategy: SingleBombStrategy) -> Tuple[bool, str]:
         return False, f"release_time_s={s.release_time_s} < 0"
     if s.delay_s < 0.0:
         return False, f"delay_s={s.delay_s} < 0"
-    # 起爆高度 z 三区分类 (见 classify_detonation_z 合同)
-    d = detonation_point(s)
+    # 起爆高度 z 三区分类 (使用实际 u0, P1-1)
+    d = detonation_point(s, u0)
     z_valid, z_reason, _ = classify_detonation_z(d[2])
     if not z_valid:
         return False, z_reason
@@ -310,7 +314,7 @@ def evaluate_single_bomb_strategy(
         t_arrival: 可选, 导弹到达假目标的时刻 (默认实时计算)
 
     Returns:
-        SingleBombEvaluation (status 在 invalid / pruned_zero / zero_window / valid 之间)
+        SingleBombEvaluation (status ∈ {invalid, pruned_zero, zero_window, ok})
     """
     t0 = time.perf_counter()
 
@@ -322,8 +326,8 @@ def evaluate_single_bomb_strategy(
     if scan_step <= 0:
         raise ValueError(f"scan_step 必须 > 0, 实际 {scan_step}")
 
-    # 2. 策略合法性
-    valid, reason = validate_strategy(strategy)
+    # 2. 策略合法性 (使用实际 u0, P1-1)
+    valid, reason = validate_strategy(strategy, u0=u0)
     if not valid:
         elapsed = time.perf_counter() - t0
         try:
@@ -338,14 +342,27 @@ def evaluate_single_bomb_strategy(
             sample_level=sample_level, scan_step_s=scan_step, elapsed_s=elapsed,
         )
 
-    # 3. 推导量
+    # 3. 推导量 (使用同一 u0)
     n_heading = normalize_heading(strategy.heading_rad)
     r_pt = release_point(strategy, u0)
     t_d = detonation_time(strategy)
     d_pt_raw = detonation_point(strategy, u0)
     # 起爆高度归一化: 仅用于云团几何评估 (避免浮点舍入负 z 进入遮挡几何)
-    _z_valid, _z_reason, z_normalized = classify_detonation_z(d_pt_raw[2])
-    # validate_strategy 已通过, 此处 z_normalized 必为有限且 >= 0
+    z_valid, z_reason, z_normalized = classify_detonation_z(d_pt_raw[2])
+    # 防御性二次检查 (P1-1): validate_strategy 已用同一 u0 通过分类,
+    # 此处 z_valid 必为 True. 若非, 立即返回 invalid, 不进入几何评估,
+    # 不调用 find_strict_intervals, 不构造负 z 云团中心.
+    if not z_valid:
+        elapsed = time.perf_counter() - t0
+        return SingleBombEvaluation(
+            strategy=strategy, normalized_heading_rad=n_heading,
+            valid=False, status="invalid",
+            reason=f"defensive second classify: {z_reason}",
+            release_point=r_pt, detonation_time_s=t_d,
+            detonation_point=None, evaluation_window=None,
+            intervals=(), total_duration_s=0.0,
+            sample_level=sample_level, scan_step_s=scan_step, elapsed_s=elapsed,
+        )
     d_pt = (d_pt_raw[0], d_pt_raw[1], z_normalized)
     norm_note = "" if d_pt[2] == d_pt_raw[2] else " (z normalized from near-ground)"
 
@@ -627,6 +644,9 @@ def classify_candidate_batch(
             n_invalid += 1
         elif ev.status == "pruned_zero":
             n_pruned += 1
+            # 保留 pruned_zero ev 以便混合批测试直接验证 valid=True
+            # (而非依赖计数间接证明)
+            evaluations.append(ev)
         elif ev.status == "zero_window":
             n_zero_window += 1
             evaluations.append(ev)
@@ -732,20 +752,25 @@ ZERO_OBJECTIVE_STRATEGY = SingleBombStrategy(
 def _resolve_non_zero_neighbor(
     scan_step: float = PROFILE_SCAN_STEPS["coarse"],
 ) -> SingleBombStrategy:
-    """遍历 Q1_NEIGHBORHOOD 直到一个在 coarse profile 下 objective > 0.
+    """遍历 Q1_NEIGHBORHOOD 直到一个在 coarse profile 下真正遮蔽.
 
-    若全部为 0, 返回 Q1_FIXED_STRATEGY 兜底 (Q1 锚点本身就应非零).
+    接受条件 (P1-3): ev.status == "ok" AND ev.total_duration_s > 0.
+    若 Q1_NEIGHBORHOOD 内全部不满足条件 (status != ok, total == 0, 或抛异常),
+    raise RuntimeError. **不得回退到 Q1_FIXED_STRATEGY** (会污染 Q1_neighbor
+    行的语义, 违背 candidate_kind 分类).
     """
     for s in Q1_NEIGHBORHOOD:
         try:
             ev = evaluate_single_bomb_strategy(
                 s, sample_level="coarse", scan_step=scan_step)
-            if ev.total_duration_s > 0.0:
-                return s
         except Exception:
             continue
-    # Q1 锚点本身一定非零 (基于已知 TASK_003 数据)
-    return Q1_FIXED_STRATEGY
+        if ev.status == "ok" and ev.total_duration_s > 0.0:
+            return s
+    raise RuntimeError(
+        "No non-zero strategy found in Q1_NEIGHBORHOOD "
+        "(all status != 'ok' or total_duration_s == 0 or raised)"
+    )
 
 
 def profile_evaluation(
@@ -755,8 +780,9 @@ def profile_evaluation(
     repeat: int = 3,
     warm_up: bool = True,
     samples_reuse: bool = True,
+    evaluate_fn: Callable[..., SingleBombEvaluation] | None = None,
 ) -> dict:
-    """单策略 × 单 profile 的实测计时 (P1-7).
+    """单策略 × 单 profile 的实测计时 (P1-7 + P1-2).
 
     Args:
         strategy: 待计时策略
@@ -766,18 +792,35 @@ def profile_evaluation(
         warm_up: 先做一次不计时热身
         samples_reuse: 预生成 samples 并在 warm-up + repeats 间复用
                        (减少采样构造噪声)
+        evaluate_fn: 可选注入的 evaluator (用于测试错误路径, P1-2).
+                     必须接受 (strategy, sample_level=..., scan_step=...,
+                     samples=...) 关键字. 默认 evaluate_single_bomb_strategy.
 
-    Returns: dict 含 sample_level, scan_step_used, repeat, warm_up,
-        samples_reused, results[{elapsed_s,status,total_duration_s,n_intervals}],
-        median_elapsed_s, min_elapsed_s, max_elapsed_s, range_s,
-        first_status, first_total_duration_s, first_n_intervals,
-        window_length_s (若可计算)
+    Returns: dict 含:
+        sample_level, scan_step, repeat, warm_up, samples_reused,
+        n_system_error, system_errors (列表, 每元素 (strategy, exc_type, msg)),
+        warm_up_error (str 或 None),
+        results (list of repeat dicts: {elapsed_s,status,...} 或 {error}),
+        median_elapsed_s, min_elapsed_s, max_elapsed_s, range_s
+          (仅在至少一次 repeat 成功时存在),
+        first_status, first_total_duration_s, first_n_intervals
+          (仅在 results[0] 成功时存在),
+        window_length_s (若可计算).
+
+    P1-2 合同:
+        - warm-up 异常被记录在 warm_up_error (str), **不**计入 n_system_error
+        - 正式 repeat 中任意异常计入 n_system_error, system_errors 列表追加
+        - 后续 repeat / 候选 / profile 继续执行 (不被中断)
+        - 失败行不冒充 median_elapsed_s; 但 row 本身仍出现在 run_profile_measurement 输出中
     """
     if sample_level not in PROFILE_GRADES:
         raise ValueError(f"sample_level 必须 ∈ {list(PROFILE_GRADES)}, "
                          f"实际 {sample_level!r}")
     if repeat < 1:
         raise ValueError(f"repeat 必须 ≥ 1, 实际 {repeat}")
+
+    if evaluate_fn is None:
+        evaluate_fn = evaluate_single_bomb_strategy
 
     grade = sample_level
     actual_scan = scan_step if scan_step is not None \
@@ -787,21 +830,21 @@ def profile_evaluation(
     if samples_reuse:
         pre_samples = generate_cylinder_samples(**SAMPLE_GRADES[grade])
 
+    warm_up_error: str | None = None
     if warm_up:
         try:
-            evaluate_single_bomb_strategy(
-                strategy, sample_level=grade, scan_step=actual_scan,
-                samples=pre_samples)
-        except Exception:
-            # warm-up 抛异常不计入正式计时; 它是构造性问题, 不代表 measure 失败
-            pass
+            evaluate_fn(strategy, sample_level=grade,
+                        scan_step=actual_scan, samples=pre_samples)
+        except Exception as e:
+            warm_up_error = f"{type(e).__name__}: {e}"
 
     results: List[dict] = []
+    n_system_error = 0
+    system_errors: List[Tuple[SingleBombStrategy, str, str]] = []
     for _ in range(repeat):
         try:
-            ev = evaluate_single_bomb_strategy(
-                strategy, sample_level=grade, scan_step=actual_scan,
-                samples=pre_samples)
+            ev = evaluate_fn(strategy, sample_level=grade,
+                             scan_step=actual_scan, samples=pre_samples)
             results.append({
                 "elapsed_s": ev.elapsed_s,
                 "status": ev.status,
@@ -809,6 +852,9 @@ def profile_evaluation(
                 "n_intervals": len(ev.intervals),
             })
         except Exception as e:
+            n_system_error += 1
+            if len(system_errors) < 5:
+                system_errors.append((strategy, type(e).__name__, str(e)))
             results.append({"error": f"{type(e).__name__}: {e}"})
 
     out: dict = {
@@ -817,6 +863,9 @@ def profile_evaluation(
         "repeat": repeat,
         "warm_up": warm_up,
         "samples_reused": samples_reuse,
+        "n_system_error": n_system_error,
+        "system_errors": system_errors,
+        "warm_up_error": warm_up_error,
         "results": results,
     }
 
@@ -846,29 +895,69 @@ def profile_evaluation(
     return out
 
 
+# (candidate_kind, strategy) plan 的候选分类 (P1-3)
+CANDIDATE_KIND_ANCHOR = "Q1_anchor"
+CANDIDATE_KIND_NEIGHBOR = "Q1_neighbor"
+CANDIDATE_KIND_ZERO = "ZERO"
+VALID_CANDIDATE_KINDS = frozenset({
+    CANDIDATE_KIND_ANCHOR,
+    CANDIDATE_KIND_NEIGHBOR,
+    CANDIDATE_KIND_ZERO,
+})
+
+
+def _default_profile_plan() -> List[Tuple[str, SingleBombStrategy]]:
+    """默认 (candidate_kind, strategy) 计划 (P1-3).
+
+    顺序固定: Q1_anchor → Q1_neighbor → ZERO.
+    Q1_neighbor 必须来自 Q1_NEIGHBORHOOD 且 ≠ Q1_FIXED_STRATEGY (P1-3 合同).
+    """
+    non_zero = _resolve_non_zero_neighbor()
+    return [
+        (CANDIDATE_KIND_ANCHOR, Q1_FIXED_STRATEGY),
+        (CANDIDATE_KIND_NEIGHBOR, non_zero),
+        (CANDIDATE_KIND_ZERO, ZERO_OBJECTIVE_STRATEGY),
+    ]
+
+
 def run_profile_measurement(
-    strategies: Sequence[SingleBombStrategy] | None = None,
+    strategies: Sequence[Tuple[str, SingleBombStrategy]] | None = None,
     profiles: Sequence[str] = ("coarse", "medium", "fine"),
     repeat: int = 3,
     warm_up: bool = True,
+    evaluate_fn: Callable[..., SingleBombEvaluation] | None = None,
 ) -> List[dict]:
-    """对 candidate 集合 × profile 集合做实测 (P1-7).
+    """对 (candidate_kind, strategy) × profile 做实测 (P1-2 + P1-3).
 
-    默认 candidates: [Q1_FIXED_STRATEGY, first non-zero Q1 neighbor,
-                       ZERO_OBJECTIVE_STRATEGY].
-    不得作为搜索结果; 仅用于 Foundation 性能校准.
+    默认 plan: [("Q1_anchor", Q1_FIXED_STRATEGY),
+                ("Q1_neighbor", _resolve_non_zero_neighbor()),
+                ("ZERO", ZERO_OBJECTIVE_STRATEGY)].
 
-    Returns: list[profile_evaluation dict]
+    Returns: list[profile_evaluation dict], 每 row 必含:
+        strategy, candidate_kind, sample_level, n_system_error,
+        warm_up_error, system_errors.
+    candidate_kind ∈ {"Q1_anchor", "Q1_neighbor", "ZERO"}.
+
+    P1-2 合同: 每 row 都进入输出 (不静默跳过失败行); system_error
+    错误计数跨 row 汇总, main() 据此返回 0/1.
     """
     if strategies is None:
-        non_zero = _resolve_non_zero_neighbor()
-        strategies = [Q1_FIXED_STRATEGY, non_zero, ZERO_OBJECTIVE_STRATEGY]
+        strategies = _default_profile_plan()
+
+    for kind, _ in strategies:
+        if kind not in VALID_CANDIDATE_KINDS:
+            raise ValueError(
+                f"candidate_kind={kind!r} 不在 {sorted(VALID_CANDIDATE_KINDS)}")
 
     out: List[dict] = []
-    for s in strategies:
+    for kind, s in strategies:
         for p in profiles:
-            out.append(profile_evaluation(s, sample_level=p,
-                                          repeat=repeat, warm_up=warm_up))
+            row = profile_evaluation(s, sample_level=p, repeat=repeat,
+                                      warm_up=warm_up,
+                                      evaluate_fn=evaluate_fn)
+            row["strategy"] = s
+            row["candidate_kind"] = kind
+            out.append(row)
     return out
 
 
@@ -897,34 +986,26 @@ def _print_help() -> None:
 
 
 def _print_profile_measurement(rows: List[dict], repeat: int) -> None:
-    print("=" * 100)
+    print("=" * 110)
     print("Q2 FOUNDATION PERFORMANCE CALIBRATION / NOT AN OPTIMIZATION RESULT")
-    print("=" * 100)
+    print("=" * 110)
     print("  Candidate types:")
-    print("    [1] Q1 fixed anchor (non-zero)")
-    print("    [2] Q1 neighborhood (first non-zero deterministic perturbation)")
-    print("    [3] Zero-objective candidate (geometrically cannot occlude)")
+    print("    [1] Q1_anchor  (Q1_FIXED_STRATEGY, coarse/medium/fine)")
+    print("    [2] Q1_neighbor (Q1_NEIGHBORHOOD 中第一个 objective > 0 的扰动)")
+    print("    [3] ZERO       (几何上无法遮蔽的零目标候选)")
     print(f"  Per-profile: warm-up=1, timed repeats={repeat}, samples reused")
     print()
     print(f"  {'candidate':<12} {'objective':<10} {'profile':<8} {'scan_step':>10} "
-          f"{'window_s':>9} {'samples':<9} {'runs':>5} {'median_s':>10} {'min-max_s':>14}")
-    print("  " + "-" * 96)
+          f"{'window_s':>9} {'samples':<9} {'runs':>5} {'median_s':>10} "
+          f"{'min-max_s':>14} {'sys_err':>8} {'warm_up':>10}")
+    print("  " + "-" * 106)
     last_kind = None
     for row in rows:
-        if "median_elapsed_s" not in row:
-            continue
         kind = row.get("candidate_kind", "?")
         if last_kind is not None and kind != last_kind:
             print()
         last_kind = kind
-        # 推导 candidate kind: 通过 strategy identity
-        s = row.get("strategy")
-        if s == Q1_FIXED_STRATEGY:
-            c_label = "Q1_anchor"
-        elif s == ZERO_OBJECTIVE_STRATEGY:
-            c_label = "ZERO"
-        else:
-            c_label = "Q1_neighbor"
+
         first_status = row.get("first_status", "?")
         first_total = row.get("first_total_duration_s")
         if first_total is None or first_status != "ok":
@@ -933,16 +1014,39 @@ def _print_profile_measurement(rows: List[dict], repeat: int) -> None:
             obj = "nonzero"
         else:
             obj = "zero"
-        print(f"  {c_label:<12} {obj:<10} {row['sample_level']:<8} "
+
+        median = row.get("median_elapsed_s")
+        minmax = ""
+        if median is not None:
+            minmax = f"{row['min_elapsed_s']:>5.3f}-{row['max_elapsed_s']:<5.3f}"
+
+        sys_err = row.get("n_system_error", 0)
+        warm_up_err = row.get("warm_up_error")
+        warm_up_label = "OK" if warm_up_err is None else "ERROR"
+
+        median_str = f"{median:>10.4f}" if median is not None else "    ERROR"
+
+        print(f"  {kind:<12} {obj:<10} {row['sample_level']:<8} "
               f"{row['scan_step']:>10.4f} {row.get('window_length_s', 0):>9.3f} "
               f"{('reused' if row['samples_reused'] else 'regen'):<9} "
-              f"{row['repeat']:>5} {row['median_elapsed_s']:>10.4f} "
-              f"{row['min_elapsed_s']:>5.3f}-{row['max_elapsed_s']:<5.3f}")
+              f"{row['repeat']:>5} {median_str:>10} "
+              f"{minmax:>14} {sys_err:>8} {warm_up_label:>10}")
+
+        # 打印错误详情 (不静默跳过)
+        if warm_up_err:
+            print(f"    [warm_up_error] {warm_up_err[:90]}")
+        for _cand, etype, msg in row.get("system_errors", [])[:3]:
+            print(f"    [system_error]  {etype}: {msg[:90]}")
+
+    total_system_error = sum(int(r.get("n_system_error", 0)) for r in rows)
+    if total_system_error > 0:
+        print()
+        print(f"  TOTAL system_error (repeats only, across all 9 rows) = {total_system_error}")
     print()
     print("  *** NOT AN OPTIMIZATION RESULT ***")
     print("  *** DO NOT USE AS Q2 FINAL ANSWER ***")
     print("  *** This table is empirical, not extrapolated. Search budget NOT frozen. ***")
-    print("=" * 100)
+    print("=" * 110)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -1023,16 +1127,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     if profile_measure:
-        non_zero = _resolve_non_zero_neighbor()
-        strategies = [Q1_FIXED_STRATEGY, non_zero, ZERO_OBJECTIVE_STRATEGY]
+        plan = _default_profile_plan()
         rows: List[dict] = []
-        for s in strategies:
+        for kind, s in plan:
             for p in ("coarse", "medium", "fine"):
                 row = profile_evaluation(s, sample_level=p, repeat=repeat)
                 row["strategy"] = s
+                row["candidate_kind"] = kind
                 rows.append(row)
         _print_profile_measurement(rows, repeat)
-        return 0
+        # 退出码 (P1-2):
+        #   - 至少 1 个 repeat system_error → exit 1
+        #   - 0 个 system_error            → exit 0
+        total_system_error = sum(int(r.get("n_system_error", 0)) for r in rows)
+        return 1 if total_system_error > 0 else 0
 
     if smoke_count is None:
         print("缺少必要参数 --smoke-count", file=sys.stderr)

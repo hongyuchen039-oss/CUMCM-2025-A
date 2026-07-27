@@ -18,7 +18,7 @@
 每完成一问需在 `RESULTS.md` 记录数值与单位，并按"PLAN/WORKING/VERIFIED/REVIEW/FIX"
 流程更新同一任务的 Draft PR。
 
-## 当前可能采用的总体建模路线（方案 A 与方案 B 均已实现, 方案 B 在 PR #3 等待审核冻结）
+## 当前可能采用的总体建模路线（方案 A 与方案 B 均已实现, 方案 B 已合并到 main 并在 PR #3 中通过审核）
 
 ### 统一坐标系
 - 假目标为原点 (0, 0, 0)，水平面 xy，z 向上。
@@ -63,9 +63,8 @@
 - 目标：考虑导弹对真目标圆柱可见表面或可见轮廓的视线集合，
   评估烟幕云团对这些视线的遮挡程度。
 - 方案 A 点目标基线与方案 B 完整圆柱正式候选均已实现。
-  方案 B 当前处于 FULL-CYLINDER CANDIDATE / EXPERIMENTAL，
-  等待 PR #3 外部审核与合并；
-  合并后才正式冻结并允许进入 TASK_004。
+  方案 B 已通过 PR #3 合并到 main, 当前在 Q2/Q3/Q4/Q5 中复用.
+  等级: FULL-CYLINDER CANDIDATE / EXPERIMENTAL (合并并不等于升 VERIFIED).
 - 候选冻结的方案 B 几何、采样、判据与收敛标准见下文 "完整圆柱遮蔽正式候选" 章节。
 
 #### 项目路线
@@ -107,10 +106,9 @@
 
 ## 局限
 - 方案 A Q1 点目标基线与方案 B 完整圆柱正式候选均已实现。
-- 方案 B 当前处于 FULL-CYLINDER CANDIDATE / EXPERIMENTAL,
-  等待 PR #3 外部审核与合并; 合并后才正式冻结并允许进入 TASK_004.
+- 方案 B 已通过 PR #3 合并到 main, 等级仍为 FULL-CYLINDER CANDIDATE / EXPERIMENTAL;
+  合并不等于升 VERIFIED.
 - Q1 仅验证了一组参数,未与外部标准解对比.
-- 在 PR #3 合并之前, 方案 B 结果**不能**标为 VERIFIED 或 FINAL.
 
 ---
 
@@ -118,8 +116,8 @@
 
 > 已在 `src/q1_cylinder.py` 实现，并通过 `tests/test_q1_cylinder.py` 的 75 个本地单元测试
 > (A-L 共 12 组, 含 2 个收敛失败路径测试) 验证。
-> 本节固定 Q2 启动前必须冻结的方案 B 几何、采样、判据与收敛标准;
-> 当前层级为候选 (CANDIDATE), 待 PR #3 审核通过后正式冻结。
+> 本节固定 Q2/Q3/Q4/Q5 中复用的方案 B 几何、采样、判据与收敛标准.
+> 等级仍为 FULL-CYLINDER CANDIDATE / EXPERIMENTAL (合并 ≠ VERIFIED).
 
 ### 1. 真目标几何 (复用 FACTS.md §11)
 
@@ -247,8 +245,7 @@ find_strict_intervals(samples, scan_step=0.01)
 - 不考虑导弹在大入射角下对圆柱的轮廓遮挡几何 (本题远距离下不触发)
 - 不引入覆盖率阈值作为正式判据 (避免人造阈值, 由严格遮蔽唯一决定)
 - 严格遮蔽仍标记为 FULL-CYLINDER CANDIDATE / EXPERIMENTAL, 不得冒充 VERIFIED / FINAL
-- 等级仅在 PR #3 合并且外部审核通过后才能升级到 VERIFIED
-- Q2 启动前, 必须复用本节的 strict_boundary_value 作为优化目标
+- Q2/Q3/Q4/Q5 中必须复用本节的 strict_boundary_value 作为优化目标
 
 ### 12. 本轮 FIX 变更 (不改数学结论)
 
@@ -339,11 +336,10 @@ find_strict_intervals(samples, scan_step=0.01)
 
 ### 5. 局限
 
-- 方案 B 完整圆柱正式候选已实现, 但仍标记为 FULL-CYLINDER CANDIDATE / EXPERIMENTAL,
-  等待 PR #3 外部审核与合并; 合并后才能正式冻结并允许进入 TASK_004
+- 方案 B 完整圆柱正式候选已实现并经 PR #3 合并到 main,
+  等级仍为 FULL-CYLINDER CANDIDATE / EXPERIMENTAL; 合并并不等于 VERIFIED.
 - 只验证 Q1 一组参数, 未与外部标准解对比
-- 等级仅 BASELINE / EXPERIMENTAL, **不能**升级为 VERIFIED 或 FINAL,
-  除非 PR #3 合并且外部审核通过
+- 等级仅 BASELINE / EXPERIMENTAL, **不能**升级为 VERIFIED 或 FINAL
 - 重力 g=9.8 与 9.80665 标准值差异未量化
 - 风场、云团水平漂移、起爆时序误差均按 §15 假设忽略
 
@@ -351,7 +347,8 @@ find_strict_intervals(samples, scan_step=0.01)
 
 ## Q2 单弹策略评估合同 (TASK_004 FOUNDATION / NOT AN OPTIMIZATION RESULT)
 
-> 已在 `src/q2_single_bomb.py` 实现, 通过 `tests/test_q2_single_bomb.py` 49 个本地单元测试验证.
+> 已在 `src/q2_single_bomb.py` 实现, 通过 `tests/test_q2_single_bomb.py` 85 个本地单元测试
+> (Section 五 ~ 十七 + 3 个 P1 返工加固类 U2/R2/S2 + G2/J2/K2/N2/P/Q 共 14 组) 验证.
 > 本节固定 TASK_004 Search 启动前必须确认的合同.
 > 当前层级为 FOUNDATION (基础评估器), 尚未启动正式 Q2 搜索.
 > 等级: **TASK_004 FOUNDATION / NOT AN OPTIMIZATION RESULT**, 不得冒充 Q2 VERIFIED / FINAL.
@@ -476,7 +473,7 @@ find_strict_intervals(samples, scan_step=0.01)
 
 仍为 NOT AN OPTIMIZATION RESULT; 仍未启动 Search; 仍未生成 result1.xlsx.
 
-### 7. 本轮唯一入口与建议下一步
+### 8. 本轮唯一入口与建议下一步
 
 - 主程序: `python -m src.q2_single_bomb --smoke-count 100 --seed 2025 --profile coarse`
 - 单元测试: `python -m unittest tests.test_q2_single_bomb -v`

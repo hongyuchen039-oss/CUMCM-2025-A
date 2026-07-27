@@ -18,7 +18,7 @@ CI：GitHub Actions 自动运行 Python 编译、单元测试与 Q1 smoke test�
 - TASK_003 完整圆柱遮蔽判定已完成审核并通过 PR #3 合并
 - TASK_INFRA_001 CI 已通过 PR #4 合并并进入 main
 - 完整圆柱模型合同已经冻结，可供 TASK_004 复用
-- **TASK_004 FOUNDATION 已完成并通过 7 个 P1 加固**: 71 个本地单元测试全过
+- **TASK_004 FOUNDATION 已完成并通过 7 个 P1 加固 + 3 个 P1 返工**: 85 个本地单元测试全过
 - TASK_004 Search 阶段尚未启动; 本轮不生成 result1.xlsx
 - 数学模型: 方案 A (点目标基线) + 方案 B (完整圆柱严格遮蔽, FULL-CYLINDER CANDIDATE)
   均已实现并对照; Q2 评估器复用完整圆柱接口 (回调注入, 无几何复制)
@@ -29,4 +29,4 @@ CI：GitHub Actions 自动运行 Python 编译、单元测试与 Q1 smoke test�
   - margin_max (0.001 s 局部网格估计) = **5.282478 m** @ t = 9.418317 s (非解析极值)
   - ρ_max = 1.000; ρ=1 平台 (0.01 s 诊断网格) 约 (8.06, 9.44) s, 跨度 1.380 s
   - 时间/空间收敛均 PASS (端点 max \|f\| = 1.03e-6)
-- 单元测试计数: 188 个全过 (42 Q1 baseline + 75 Q1 cylinder + 71 Q2 foundation)
+- 单元测试计数: 202 个全过 (42 Q1 baseline + 75 Q1 cylinder + 85 Q2 foundation)

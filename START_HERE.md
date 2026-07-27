@@ -3,15 +3,14 @@
 ## 当前阶段
 **TASK_004 FOUNDATION (Q2 单弹评估器基础, NOT AN OPTIMIZATION RESULT)** —
 Q2 单弹策略四变量合同、合法性判断、单候选完整圆柱评估器与 100 候选
-本地 smoke 已实现. 已通过 **FIX 加固**: 7 个 P1 修复组 (valid/status
-语义、EPS_GROUND 三区分类、Q1 直接区间对照、非 vacuous 多区间测试、
-system_error 退出码、smoke candidate_source + mixed-batch、coarse/medium/fine
-实测), 71 个 Q2 单元测试 + 117 个 Q1 回归测试 = 188/188 全过.
+本地 smoke 已实现. 已通过 **FIX 加固** (7 个 P1 修复组 + 本轮 3 个 P1 返工:
+u0 与地面合法性统一、profile-measure 暴露 system_error、真实非零邻域候选),
+85 个 Q2 单元测试 + 117 个 Q1 回归测试 = 202/202 全过.
 正式 Q2 搜索尚未启动. PR #3 / PR #4 均已合并; CI 已进入 main.
 
 ## 本轮交付物 (TASK_004 Foundation)
 - `src/q2_single_bomb.py` — Q2 单弹评估器主程序 (Python 标准库, 复用 q1_baseline 与 q1_cylinder)
-- `tests/test_q2_single_bomb.py` — 单元测试 (71 测, 19 组 A-Q, 全过)
+- `tests/test_q2_single_bomb.py` — 单元测试 (85 测, 22 组 A-Q + U2/R2/S2 返工加固类, 全过)
 - `MODEL.md` — 增加"Q2 单弹策略评估合同"章节 + 本轮 FIX 7 P1 变更表
 - `NEXT_TASK.md` — 更新为 TASK_004 Foundation + 下一阶段 TASK_004 Search
 - `README.md` — 同步当前阶段

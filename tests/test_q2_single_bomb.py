@@ -1,7 +1,9 @@
 """tests/test_q2_single_bomb.py — TASK_004 Foundation 单元测试.
 
-覆盖 Section 14 的 35 个测试类别 (A-T), 全部确定性, 控制在本地 60 秒以内.
-不运行 100 个候选 smoke, 不运行 spatial / temporal convergence, 不运行 fine 采样评估.
+覆盖 TASK_004 Foundation 全部合同 (Section 五 ~ 十七) + 7 P1 加固.
+全部确定性; 含若干带 fine 评估的 profile_measurement 性能校准测试
+(本仓库 CI 25 min timeout 余量内).
+不运行 100 个候选默认 smoke; 不运行 spatial / temporal convergence.
 
 等级: TASK_004 FOUNDATION / NOT AN OPTIMIZATION RESULT.
 """
@@ -807,26 +809,31 @@ class J2MultiIntervalDeterministic(unittest.TestCase):
             window_start=0.0, window_end=6.0,
             t_arrival=6.0,
         )
-        # 至少 2 个不连续区间
-        self.assertGreaterEqual(len(ivs), 2,
-                                  f"应保留至少两个不连续区间, 实际 {len(ivs)}: {ivs}")
-        # 总时长 = 1.0 + 1.0 = 2.0
+        # 恰好 2 个不连续区间 (P2 同步: 由 ≥2 收紧为 ==2)
+        self.assertEqual(len(ivs), 2,
+                          f"应恰好两个不连续区间, 实际 {len(ivs)}: {ivs}")
+        # 四个端点分别接近 1, 2, 4, 5 (P2 同步: 显式逐端点断言)
+        starts = [iv[0] for iv in ivs]
+        ends = [iv[1] for iv in ivs]
+        starts_sorted = sorted(starts)
+        ends_sorted = sorted(ends)
+        for actual, expected, name in (
+            (starts_sorted[0], 1.0, "首段起点"),
+            (ends_sorted[0], 2.0, "首段终点"),
+            (starts_sorted[1], 4.0, "次段起点"),
+            (ends_sorted[1], 5.0, "次段终点"),
+        ):
+            self.assertLess(abs(actual - expected), 0.05,
+                              f"{name} 应 ≈ {expected}, 实际 {actual}")
+        # 总时长 ≈ 2 (两段各 1)
         total = sum(b - a for a, b in ivs)
         self.assertAlmostEqual(total, 2.0, delta=0.05,
                                 msg=f"总时长应 ≈ 2.0, 实际 {total}")
         # 不等于单个最长段 (1.0)
         self.assertNotAlmostEqual(total, 1.0, places=3)
         # 区间按起点升序
-        for i in range(1, len(ivs)):
-            self.assertLessEqual(ivs[i - 1][1], ivs[i][0] + 1e-9,
-                                  f"区间应升序: {ivs}")
-        # 两段都存在
-        starts = sorted(a for a, _ in ivs)
-        self.assertLess(abs(starts[0] - 1.0), 0.05,
-                          f"首段起点应 ≈ 1.0, 实际 {starts[0]}")
-        if len(starts) > 1:
-            self.assertLess(abs(starts[1] - 4.0), 0.05,
-                              f"次段起点应 ≈ 4.0, 实际 {starts[1]}")
+        self.assertLessEqual(ivs[0][1], ivs[1][0] + 1e-9,
+                              f"区间应升序: {ivs}")
 
 
 # =============================================================================
@@ -1003,8 +1010,25 @@ class PMixedBatchDeterministic(unittest.TestCase):
                  + res["n_system_error"]
         self.assertEqual(n_sum, n)
 
-        # pruned_zero 候选必须 valid=True (P1-1)
+        # 合法 zero candidate 直接断言 total_duration_s == 0 (P2 同步)
+        # 不仅是计数间接证据, 必须显式验证该 candidate 的 objective.
+        zero_evs = [e for e in res["evaluations"]
+                    if e.strategy.heading_rad == 0.0
+                    and e.strategy.speed_mps == 70.0
+                    and e.strategy.release_time_s == 10.0
+                    and e.strategy.delay_s == 1.0]
+        self.assertEqual(len(zero_evs), 1,
+                          f"合法 zero candidate 应恰好 1 个, 实际 {len(zero_evs)}")
+        zero_ev = zero_evs[0]
+        self.assertEqual(zero_ev.total_duration_s, 0.0,
+                          f"合法 zero candidate 必须 total_duration_s==0, 实际 {zero_ev.total_duration_s}")
+        self.assertEqual(zero_ev.intervals, ())
+
+        # pruned_zero 候选必须 valid=True (P1-1).
+        # 先断言 pruned_evs 非空, 再验证每个对象 (避免空列表上 all(...) 自动通过)
         pruned_evs = [e for e in res["evaluations"] if e.status == "pruned_zero"]
+        self.assertGreater(len(pruned_evs), 0,
+                            "mixed-batch 必须至少含 1 个 pruned_zero 候选 (P2)")
         for ev in pruned_evs:
             self.assertTrue(ev.valid,
                               "pruned_zero 必须 valid=True (P1-1)")
@@ -1089,6 +1113,315 @@ class QProfileEvaluation(unittest.TestCase):
                                             scan_step=0.05)
         self.assertGreater(ev.total_duration_s, 0.0,
                             f"非零邻居必须 objective > 0, 实际 {ev.total_duration_s}")
+
+
+# =============================================================================
+#  P1-1 返工 — 自定义 u0 地面合法性 (Section 四)
+# =============================================================================
+class U2UndergroundCustomU0(unittest.TestCase):
+    """P1-1: validate_strategy 必须使用实际评估所用的 u0.
+
+    旧实现: validate_strategy 使用默认 U0; evaluate_single_bomb_strategy 接收
+    自定义 u0 后重算 d_pt_raw, 但第二次 classify 的 valid 结果被命名为
+    _z_valid 后被忽略. 这导致默认 U0 下合法, 自定义 u0 下实际地下, 但
+    仍进入 find_strict_intervals, 产生负 z 云团中心评估.
+    修复后: validate_strategy(strategy, u0=u0); evaluate 内对 d_pt_raw 二次
+    分类若失败, 立即返回 invalid 且不调用 find_strict_intervals.
+    """
+
+    def _u0_with_z(self, z: float):
+        return (U0[0], U0[1], z)
+
+    def test_u2_01_custom_u0_underground_invalid(self):
+        """P1-1-A: 自定义 u0 明显地下 → valid=False, status=invalid,
+        total=0, intervals=(), detonation_point 不应是负 z 几何评估结果."""
+        s = Q1_FIXED_STRATEGY
+        # D_z = u0_z - 0.5*9.8*3.6² = u0_z - 63.504
+        # D_z < -EPS_GROUND ⇒ u0_z < 63.504 - EPS_GROUND
+        u0_low = self._u0_with_z(63.504 - 1e-3)
+        ev = evaluate_single_bomb_strategy(
+            s, sample_level="coarse", scan_step=0.05, u0=u0_low)
+        self.assertFalse(ev.valid,
+                          f"明显地下应 valid=False, 实际 reason={ev.reason}")
+        self.assertEqual(ev.status, "invalid",
+                          f"应 status=invalid, 实际 {ev.status}")
+        self.assertEqual(ev.total_duration_s, 0.0)
+        self.assertEqual(ev.intervals, ())
+        # detonation_point 不应是负 z 几何评估结果 (即 z < 0).
+        # 允许 None (正常 invalid 路径) 或 z >= 0 (任何归一化形式), 但禁止 z < 0.
+        if ev.detonation_point is not None:
+            self.assertGreaterEqual(ev.detonation_point[2], 0.0,
+                f"ev.detonation_point.z 必须 ≥ 0 (None 或归一化), "
+                f"实际 {ev.detonation_point}")
+
+    def test_u2_02_custom_u0_near_ground_normalized(self):
+        """P1-1-B: 自定义 u0 使 z ∈ [-EPS_GROUND, 0) → 合法, z 规范化为 0,
+        x / y / 起爆时刻均按 u0 正常推导 (与默认 U0 一致时)."""
+        s = Q1_FIXED_STRATEGY
+        # D_z = -EPS_GROUND/2 ⇒ u0_z = 63.504 - EPS_GROUND/2
+        u0_near = self._u0_with_z(63.504 - EPS_GROUND / 2.0)
+        ev = evaluate_single_bomb_strategy(
+            s, sample_level="coarse", scan_step=0.05, u0=u0_near)
+        self.assertTrue(ev.valid,
+                          f"-EPS/2 应合法, 实际 reason={ev.reason}")
+        self.assertIn(ev.status, ("ok", "zero_window"))
+        # 用于云团评估的 z 必须归一化为 0
+        self.assertIsNotNone(ev.detonation_point)
+        self.assertEqual(ev.detonation_point[2], 0.0,
+                          f"-EPS/2 应归一化为 0, 实际 {ev.detonation_point[2]}")
+        # x, y 按 u0 正常推导; 当 u0 x/y 与默认相同时, detonation_point x/y
+        # 与默认一致 (Q1: x=17188, y=0)
+        self.assertAlmostEqual(ev.detonation_point[0], 17188.0, places=6,
+                                msg=f"x={ev.detonation_point[0]}")
+        self.assertAlmostEqual(ev.detonation_point[1], 0.0, places=9,
+                                msg=f"y={ev.detonation_point[1]}")
+        # 起爆时刻与 u0 无关
+        self.assertEqual(ev.detonation_time_s, 5.1)
+
+    def test_u2_03_custom_u0_underground_skips_geometry(self):
+        """P1-1-C: 自定义 u0 地下 → find_strict_intervals.assert_not_called()."""
+        s = Q1_FIXED_STRATEGY
+        u0_low = self._u0_with_z(63.504 - 1e-3)
+        with patch("src.q2_single_bomb.find_strict_intervals") as mock_fsi:
+            ev = evaluate_single_bomb_strategy(
+                s, sample_level="coarse", scan_step=0.05, u0=u0_low)
+            mock_fsi.assert_not_called()
+        self.assertEqual(ev.status, "invalid")
+        self.assertFalse(ev.valid)
+
+    def test_u2_04_default_u0_regression(self):
+        """P1-1-D: 默认 U0 下 Q1 锚点回归应保持通过."""
+        s = Q1_FIXED_STRATEGY
+        ev = evaluate_single_bomb_strategy(
+            s, sample_level="medium", scan_step=0.01)
+        self.assertEqual(ev.status, "ok")
+        self.assertGreater(ev.total_duration_s, 1.0)
+        self.assertLess(ev.total_duration_s, 1.6)
+
+
+# =============================================================================
+#  P1-2 返工 — profile-measure 暴露 system_error (Section 五)
+# =============================================================================
+class R2ProfileMeasureSystemError(unittest.TestCase):
+    """P1-2: profile_evaluation / run_profile_measurement 必须暴露 system_error.
+
+    旧问题:
+      - warm-up 异常被静默 pass
+      - repeat 异常仅写入 {"error": ...}
+      - main --profile-measure 无条件返回 0
+      - 输出按 `if median_elapsed_s not in row: continue` 静默跳过失败行
+    修复后:
+      - warm_up_error 字段记录 warm-up 异常 (不计入 n_system_error)
+      - repeat 异常计入 n_system_error + system_errors
+      - main --profile-measure 汇总: total_system_error > 0 → exit 1
+      - _print_profile_measurement 显示错误行, 不静默跳过
+      - 错误路径测试必须用 mock/injection, 不增加真实 fine 评估
+    """
+
+    def test_r2_01_warmup_error_recorded(self):
+        """warm-up 异常被记录在 warm_up_error, 不计入 n_system_error;
+        后续 repeat 仍执行并计入 n_system_error."""
+        def always_raise(strategy, **kwargs):
+            raise RuntimeError("injected warmup+repeat")
+
+        row = q2.profile_evaluation(
+            q2.Q1_FIXED_STRATEGY, sample_level="coarse",
+            repeat=2, warm_up=True, evaluate_fn=always_raise,
+        )
+        # warm-up 异常被记录
+        self.assertIn("warm_up_error", row)
+        self.assertIsNotNone(row["warm_up_error"])
+        self.assertIn("RuntimeError", row["warm_up_error"])
+        self.assertIn("injected warmup+repeat", row["warm_up_error"])
+        # warm-up 异常**不**计入 n_system_error (n_system_error 仅统计 repeat)
+        # 这里 repeat 也抛, 所以 n_system_error = repeat 数 = 2
+        self.assertEqual(row["n_system_error"], 2,
+                          f"应 2 个 repeat 异常, 实际 {row['n_system_error']}")
+        self.assertEqual(len(row["system_errors"]), 2)
+        # 无任何成功 repeat → 无 median_elapsed_s
+        self.assertNotIn("median_elapsed_s", row)
+        # 结果列表完整保留 (含 error 行)
+        self.assertEqual(len(row["results"]), 2)
+
+    def test_r2_02_repeat_error_continues_and_counts(self):
+        """单次 repeat 抛异常: n_system_error=1, 后续 repeat 继续, 计数独立."""
+        def selective(strategy, **kwargs):
+            if not hasattr(selective, "_called"):
+                selective._called = 0
+            selective._called += 1
+            if selective._called == 2:  # 第 2 次调用抛异常 (1st repeat)
+                raise RuntimeError("injected repeat 1")
+            return evaluate_single_bomb_strategy(strategy, **kwargs)
+
+        # warm_up=False → 第 1 次调用就是 repeat[0]; 让 repeat[1] 抛.
+        row = q2.profile_evaluation(
+            q2.Q1_FIXED_STRATEGY, sample_level="coarse",
+            repeat=3, warm_up=False, evaluate_fn=selective,
+        )
+        self.assertEqual(row["n_system_error"], 1)
+        self.assertEqual(len(row["results"]), 3)
+        error_results = [r for r in row["results"] if "error" in r]
+        ok_results = [r for r in row["results"] if "elapsed_s" in r]
+        self.assertEqual(len(error_results), 1)
+        self.assertEqual(len(ok_results), 2)
+        # warm_up_error None (warm-up 跳过)
+        self.assertIsNone(row["warm_up_error"])
+        # system_errors 列表记录该错误
+        self.assertEqual(len(row["system_errors"]), 1)
+        # 有至少 1 次成功 → median_elapsed_s 存在
+        self.assertIn("median_elapsed_s", row)
+        self.assertEqual(row["first_status"], "ok")
+
+    def test_r2_03_run_profile_measurement_all_cells_processed(self):
+        """run_profile_measurement 在 evaluate_fn 全抛时, 9 个 row 全部出现,
+        全部带 warm_up_error + n_system_error ≥ 1; 不静默跳过任何 row."""
+        # 显式构造 plan, 避免触发 _resolve_non_zero_neighbor (它走真实 evaluator,
+        # 不会被 evaluate_fn 注入影响).
+        plan = q2._default_profile_plan()
+
+        def always_raise(strategy, **kwargs):
+            raise RuntimeError("injected everywhere")
+
+        rows = q2.run_profile_measurement(
+            strategies=plan,
+            repeat=1, warm_up=False, evaluate_fn=always_raise)
+        # 9 个 row, 全部出现 (不静默跳过)
+        self.assertEqual(len(rows), 9,
+                          f"应 9 rows, 实际 {len(rows)}")
+        for r in rows:
+            # warm_up=False → warm_up_error = None (warm-up skipped)
+            self.assertIsNone(r["warm_up_error"])
+            self.assertEqual(r["n_system_error"], 1,
+                              f"每 row 应 1 个 repeat 异常, 实际 {r['n_system_error']}")
+            self.assertEqual(len(r["system_errors"]), 1)
+            self.assertIn("candidate_kind", r)
+            self.assertIn(r["candidate_kind"], q2.VALID_CANDIDATE_KINDS)
+        # 总 system_error = 9
+        total = sum(int(r["n_system_error"]) for r in rows)
+        self.assertEqual(total, 9)
+
+    def test_r2_04_main_returns_one_with_injected_error(self):
+        """P1-2-CLI: --profile-measure + injected profile_evaluation (全报错)
+        → main 返回 1.
+
+        注意: 不能 patch evaluate_single_bomb_strategy 全局符号,
+        因为 _resolve_non_zero_neighbor 也会调用它, 会先抛 RuntimeError,
+        路径在到达 profile_measure 之前已中断. 改为 patch profile_evaluation
+        即可保留 _resolve_non_zero_neighbor 的真实路径."""
+        def mock_pe(strategy, sample_level, **kwargs):
+            return {
+                "sample_level": sample_level,
+                "scan_step": 0.05,
+                "repeat": 1, "warm_up": True, "samples_reused": True,
+                "n_system_error": 1,
+                "system_errors": [(strategy, "RuntimeError", "injected")],
+                "warm_up_error": None,
+                "results": [{"error": "RuntimeError: injected"}],
+                "window_length_s": 20.0,
+            }
+        with patch("src.q2_single_bomb.profile_evaluation",
+                    side_effect=mock_pe):
+            rc = q2_main(["--profile-measure", "--repeat", "1"])
+        self.assertEqual(rc, 1,
+                          f"system_error > 0 时 main 必须返回 1, 实际 {rc}")
+
+    def test_r2_05_normal_profile_measure_returns_zero(self):
+        """P1-2-CLI: 正常 --profile-measure 无 system_error → main 返回 0.
+
+        warm_up=False + repeat=1 控制 wall-clock (避免再次踩 CI 25 min)."""
+        rc = q2_main(["--profile-measure", "--repeat", "1"])
+        self.assertEqual(rc, 0,
+                          f"无 system_error 时 main 应返回 0, 实际 {rc}")
+
+    def test_r2_06_arg_error_returns_two(self):
+        """P1-2-CLI: 参数错误仍返回 2."""
+        rc = q2_main(["--profile-measure", "--bogus"])
+        self.assertEqual(rc, 2,
+                          f"参数错误应返回 2, 实际 {rc}")
+
+
+# =============================================================================
+#  P1-3 返工 — 真实非零邻域候选 (Section 六)
+# =============================================================================
+class S2RealNeighbor(unittest.TestCase):
+    """P1-3: _resolve_non_zero_neighbor 必须返回真实非零邻居,
+    不得回退 Q1_FIXED_STRATEGY; 全部为 0 / 全异常时 raise RuntimeError."""
+
+    def test_s2_01_real_neighbor(self):
+        """A: 邻居 ∈ Q1_NEIGHBORHOOD, ≠ Q1_FIXED_STRATEGY,
+        coarse status=ok, total_duration_s > 0."""
+        neighbor = q2._resolve_non_zero_neighbor()
+        self.assertIn(neighbor, q2.Q1_NEIGHBORHOOD,
+                       f"应属于 Q1_NEIGHBORHOOD, 实际 {neighbor}")
+        self.assertNotEqual(neighbor, q2.Q1_FIXED_STRATEGY,
+                              "必须 ≠ Q1_FIXED_STRATEGY (P1-3 合同)")
+        ev = evaluate_single_bomb_strategy(
+            neighbor, sample_level="coarse", scan_step=0.05)
+        self.assertEqual(ev.status, "ok",
+                          f"coarse 应 status=ok, 实际 {ev.status}")
+        self.assertGreater(ev.total_duration_s, 0.0,
+                            f"必须 objective > 0, 实际 {ev.total_duration_s}")
+
+    def test_s2_02_all_zero_raises(self):
+        """B: mock evaluator 对所有 Q1_NEIGHBORHOOD 返回 total_duration_s=0
+        → _resolve_non_zero_neighbor raise RuntimeError, 不回退锚点."""
+        def zero_eval(strategy, **kwargs):
+            return SingleBombEvaluation(
+                strategy=strategy, normalized_heading_rad=0.0,
+                valid=True, status="ok", reason="fake zero",
+                release_point=None, detonation_time_s=None,
+                detonation_point=None, evaluation_window=None,
+                intervals=(), total_duration_s=0.0,
+                sample_level="coarse", scan_step_s=0.05,
+                elapsed_s=0.0,
+            )
+        with patch("src.q2_single_bomb.evaluate_single_bomb_strategy",
+                    side_effect=zero_eval):
+            with self.assertRaises(RuntimeError) as cm:
+                q2._resolve_non_zero_neighbor()
+        self.assertIn("Q1_NEIGHBORHOOD", str(cm.exception))
+
+    def test_s2_03_all_exception_raises(self):
+        """C: mock evaluator 对所有 Q1_NEIGHBORHOOD 抛异常
+        → 明确 RuntimeError, 不回退 Q1_FIXED_STRATEGY."""
+        def raise_eval(strategy, **kwargs):
+            raise RuntimeError("injected everywhere")
+        with patch("src.q2_single_bomb.evaluate_single_bomb_strategy",
+                    side_effect=raise_eval):
+            with self.assertRaises(RuntimeError):
+                q2._resolve_non_zero_neighbor()
+        # 不回退到 Q1_FIXED_STRATEGY (无 anchor = run_profile_measurement 会失败)
+
+    def test_s2_04_nine_rows_categorization(self):
+        """D: run_profile_measurement 默认 9 rows, 分类精确."""
+        rows = q2.run_profile_measurement(repeat=1, warm_up=False)
+        self.assertEqual(len(rows), 9)
+        by_kind = {}
+        for r in rows:
+            by_kind.setdefault(r["candidate_kind"], []).append(r)
+        # 每类恰好 3 行
+        self.assertEqual(set(by_kind.keys()),
+                          {"Q1_anchor", "Q1_neighbor", "ZERO"})
+        for kind, lst in by_kind.items():
+            self.assertEqual(len(lst), 3,
+                              f"{kind} 应 3 行, 实际 {len(lst)}")
+            # 每类 profile 集合恰好 {coarse, medium, fine}
+            levels = {r["sample_level"] for r in lst}
+            self.assertEqual(levels, {"coarse", "medium", "fine"},
+                              f"{kind} 应含三档 profile, 实际 {levels}")
+        # Q1_neighbor 的 strategy 必须 ∈ Q1_NEIGHBORHOOD 且 ≠ Q1_FIXED_STRATEGY
+        for r in by_kind["Q1_neighbor"]:
+            self.assertIn(r["strategy"], q2.Q1_NEIGHBORHOOD,
+                            f"Q1_neighbor strategy 应 ∈ Q1_NEIGHBORHOOD, "
+                            f"实际 {r['strategy']}")
+            self.assertNotEqual(r["strategy"], q2.Q1_FIXED_STRATEGY,
+                                  "Q1_neighbor strategy 不得 = Q1_FIXED_STRATEGY")
+        # Q1_anchor strategy 必为 Q1_FIXED_STRATEGY
+        for r in by_kind["Q1_anchor"]:
+            self.assertEqual(r["strategy"], q2.Q1_FIXED_STRATEGY)
+        # ZERO strategy 必为 ZERO_OBJECTIVE_STRATEGY
+        for r in by_kind["ZERO"]:
+            self.assertEqual(r["strategy"], q2.ZERO_OBJECTIVE_STRATEGY)
 
 
 if __name__ == "__main__":

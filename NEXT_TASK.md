@@ -20,7 +20,7 @@
 
 ### 仅允许新建 / 修改
 1. `src/q2_single_bomb.py` (主程序, 复用 src/q1_baseline + src/q1_cylinder)
-2. `tests/test_q2_single_bomb.py` (71 测, 19 组 A-Q)
+2. `tests/test_q2_single_bomb.py` (85 测, 22 组 A-Q + U2/R2/S2 返工加固类)
 3. `MODEL.md` (增加 Q2 单弹合同章节 + 本轮 FIX 7 P1 变更表)
 4. `START_HERE.md` (状态同步)
 5. `NEXT_TASK.md` (本文件)
@@ -59,8 +59,8 @@
 13. coarse/medium/fine 实测 (warm-up + repeat=3 + samples 复用) ✓
 14. Q1 baseline 42/42 测试全过 ✓
 15. Q1 cylinder 75/75 测试全过 ✓
-16. Q2 Foundation 71/71 测试全过 ✓
-17. 全部 unittest 188/188 全过 ✓
+16. Q2 Foundation 85/85 测试全过 ✓
+17. 全部 unittest 202/202 全过 ✓
 18. 100 候选 smoke 完成 (EXIT=0) ✓
 19. 默认 smoke 标注 candidate_source ✓
 20. 不生成 result1.xlsx ✓
@@ -68,6 +68,9 @@
 22. 文档当前阶段一致 (MODEL/START_HERE/NEXT_TASK/README) ✓
 23. 工作流文件未修改 ✓
 24. 工作区无非预期文件 ✓
+25. (P1 返工) u0 与地面合法性统一 (validate_strategy 接受 u0, evaluate 二次分类非 silent) ✓
+26. (P1 返工) profile-measure 暴露 system_error (warm_up_error + n_system_error + system_errors; main 返回 0/1/2) ✓
+27. (P1 返工) 真实非零邻域 (Q1_NEIGHBORHOOD 内 ok+total>0; 全 0/全异常 → RuntimeError; 9 rows 分类) ✓
 
 ### 计算结果 (FOUNDATION SMOKE, NOT AN OPTIMIZATION RESULT)
 - 候选数: 100; 种子: 2025; Profile: coarse (grade=coarse, scan_step=0.05 s)
