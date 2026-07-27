@@ -1,566 +1,458 @@
 ---
 name: project-mainline-governance
-description: Keep AI-assisted engineering and mathematical-modeling projects on the main delivery path. Prevent premature phase starts, role proliferation, design-review loops, fake progress, unsupported PASS claims, and cross-worktree contamination. Use at every new project start, every phase transition, and whenever multiple agents, worktrees, branches, audits, benchmarks, or PR gates are involved.
+description: Keep AI-assisted engineering and mathematical-modeling projects on the main delivery path. Prevent premature phase starts, unnecessary CI, role proliferation, design-review loops, fake progress, unsupported PASS claims, and cross-worktree contamination. Use at every new project start and every phase transition.
 ---
 
-# Project Mainline Governance
+# 项目主线治理 Skill
 
-## 1. Purpose
+## 1. 根本目标
 
-This skill converts lessons from the CUMCM-2025-A workflow into reusable project rules.
+本 Skill 的目标不是建设一套漂亮的 DevOps、审批或多 Agent 体系，而是让项目尽快形成最终可交付成果。
 
-The central goal is not to maximize the number of agents, reports, gates, or branches. The goal is to move the project from one verified deliverable to the next with the least coordination overhead that still protects correctness.
+对数学建模项目，主成果通常是：
 
-Use this skill:
+```text
+可信模型
+→ 可复现实验
+→ Q1～Qn 数值结果
+→ 官方格式结果文件
+→ 图表
+→ 论文
+```
 
-- when starting a new repository or competition project;
-- before creating a new task branch or worktree;
-- before activating a specialist agent;
-- before moving from design to implementation;
-- before claiming tests, benchmark, CI, PR, or result completion;
-- when the process feels busy but the repository is not advancing.
+任何流程、CI、Agent、报告、分支和审核，只有在能提高这些成果的正确性或交付速度时才值得存在。
 
-## 2. Prime Directive
+核心原则：
 
-> One active project phase, one current task, one primary writer, one review target.
+> 一个活跃阶段、一个当前任务、一个主施工者、一个审核对象。
 
-A future roadmap stage is not an active task.
+> 少开角色，少开支路，少做无产出的治理；优先产生代码、数据、结果文件和论文。
 
-A technically possible parallel activity is not automatically a justified parallel workstream.
+---
 
-Do not activate the next phase merely because its worktree or design can be prepared early. Activate it only when the current phase's exit gate is satisfied or when the user explicitly authorizes a narrowly bounded exception.
+## 2. 每个新项目启动时必须执行
 
-## 3. Mistakes This Skill Must Prevent
+### 2.1 先定义最终交付
 
-### 3.1 Starting the next phase before the current phase closes
+写出一句话：
 
-Failure pattern:
+> 项目完成的标准是：__________ 已生成、可复现、可独立验收。
 
-- Foundation is still Draft or blocked;
-- CI or semantic debt is still open;
-- a Search, optimization, writing, or downstream agent is activated anyway;
-- the next phase develops its own design, audit, worktree, and reports;
-- the project now has two competing centers of gravity.
+不得把“CI 全绿”“PR 很整洁”“Agent 很多”当作项目最终目标。
 
-Rule:
+### 2.2 只规划 3～7 个粗阶段
 
-- A downstream phase may be listed in the roadmap.
-- It must not become an active construction stream until its entry gate is met.
-- Read-only pre-research is allowed only when it has a fixed time box and cannot create a new governance chain.
+例如：
 
-### 3.2 Confusing a phase with a role
+```text
+事实核验
+→ 模型基础
+→ 优化求解
+→ 多主体扩展
+→ 结果文件
+→ 论文
+```
 
-Failure pattern:
+路线图中存在某个阶段，不代表该阶段已经获准启动。
 
-A task such as “Search design” becomes:
+### 2.3 永远只激活一个当前任务
 
-- Search CC;
-- Search MAIN;
-- Search Audit;
-- Hermes Search governance;
-- separate handoff reports for each.
+当前任务必须明确：
 
-The work has not become more correct; the communication surface has multiplied.
+- 目的；
+- 允许修改文件；
+- 禁止修改文件；
+- 验收证据；
+- 停止条件；
+- 下一阶段进入条件。
 
-Rule:
+当前阶段未关闭时，不得提前启动下游施工角色。
 
-Create a new role only when all are true:
+### 2.4 先验证施工能力，再发施工 Prompt
 
-1. it owns a distinct artifact;
-2. it has the tools needed to produce or verify that artifact;
-3. its activation reduces risk more than it adds coordination cost;
-4. its stop condition is explicit.
+必须真实验证当前施工会话具备：
 
-Do not create a role merely because a topic exists.
+- Bash / PowerShell / Terminal；
+- Write / Edit / Delete；
+- 仓库读写；
+- 测试执行；
+- 必要时 commit / push。
 
-### 3.3 Fake parallelism
+若会话只有只读能力：
 
-Failure pattern:
+- 只能承担研究、审查、监督；
+- 不得提交“实现完成”报告；
+- 不得使用占位 SHA、占位 benchmark 或未运行测试的 PASS。
 
-- one agent lacks Write/Edit/Bash;
-- other agents repeatedly review plans for code that does not exist;
-- many sessions are active, but no artifact is produced.
+---
 
-Rule:
+## 3. Agent / CC 最小化原则
 
-Before assigning construction work, verify tool capability in the actual session:
+### 3.1 默认角色只有两个
 
-- terminal execution;
-- file create/edit/delete;
-- repository read/write access;
-- test execution;
-- commit/push capability when authorized.
+- **MAIN**：总览主线、冻结当前任务、作最终决策；
+- **BUILD CC**：当前任务唯一写入者。
 
-If the session is read-only, classify it as review/research only. Never treat a read-only report as an implementation delivery.
+### 3.2 按需启用两个只读角色
 
-### 3.4 Design-report loops
+- **只读监管 / Audit CC**：在真实 artifact 出现后审 P0/P1；
+- **Hermes**：只核验 branch、SHA、changed files、push、PR、GitHub 状态。
 
-Failure pattern:
+Audit 与 Hermes 默认只读，不得成为第二施工者。
 
-`V1 -> V2 -> V3 -> V4 -> V5 -> V5.1 -> V5.2`
+### 3.3 非必要不得新开 CC
 
-Each round fixes smaller wording, table, naming, or serialization details while no implementation exists.
+创建新 CC 前必须同时满足：
 
-Rule:
+1. 它拥有与现有角色不同的明确 artifact；
+2. 现有角色无法合理完成；
+3. 新角色具备完成任务所需工具；
+4. 它降低的风险大于新增沟通成本；
+5. 有明确停止条件；
+6. 用户或 MAIN 明确批准。
 
-For one phase, the default maximum is:
+以下理由不足以新建 CC：
 
-1. one design pass;
-2. one targeted P0/P1 design repair;
-3. implementation plus tests;
-4. code review.
+- “以后可能用到”；
+- “这个阶段名字不同”；
+- “想让多个 Agent 看起来并行”；
+- “可以提前设计”；
+- “Audit 可能还能再发现问题”。
 
-After the design is executable, remaining details should be frozen as binding implementation amendments and proved by code/tests.
+优先复用现有 MAIN、BUILD、只读监管和 Hermes。
 
-Do not open a new design gate for:
+### 3.4 禁止把阶段错误拆成角色群
 
-- Markdown table shape;
-- section order;
-- label wording;
-- a field that can be expressed as a test fixture;
-- a deterministic rule already unambiguous enough to implement.
+不得因为存在 Search、论文、可视化等阶段，就自动创建：
 
-### 3.5 Treating format defects as phase blockers
+```text
+Search CC
+Search MAIN
+Search Audit
+Search Hermes
+```
 
-Rule:
+阶段只有在进入 Gate 满足后才激活；激活后仍优先由现有 BUILD CC 施工。
 
-Format is blocking only when it creates two competing sources of truth or makes the contract unimplementable.
+---
 
-If the machine-readable source can be singular and tested, prefer:
+## 4. CI 降级原则：默认非必要不用 CI
 
-- one config object;
-- one schema;
-- one fixture;
-- one validation test.
+### 4.1 CI 的默认地位
 
-Do not require a separate approval round merely to rearrange identical information into a prettier table.
+对以最终建模产出为目的的项目：
 
-### 3.6 Claiming work without evidence
+```text
+CI_REQUIRED = NO
+```
 
-Never accept these statements without direct evidence:
+除非有明确理由，否则不创建、不扩建、不把 CI 作为阶段硬门槛。
 
-- “implemented” without changed files;
-- “committed” without a real SHA;
-- “pushed” without a remote branch/SHA;
-- “PASS” without actual command output;
-- “benchmark complete” without raw timing data;
-- “CI passed” when the run is cancelled, timed out, skipped, or tied to an older SHA;
-- “GitHub verified” when the evidence came only from a local agent report.
+CI 只是自动报警器，不是数学正确性的主要证据，也不是项目成果。
 
-Required evidence hierarchy:
+### 4.2 数学建模项目的首选替代方案
 
-1. artifact or diff;
-2. command and exit code;
-3. test count and failures/skips;
-4. commit SHA;
-5. remote SHA;
-6. CI run tied to that SHA;
-7. PR metadata.
+默认采用：
 
-Plans and self-reports are not substitutes for these.
+```text
+本地真实验证
++ 只读监管 CC 独立复核
++ Hermes 核验 Git / GitHub 状态
++ 关键里程碑全量回归
+```
 
-### 3.7 Auditing before there is an artifact
+其中：
 
-Rule:
+- BUILD CC 运行真实测试、收敛、benchmark、结果生成；
+- Audit CC 只读检查代码、测试输出、数学合同和结果；
+- Hermes 检查 SHA、分支、changed files、push、PR；
+- MAIN 决定是否接受和进入下一阶段。
 
-Audit is activated when there is something concrete to inspect:
+### 4.3 只有以下情况才考虑 CI
 
-- a design that is genuinely needed before implementation;
-- a commit;
-- a PR diff;
-- test output;
-- benchmark data;
-- a result file;
-- a paper draft.
+至少满足一项，并写明理由：
 
-Do not keep Audit continuously active around hypothetical implementation.
+- 多人频繁向同一主分支合并；
+- 项目需要部署、发布或长期维护；
+- 轻量测试可在约 5 分钟内完成；
+- 回归错误很容易由普通提交引入；
+- 分支保护或外部平台明确要求；
+- 用户明确要求 CI；
+- 结果文件自动生成具有高误写风险，且 CI 能有效阻止。
 
-Audit should focus on P0/P1 blockers. P2 issues should normally be recorded and deferred unless they combine into a correctness risk.
+### 4.4 使用 CI 时必须保持轻量
 
-### 3.8 Letting audit scope expand indefinitely
+建模项目 CI 默认只做：
 
-Audit must review against a frozen rubric and approved scope.
+- `py_compile` / import；
+- 快速单元测试；
+- 一个真实 smoke；
+- 明显文件边界检查。
 
-An auditor may introduce a new blocker only when it is:
+昂贵内容默认放在本地里程碑验收：
 
-- P0/P1;
-- supported by concrete evidence;
-- relevant to the current task;
-- impossible to defer safely.
+- 全量数值回归；
+- 空间收敛；
+- 时间收敛；
+- 真实 profile benchmark；
+- 正式优化搜索；
+- Excel 生成与回读；
+- 论文数值一致性。
 
-The auditor must not restart previously accepted design sections merely because a more elegant design is imaginable.
+不得为了 CI：
 
-### 3.9 Ignoring repository-native governance
+- 删除真实测试；
+- 放宽数学断言；
+- 把所有真实验证改成 mock；
+- 长期调试 workflow 而不推进模型；
+- 将 timeout 等同于数学失败。
 
-At project start, read the repository's own rules before inventing new governance.
+### 4.5 CI timeout 的处理
 
-Priority:
+若满足：
 
-1. user instruction;
-2. repository root instructions such as `CLAUDE.md`;
-3. approved project skill;
-4. current task file;
-5. model/spec documents;
-6. PR description and CI state;
-7. new process proposals.
+- 本地全量测试真实通过；
+- 无 assertion failure；
+- 模型与结果可复现；
+- 只读监管复核通过；
+- Hermes 已核验 commit / push / PR；
 
-If the repository says “one current task,” do not activate a parallel downstream task without explicit user authorization.
+则单纯 CI timeout、cancelled 或运行速度问题原则上属于 P2/P3，不得自动阻断建模主线。
 
-### 3.10 Overengineering before benchmark or reality check
+只有当 timeout 隐藏真实失败、无法确认测试完整性、或项目有部署/多人协作硬要求时，才升级为 P1。
 
-Failure pattern:
+### 4.6 CI 投入上限
 
-- elaborate cache/checkpoint/runtime schemas are perfected;
-- performance assumptions remain unmeasured;
-- the real evaluator or minimal vertical slice has not run.
+除非用户明确要求，CI 及 workflow 治理不应占用超过项目工程时间的约 5%～10%。
 
-Rule:
+一旦 CI 调试开始超过模型、结果或论文推进成本，MAIN 必须降级或取消 CI。
 
-Freeze only what must precede implementation.
+---
 
-Then build the smallest real vertical slice:
+## 5. 设计与审核不得形成版本循环
 
-`input -> real evaluator -> result -> checkpoint -> resume -> test`
+失败模式：
 
-Benchmark before freezing large budgets or parallel topology.
+```text
+V1 → V2 → V3 → V4 → V5 → V5.1 → V5.2
+```
 
-Do not let infrastructure become the project.
+每个版本只修表格、命名、字段或排版，却没有代码和测试。
 
-### 3.11 Mixing local state and GitHub state
+默认最多允许：
 
-Always label evidence precisely:
+1. 一次设计；
+2. 一次 P0/P1 定向修订；
+3. 进入实现与测试；
+4. 一次代码审核；
+5. 一次 P0/P1 修复。
 
-- `LOCAL OBSERVED`;
-- `REMOTE OBSERVED`;
-- `GITHUB VERIFIED`;
-- `AGENT SELF-REPORTED`.
+设计已经可执行后，剩余细节应：
 
-A clean local worktree does not prove the remote branch is current.
+```text
+ACCEPT WITH BINDING IMPLEMENTATION AMENDMENTS
+```
 
-A local commit does not prove it was pushed.
+然后由代码和测试证明。
 
-A PR description does not prove tests passed.
+以下问题不得单独开启新 Gate：
 
-A CI run from an old SHA does not validate the new SHA.
+- Markdown 表格形式；
+- 章节顺序；
+- 标签名称；
+- 可以由 schema / fixture / unit test 冻结的细节；
+- 普通 P2 可读性问题。
 
-### 3.12 Creating more governance files than project files
+---
 
-Do not create:
+## 6. 只审核真实产物
 
-- report-of-report documents;
-- repeated signoff files;
-- duplicate gate documents;
-- audit ZIPs for ordinary iterations;
-- multiple status files carrying the same state.
+Audit 只在以下 artifact 存在后启动：
 
-Prefer:
+- 真实设计合同；
+- 代码 diff；
+- commit；
+- 测试输出；
+- benchmark 原始数据；
+- 正式结果文件；
+- 论文草稿。
 
-- one current-task file;
-- one PR;
-- one machine-readable config;
-- one test suite;
-- concise PR comments for review outcomes.
+没有真实 artifact 时，不得持续开启 Audit 审核假实施。
 
-## 4. Mandatory New-Project Bootstrap
+Audit 只阻断：
 
-Run this protocol at the start of every new project.
+- P0：数学、数据、安全或结果根本错误；
+- P1：会让当前正式交付错误或不可复现的问题。
 
-### Step 1: Define the final deliverable
+P2 默认记录后继续，不得无限扩大审核范围。
 
-Write one sentence:
+---
 
-> The project is finished when __________ is delivered and independently verifiable.
+## 7. 证据优先，禁止假进度
 
-Examples:
+必须区分：
 
-- a reproducible result workbook;
-- a tested application;
-- a competition paper plus code and generated result files;
-- a deployed service with acceptance tests.
+- `AGENT SELF-REPORTED`：Agent 自报；
+- `LOCAL OBSERVED`：本地命令真实看到；
+- `REMOTE OBSERVED`：远程分支可见；
+- `GITHUB VERIFIED`：GitHub API / PR / CI 直接核验。
 
-### Step 2: Define the phase chain
+不得接受：
 
-Use 3-7 coarse phases only.
+- 无 changed files 的“已实现”；
+- 无真实 SHA 的“已 commit”；
+- 无 remote SHA 的“已 push”；
+- 无命令输出的“PASS”；
+- 无原始时间数据的“benchmark 完成”；
+- cancelled / timeout / old SHA 的“CI 通过”；
+- PR 描述代替测试证据；
+- 占位 fixture、占位 SHA、占位结果。
 
-Example:
+状态词必须严格使用：
 
-`Facts -> Model foundation -> Optimization -> Multi-agent extension -> Results -> Paper`
+- `PLANNED`；
+- `IMPLEMENTED LOCALLY`；
+- `TESTED LOCALLY`；
+- `COMMITTED`；
+- `PUSHED`；
+- `GITHUB VERIFIED`；
+- `REVIEWED`；
+- `ACCEPTED`；
+- `MERGED`；
+- `FINAL`。
 
-Do not create agents or branches for all phases at once.
+不得用一个模糊的“完成”覆盖全部阶段。
 
-### Step 3: Select exactly one current task
+---
 
-The current task must include:
+## 8. 阶段进入与退出 Gate
 
-- purpose;
-- allowed files;
-- forbidden files;
-- completion evidence;
-- stop condition;
-- next phase entry gate.
+### 8.1 进入下一阶段前
 
-### Step 4: Verify execution capability
+必须满足：
 
-Before sending a construction prompt, require a live tool check:
+- 上一阶段核心 artifact 已存在；
+- 阻断性 P0/P1 已关闭或由用户明确接受；
+- 必要的本地验证已完成；
+- 施工会话具备工具；
+- MAIN 明确授权；
+- 若项目明确要求 CI，则所需 CI 已通过；
+- 若项目不要求 CI，不得临时把 CI 变成硬门槛。
 
-- repository path;
-- branch;
-- HEAD;
-- worktree status;
-- terminal execution;
-- write/edit/delete test in an authorized temporary location;
-- language/runtime version.
+### 8.2 当前阶段结束前
 
-If any capability is missing, reassign the session before designing the implementation around nonexistent tools.
+必须有：
 
-### Step 5: Assign minimal roles
+- 授权范围内的文件；
+- 真实测试 / 验证输出；
+- commit SHA；
+- push 证据；
+- Hermes 对分支与 changed files 的核验；
+- 只读监管对 P0/P1 的结论；
+- MAIN 的接受决定；
+- 明确停止，不自动进入下一任务。
 
-Default roles:
+---
 
-- **MAIN**: roadmap, decisions, scope, final acceptance;
-- **BUILD CC**: the only writer for the active task;
-- **AUDIT**: activated only after an artifact exists;
-- **GIT/GOVERNANCE**: optional, read-only branch/PR/CI verification.
+## 9. 主线健康检查
 
-Do not create a specialist role until its phase becomes active.
+任何时候觉得“很忙但没进展”，立即回答：
 
-### Step 6: Establish evidence rules
+1. 当前唯一任务是什么？
+2. 上一轮之后，哪个真实 artifact 发生了变化？
+3. 当前唯一施工者是否真的能写文件和运行命令？
+4. 我们是在审核代码/结果，还是审核又一份计划？
+5. 是否提前启动了下游阶段？
+6. 是否把 CI、格式或 P2 变成了阻断？
+7. 是否存在多个 CC 重复同一判断？
+8. 是否可以改用现有只读监管和 Hermes，而不是新建 CC？
+9. GitHub 状态是否对应当前 SHA？
+10. 下一步最近的“可产生不可伪造证据”的动作是什么？
 
-Define in advance what counts as:
+若第 2 或第 10 项为空：
 
-- implemented;
-- tested;
-- benchmarked;
-- pushed;
-- CI green;
-- accepted;
-- final.
+```text
+停止治理扩张
+冻结次要角色
+回到当前主线施工
+```
 
-### Step 7: Copy this skill
+---
 
-For a new repository, copy this file to:
+## 10. 必须立即纠偏的红旗
 
-`.claude/skills/project-mainline-governance/SKILL.md`
+- 连续两轮以上纯设计返工；
+- 施工 CC 没有 Bash / Write / Edit；
+- 新 CC 没有独立 artifact；
+- Foundation 未关闭却启动 Search / 论文 / 下游施工；
+- placeholder SHA / benchmark / fixture；
+- 未运行测试却写 PASS；
+- Audit 审核不存在的 commit；
+- 格式问题开启新 Gate；
+- 两个写入者操作同一 worktree；
+- CI timeout 被直接描述为数学失败；
+- workflow 调试时间超过模型推进；
+- 状态报告数量增长快于代码、结果和论文。
 
-Then reference it from the repository's root agent instructions.
+纠偏动作固定为：
 
-## 5. Phase Entry and Exit Gates
+1. 暂停所有非当前任务角色；
+2. 只保留 MAIN、一个 BUILD CC；
+3. 按需启用只读监管和 Hermes；
+4. 明确最近的证据产出动作；
+5. 发一个施工 Prompt；
+6. 只审核施工产物。
 
-### Entry gate template
+---
 
-A phase starts only when:
+## 11. 本项目已经犯过的典型错误
 
-- previous phase artifact exists;
-- previous blocking PR is merged or explicitly waived;
-- required CI is green;
-- open P0/P1 debt is zero or explicitly accepted;
-- the construction session has required tools;
-- the user or MAIN explicitly authorizes the phase.
+本 Skill 特别防止以下历史重演：
 
-### Exit gate template
+1. Foundation PR 尚未合并，就提前激活 Search；
+2. 把 Search 阶段拆成 Search CC、Search MAIN、Search Audit、Hermes 多条支路；
+3. 未先检查施工会话是否具备 Bash / Write / Edit；
+4. 没有代码，却连续审核 V3、V4、V5、V5.1、V5.2；
+5. 把表格形式、字段命名和实现细节拆成独立 Gate；
+6. 用报告版本数替代真实仓库进展；
+7. 出现占位 commit、未生成 fixture、未跑测试却写 PASS；
+8. 将 CI timeout 提升成比模型和结果更重要的硬阻断；
+9. 让治理角色和报告数量超过工程与建模产出；
+10. 最终不得不退回 Foundation 主线重新收口。
 
-A phase ends only when:
+永久修正：
 
-- authorized files are complete;
-- required tests ran and passed;
-- no hidden skips or expected failures exist unless approved;
-- commit SHA exists;
-- push is verified;
-- CI is tied to the same SHA;
-- PR state is known;
-- generated artifacts are validated;
-- current task documentation is synchronized;
-- agent stops and does not enter the next phase.
+- 路线图存在不等于阶段已授权；
+- 下游角色只在进入 Gate 后激活；
+- CI 默认非必要；
+- 施工能力先验证；
+- 一次设计修订后转代码与测试；
+- 只读监管和 Hermes 优先于新建 CC；
+- MAIN 必须主动结束不再产生价值的支路。
 
-## 6. Review Budget
+---
 
-Default review budget for one active task:
+## 12. 最终操作口令
 
-- design review: one pass;
-- targeted design repair: at most one pass;
-- implementation review: one pass;
-- P0/P1 code repair: at most one planned pass;
-- final acceptance: one pass.
+永远优先：
 
-Exceed this budget only when new concrete evidence reveals a genuine blocker.
+```text
+一个任务
+→ 一个施工者
+→ 一个真实 artifact
+→ 一次真实验证
+→ 一次只读审核
+→ 一次 MAIN 决策
+```
 
-When the budget is exceeded, MAIN must issue one of these decisions:
+避免：
 
-- `ACCEPT WITH BINDING IMPLEMENTATION AMENDMENTS`;
-- `REDUCE SCOPE TO MINIMAL VERTICAL SLICE`;
-- `STOP AND CLOSE CURRENT PHASE`;
-- `RETURN TO PREVIOUS PHASE DUE TO P0/P1 FAILURE`.
+```text
+多个 CC
+→ 多个报告
+→ 多个 Gate
+→ 大量 CI 治理
+→ 没有模型、结果和论文
+```
 
-Do not default to another document version.
-
-## 7. Mainline Health Check
-
-Ask these questions whenever progress feels slow:
-
-1. What is the single current task?
-2. What concrete artifact changed since the last review?
-3. Is the active writer able to write and run tools?
-4. Are we reviewing code/results, or only reviewing another plan?
-5. Did a downstream phase start before its gate?
-6. Did a P2 or formatting issue become a blocker?
-7. Are multiple roles duplicating the same judgment?
-8. Is GitHub state verified against the current SHA?
-9. What can be removed without reducing correctness?
-10. What is the next irreversible evidence-producing action?
-
-If answers 2 or 10 are empty, stop governance work and restore the implementation mainline.
-
-## 8. Red Flags Requiring Immediate MAIN Intervention
-
-- more than two consecutive design-report revisions;
-- a construction agent reports no Bash/Write/Edit access;
-- PASS appears without command output;
-- placeholder SHA or placeholder benchmark data;
-- an auditor reviews a nonexistent commit;
-- a format-only issue opens a new gate;
-- two active writers share one worktree;
-- a next-phase branch is active while the current blocking PR is unmerged;
-- a PR description is treated as test evidence;
-- CI is cancelled but described as passed;
-- the number of status reports grows faster than code/tests/results;
-- a future result file is generated in the wrong phase.
-
-Required response:
-
-1. freeze all secondary roles;
-2. name the single current task;
-3. identify the nearest evidence-producing action;
-4. issue one construction prompt;
-5. review only the resulting artifact.
-
-## 9. Role Contracts
-
-### MAIN
-
-MAIN must:
-
-- protect the full roadmap;
-- choose the current task;
-- stop premature phase activation;
-- resolve conflicts between rigor and progress;
-- accept binding amendments when further prose review has diminishing returns;
-- verify remote/GitHub state directly before final claims.
-
-MAIN must not:
-
-- create roles merely to distribute discussion;
-- let audit become a second project manager;
-- allow design loops to continue by inertia.
-
-### BUILD CC
-
-BUILD CC must:
-
-- be the only writer for the active worktree;
-- perform live preflight;
-- edit only authorized files;
-- run real commands;
-- report exact evidence;
-- stop after commit/push/PR update when instructed.
-
-BUILD CC must not:
-
-- submit plans as completed work;
-- fabricate fixtures, SHA, timings, or PASS results;
-- enter the next task automatically.
-
-### AUDIT
-
-AUDIT must:
-
-- remain read-only;
-- review a fixed artifact against a fixed rubric;
-- separate P0/P1 from P2;
-- provide minimal repair instructions;
-- stop after the decision.
-
-AUDIT must not:
-
-- write repository files;
-- create new project scope;
-- repeatedly reopen accepted sections without new blocker evidence.
-
-### GIT/GOVERNANCE
-
-The governance role may verify:
-
-- branch;
-- SHA;
-- worktree registration;
-- changed-file whitelist;
-- push;
-- PR base/head/draft state;
-- CI run and job conclusions.
-
-It must not become a second writer or mathematical reviewer.
-
-## 10. Evidence-First Status Vocabulary
-
-Use only statuses supported by evidence:
-
-- `PLANNED`: scope exists; no implementation.
-- `IMPLEMENTED LOCALLY`: files changed; tests may be incomplete.
-- `TESTED LOCALLY`: commands and outputs exist.
-- `COMMITTED`: real local commit SHA exists.
-- `PUSHED`: remote branch points to commit.
-- `CI VERIFIED`: CI success is tied to that SHA.
-- `REVIEWED`: audit examined the artifact.
-- `ACCEPTED`: MAIN accepted the phase deliverable.
-- `MERGED`: GitHub shows merged state.
-- `FINAL`: only when the project-specific final-delivery criteria are met.
-
-Never collapse these into a vague “done.”
-
-## 11. Minimal Prompt Pattern for an Active Construction Task
-
-Every construction prompt should contain only:
-
-1. role and current task;
-2. repository/worktree/branch/starting SHA;
-3. allowed and forbidden files;
-4. exact implementation objective;
-5. exact tests and acceptance evidence;
-6. commit/push/PR instructions;
-7. hard stop conditions.
-
-Do not include the entire project history unless it changes implementation decisions.
-
-## 12. Lessons From the Search Detour
-
-The specific failure sequence generalized here was:
-
-1. a downstream Search phase existed in the roadmap;
-2. it was mistaken for permission to activate a Search construction role early;
-3. the role was activated before Foundation merge and CI closure;
-4. separate Search MAIN, Search Audit, and governance threads formed;
-5. the construction session lacked write/terminal capability;
-6. design reviews continued despite no code artifact;
-7. contract versions multiplied;
-8. formatting and implementation details became separate gates;
-9. progress was measured by report versions rather than repository evidence;
-10. the project eventually had to return to Foundation final close.
-
-Permanent correction:
-
-- roadmap presence does not equal activation permission;
-- downstream agents start only after phase entry gates;
-- capability is checked before assigning construction;
-- after one targeted design repair, implementation and tests become the proof mechanism;
-- MAIN closes branches of discussion that no longer advance the deliverable.
-
-## 13. Final Operating Rule
-
-At all times, prefer this:
-
-`one task -> one writer -> one artifact -> one test run -> one review -> one decision`
-
-over this:
-
-`many roles -> many reports -> many gates -> no artifact`
-
-When in doubt, return to the nearest action that produces verifiable code, data, result files, or a reviewable draft without violating the current phase boundary.
+当流程与最终建模产出发生冲突时，在不牺牲数学正确性、可复现性和安全底线的前提下，优先最终建模产出。
