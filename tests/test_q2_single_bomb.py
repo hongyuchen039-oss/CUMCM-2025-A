@@ -1328,10 +1328,65 @@ class R2ProfileMeasureSystemError(unittest.TestCase):
     def test_r2_05_normal_profile_measure_returns_zero(self):
         """P1-2-CLI: 正常 --profile-measure 无 system_error → main 返回 0.
 
-        warm_up=False + repeat=1 控制 wall-clock (避免再次踩 CI 25 min)."""
-        rc = q2_main(["--profile-measure", "--repeat", "1"])
+        Mock-driven CLI 合同测试. 不执行真实 coarse/medium/fine 几何评估,
+        不触发 _resolve_non_zero_neighbor, 不调用真实 evaluate_single_bomb_strategy.
+        真实性能校准由 QProfileEvaluation.test_q02 与独立 CLI 验证承担.
+        """
+        fake_plan = [
+            (q2.CANDIDATE_KIND_ANCHOR, q2.Q1_FIXED_STRATEGY),
+            (q2.CANDIDATE_KIND_NEIGHBOR, q2.Q1_NEIGHBORHOOD[0]),
+            (q2.CANDIDATE_KIND_ZERO, q2.ZERO_OBJECTIVE_STRATEGY),
+        ]
+
+        seen_profiles: list = []
+
+        def fake_profile_evaluation(strategy, sample_level, repeat=3,
+                                      warm_up=True, samples_reuse=True,
+                                      evaluate_fn=None, **kwargs):
+            seen_profiles.append(sample_level)
+            return {
+                "sample_level": sample_level,
+                "scan_step": q2.PROFILE_SCAN_STEPS[sample_level],
+                "repeat": repeat,
+                "warm_up": warm_up,
+                "samples_reused": samples_reuse,
+                "n_system_error": 0,
+                "system_errors": [],
+                "warm_up_error": None,
+                "results": [{
+                    "elapsed_s": 0.001,
+                    "status": "ok",
+                    "total_duration_s": 1.0,
+                    "n_intervals": 1,
+                }],
+                "median_elapsed_s": 0.001,
+                "min_elapsed_s": 0.001,
+                "max_elapsed_s": 0.001,
+                "range_s": 0.0,
+                "first_status": "ok",
+                "first_total_duration_s": 1.0,
+                "first_n_intervals": 1,
+                "window_length_s": 20.0,
+            }
+
+        with patch("src.q2_single_bomb._default_profile_plan",
+                    return_value=fake_plan) as mock_plan, \
+             patch("src.q2_single_bomb.profile_evaluation",
+                    side_effect=fake_profile_evaluation) as mock_profile, \
+             patch("src.q2_single_bomb._print_profile_measurement") as mock_print:
+            rc = q2_main(["--profile-measure", "--repeat", "1"])
+
+        # 合同断言
         self.assertEqual(rc, 0,
                           f"无 system_error 时 main 应返回 0, 实际 {rc}")
+        mock_plan.assert_called_once()
+        self.assertEqual(mock_profile.call_count, 9,
+                          f"profile_evaluation 应被调用 9 次, 实际 {mock_profile.call_count}")
+        self.assertEqual(
+            sorted(seen_profiles),
+            sorted(["coarse", "medium", "fine"] * 3),
+            f"三种 profile 各 3 次, 实际 {sorted(seen_profiles)}")
+        mock_print.assert_called_once()
 
     def test_r2_06_arg_error_returns_two(self):
         """P1-2-CLI: 参数错误仍返回 2."""
