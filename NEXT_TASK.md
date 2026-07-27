@@ -1,11 +1,28 @@
 # 当前唯一任务
 
 ## 本轮任务
-**TASK_004 FOUNDATION: Q2 单弹评估器基础 (NOT AN OPTIMIZATION RESULT)**
-— 四变量合同 + 单候选完整圆柱评估器 + 100 候选本地 smoke + 回归测试 +
-**7 个 P1 加固** (valid/status 语义、EPS_GROUND、Q1 直接对照、非 vacuous
-多区间、system_error 退出码、smoke candidate_source、coarse/medium/fine 实测).
-本轮不启动 Q2 搜索; 仅在 Foundation PR 合并 + CI 持续 PASS 后启动 Search.
+**TASK_004 FOUNDATION FINAL CLOSE: 关闭最后两项债务**
+— DEBT-Q2-PROFILE-EXIT-001 (warm-up error → CLI rc=1) + GitHub CI 25 分钟
+timeout 拆分 (单 job → 3 个并行 unittest job).
+本轮不启动 Q2 搜索; 不进 Q3; 不写 Search 代码; 不生成 result1.xlsx.
+
+---
+
+### 债务登记状态
+
+- **DEBT-Q2-PROFILE-EXIT-001** — **CLOSED** (本轮 Final Close)
+  - 旧合同: warm-up-only error → CLI rc=0
+  - 新合同: 任何程序异常 (warm-up 或 formal repeat) → CLI rc=1
+  - 参数错误 → CLI rc=2 不变
+  - 正常 → CLI rc=0 不变
+  - 详细字段语义保留: `warm_up_error` (warm-up) 与 `n_system_error`/`system_errors` (repeat) 分开记录,
+    但在 CLI 退出码上**严格同权**.
+
+---
+
+### 范围
+- 实现 SingleBombStrategy (4 变量: heading_rad, speed_mps, release_time_s, delay_s)
+- 推导量: release_point, detonation_time, detonation_point, cloud_center_fn
 
 ### 范围
 - 实现 SingleBombStrategy (4 变量: heading_rad, speed_mps, release_time_s, delay_s)
@@ -71,6 +88,8 @@
 25. (P1 返工) u0 与地面合法性统一 (validate_strategy 接受 u0, evaluate 二次分类非 silent) ✓
 26. (P1 返工) profile-measure 暴露 system_error (warm_up_error + n_system_error + system_errors; main 返回 0/1/2) ✓
 27. (P1 返工) 真实非零邻域 (Q1_NEIGHBORHOOD 内 ok+total>0; 全 0/全异常 → RuntimeError; 9 rows 分类) ✓
+28. (Final Close) DEBT-Q2-PROFILE-EXIT-001 CLOSED: warm-up error → CLI rc=1 ✓
+29. (Final Close) CI 25-min timeout 拆分: 3 个并行 unittest job (q1-baseline / q1-cylinder / q2-foundation) ✓
 
 ### 计算结果 (FOUNDATION SMOKE, NOT AN OPTIMIZATION RESULT)
 - 候选数: 100; 种子: 2025; Profile: coarse (grade=coarse, scan_step=0.05 s)

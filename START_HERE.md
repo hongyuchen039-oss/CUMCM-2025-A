@@ -85,18 +85,18 @@ u0 与地面合法性统一、profile-measure 暴露 system_error、真实非零
 - 仍标记为 FULL-CYLINDER CANDIDATE / EXPERIMENTAL, 不得冒充 VERIFIED / FINAL.
 
 ## 需要陈虹宇决定
-- 是否接受本轮方案 B 1.392384 s 作为完整圆柱正式候选 (FULL-CYLINDER CANDIDATE / EXPERIMENTAL)?
-- 是否接受 ΔT = −0.042698 s (方案 B 比方案 A 短 2.975%) 作为 Q1 点目标近似误差的量化?
-- 是否接受 margin_max = 5.282478 m (0.001 s 局部网格估计) 报告口径?
-- 是否接受 ρ=1 平台持续 1.380 s 作为口径?
-- 是否批准合并 PR #3?
+- (TASK_003 已合并) PR #3 完整圆柱 1.392384 s (EXPERIMENTAL) — 已合并不再需要决定
+- (TASK_004 Foundation Final Close) 是否合并 PR #5 进入 main?
+  - DEBT-Q2-PROFILE-EXIT-001 已关闭 (warm-up error → CLI rc=1)
+  - CI 已拆为 3 个并行 unittest job (q1-baseline / q1-cylinder / q2-foundation) + q1-cylinder-smoke
+  - 仍为 NOT AN OPTIMIZATION RESULT; 未启动 Search; 未生成 result*.xlsx
 
 ## 下一任务 (本轮已唯一固定)
 
-**TASK_004 Foundation 已完成** — 等 PR 审核合并.
+**TASK_004 Foundation Final Close** — 等 PR #5 最终审核与 CI 全部 PASS.
 
 任务目的:
-- 仅建立四变量合同、合法性、单候选评估器与 smoke, **不**启动搜索
+- 关闭 DEBT-Q2-PROFILE-EXIT-001 与 CI 25-min timeout 债务
 - 现有 Q1 几何冻结保持不变 (42 + 75 = 117 个回归测试全过)
 
 下一阶段: **TASK_004 Search** (尚未启动), 进入条件:
