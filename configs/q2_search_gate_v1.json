@@ -1,0 +1,48 @@
+{
+  "gate_id": "q2_search_gate_v1",
+  "task": "TASK_004",
+  "scope": "implementation_skeleton_only",
+  "declaration": "NOT AN OPTIMIZATION RESULT",
+  "search_domain": {
+    "heading_rad":      {"min": 0.0, "max": 6.283185307179586},
+    "speed_mps":        {"min": 70.0, "max": 140.0},
+    "release_time_s":   {"min": 0.0, "max": 66.0},
+    "delay_s":          {"min": 0.0, "max": 30.0}
+  },
+  "manifest_seeds": [2025, 2026, 2027],
+  "manifest_n_first": 3,
+  "checkpoint_schema": 1,
+  "evaluator_kind": "fake",
+  "frozen_benchmark": {
+    "serial": {
+      "warm_up_calls": 3,
+      "timed_calls": 66,
+      "total_calls": 69,
+      "candidate_per_call": 1,
+      "candidate_pool_seed": 2025
+    },
+    "parallel": {
+      "warm_up_calls": 3,
+      "timed_calls": 22,
+      "total_calls": 25,
+      "workers": 4,
+      "chunksize": 1,
+      "candidate_pool_seed": 2026
+    },
+    "grand_total_calls": 94,
+    "candidate_pool_size": 30,
+    "sleep_s": 0.0,
+    "artifact_root": "work/q2_search/benchmark/"
+  },
+  "constraints": {
+    "no_results_xlsx": true,
+    "no_results_md": true,
+    "no_pr_modification": ["#5"],
+    "forbidden_paths_modify": [
+      "src/q1_baseline.py",
+      "src/q1_cylinder.py",
+      "src/q2_single_bomb.py"
+    ]
+  },
+  "schema_version": 1
+}
