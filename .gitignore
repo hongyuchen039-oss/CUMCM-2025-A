@@ -53,3 +53,6 @@ desktop.ini
 work/q2_search/
 work/q2_search_pilot/
 work/_test_run.log
+
+# TASK_GOV_002 本地 runtime task-context lock (本机真实路径, 不得提交)
+work/task_context.json

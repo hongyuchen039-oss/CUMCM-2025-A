@@ -3,6 +3,18 @@
 本文件作为项目默认长期规则。本轮用户明确任务可以细化执行范围，
 但不得绕过凭据安全、分支保护、禁止强推和禁止自动合并等边界。
 
+## 0.5 任务上下文预检 (TASK_GOV_002)
+
+任何 BUILD / 审查 / 下游施工会话开始前，必须先运行：
+
+```text
+python scripts/verify_task_context.py --context work/task_context.json
+```
+
+只有输出为 `CONTEXT_VALID_CLEAN` 或 `CONTEXT_VALID_AUTHORIZED_DIRTY`
+才允许继续。`CONTEXT_INVALID` 时立即停止，不得自行 reset / stash /
+restore / rebase / 改写 context 绕过。
+
 ## 0. 每个新项目 / 新阶段启动必读
 
 在创建新分支、worktree、专用 Agent 或下游任务前，必须先阅读并执行：
