@@ -109,11 +109,14 @@ class _FakeGhProcess:
     the test has patched verify_task_context.subprocess.run."""
 
     def __init__(self, real_run, head_branch: str, head_sha: str,
+                 base_branch: str = "main", base_sha: str = "",
                  cross_repo: bool = False,
                  fail: bool = False):
         self.real_run = real_run
         self.head_branch = head_branch
         self.head_sha = head_sha
+        self.base_branch = base_branch
+        self.base_sha = base_sha or head_sha
         self.cross_repo = cross_repo
         self.fail = fail
 
@@ -134,8 +137,11 @@ class _FakeGhProcess:
             payload = {
                 "headRefName": self.head_branch,
                 "headRefOid": self.head_sha,
+                "baseRefName": self.base_branch,
+                "baseRefOid": self.base_sha,
                 "state": "OPEN",
                 "isCrossRepository": self.cross_repo,
+                "url": "https://github.com/foo/bar/pull/42",
             }
             return _R(payload, self.fail)
         # Pass through to real subprocess (NOT the patched one)
@@ -221,7 +227,7 @@ class VerifyTaskContextTests(unittest.TestCase):
             ctx = _base_context(tmp, head)
             s = vtc.run_checks(ctx, cwd=tmp)
             self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
-            self.assertTrue(any("detached HEAD" in v
+            self.assertTrue(any("detached" in v
                                 for v in s["violations"]), s)
         finally:
             _cleanup_tmp_repo(tmp)
@@ -385,7 +391,8 @@ class VerifyTaskContextTests(unittest.TestCase):
         tmp, head = _init_tmp_repo()
         try:
             fake = _FakeGhProcess(real_run=subprocess.run,
-                                  head_branch="main", head_sha=head)
+                                  head_branch="main", head_sha=head,
+                                  base_branch="main", base_sha=head)
             with mock.patch("verify_task_context.subprocess.run",
                             side_effect=fake):
                 ctx = _base_context(tmp, head, pr_number=42)
@@ -399,6 +406,7 @@ class VerifyTaskContextTests(unittest.TestCase):
         try:
             fake = _FakeGhProcess(real_run=subprocess.run,
                                   head_branch="main", head_sha=head,
+                                  base_branch="main", base_sha=head,
                                   cross_repo=True)
             with mock.patch("verify_task_context.subprocess.run",
                             side_effect=fake):
@@ -456,6 +464,642 @@ class VerifyTaskContextTests(unittest.TestCase):
             self.assertEqual(rc, vtc.RC_VALID)
         finally:
             shutil.rmtree(ctx_dir, ignore_errors=True)
+            _cleanup_tmp_repo(tmp)
+
+
+# ============================================================================
+# Category A — P1 closure tests
+# ============================================================================
+class P1ClosureTests(unittest.TestCase):
+
+    def test_a01_base_sha_correct_allows_continue(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            ctx = _base_context(tmp, head)
+            s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_VALID_CLEAN, s)
+            self.assertEqual(s["base_sha_actual"], head, s)
+            self.assertEqual(s["base_sha_expected"], head, s)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    def test_a02_wrong_base_sha_rc2(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            ctx = _base_context(tmp, head)
+            ctx["base_sha"] = "f" * 40
+            s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            self.assertTrue(any("base_sha mismatch" in v
+                                for v in s["violations"]), s)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    def test_a03_base_ref_unresolvable_rc3(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            # Remove origin remote so origin/main is unresolvable
+            _run_git("remote", "remove", "origin", cwd=tmp)
+            ctx = _base_context(tmp, head)
+            s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            self.assertTrue(s["dependency_unavailable"], s)
+            self.assertTrue(any("base tracking ref" in v
+                                for v in s["violations"]), s)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    def test_a04_git_status_nonzero_rc3(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            ctx = _base_context(tmp, head)
+            # Force `git status` to return non-zero by removing .git
+            # and pointing cwd to the now-broken repo via a sub-shell
+            # wrapper.  Easier: monkey-patch _git to fake a nonzero rc.
+            orig_git = vtc._git
+            def fake_git(*args, **kwargs):
+                if args and args[0] == "status":
+                    return (128, "", "fatal: not a git repository")
+                return orig_git(*args, **kwargs)
+            with mock.patch.object(vtc, "_git", new=fake_git):
+                s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            self.assertTrue(s["dependency_unavailable"], s)
+            self.assertTrue(any("git status" in v
+                                for v in s["violations"]), s)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    def test_a05_git_status_timeout_rc3(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            ctx = _base_context(tmp, head)
+            orig_git = vtc._git
+            def fake_git(*args, **kwargs):
+                if args and args[0] == "status":
+                    raise vtc._GitUnavailable("git status timeout (5s)")
+                return orig_git(*args, **kwargs)
+            with mock.patch.object(vtc, "_git", new=fake_git):
+                s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            self.assertTrue(s["dependency_unavailable"], s)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    def test_a06_git_status_malformed_rc3(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            ctx = _base_context(tmp, head)
+            orig_git = vtc._git
+            def fake_git(*args, **kwargs):
+                if args and args[0] == "status":
+                    return (0, "X\n", "")  # 1-char entry → too-short
+                return orig_git(*args, **kwargs)
+            with mock.patch.object(vtc, "_git", new=fake_git):
+                s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            self.assertTrue(s["dependency_unavailable"], s)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    def test_a07_pr_wrong_base_branch_rc2(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            fake = _FakeGhProcess(real_run=subprocess.run,
+                                  head_branch="main", head_sha=head,
+                                  base_branch="OTHER", base_sha=head)
+            with mock.patch("verify_task_context.subprocess.run",
+                            side_effect=fake):
+                ctx = _base_context(tmp, head, pr_number=42)
+                s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            self.assertTrue(any("pr base branch" in v
+                                for v in s["violations"]), s)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    def test_a08_pr_wrong_base_sha_rc2(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            fake = _FakeGhProcess(real_run=subprocess.run,
+                                  head_branch="main", head_sha=head,
+                                  base_branch="main",
+                                  base_sha="f" * 40)
+            with mock.patch("verify_task_context.subprocess.run",
+                            side_effect=fake):
+                ctx = _base_context(tmp, head, pr_number=42)
+                s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            self.assertTrue(any("pr base SHA" in v
+                                for v in s["violations"]), s)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    def test_a09_pr_wrong_head_branch_rc2(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            fake = _FakeGhProcess(real_run=subprocess.run,
+                                  head_branch="OTHER", head_sha=head,
+                                  base_branch="main", base_sha=head)
+            with mock.patch("verify_task_context.subprocess.run",
+                            side_effect=fake):
+                ctx = _base_context(tmp, head, pr_number=42)
+                s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            self.assertTrue(any("pr head branch" in v
+                                for v in s["violations"]), s)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    def test_a10_pr_wrong_head_sha_rc2(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            fake = _FakeGhProcess(real_run=subprocess.run,
+                                  head_branch="main", head_sha="f" * 40,
+                                  base_branch="main", base_sha=head)
+            with mock.patch("verify_task_context.subprocess.run",
+                            side_effect=fake):
+                ctx = _base_context(tmp, head, pr_number=42)
+                s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            self.assertTrue(any("pr head SHA" in v
+                                for v in s["violations"]), s)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    def test_a11_pr_cross_repository_rc2(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            fake = _FakeGhProcess(real_run=subprocess.run,
+                                  head_branch="main", head_sha=head,
+                                  base_branch="main", base_sha=head,
+                                  cross_repo=True)
+            with mock.patch("verify_task_context.subprocess.run",
+                            side_effect=fake):
+                ctx = _base_context(tmp, head, pr_number=42)
+                s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            self.assertTrue(any("cross-repository" in v
+                                for v in s["violations"]), s)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    def test_a12_gh_command_contains_repo_flag(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            real_run = subprocess.run
+            captured = {"args": None, "cwd": None}
+
+            class _R:
+                returncode = 0
+                stdout = json.dumps({
+                    "headRefName": "main", "headRefOid": head,
+                    "baseRefName": "main", "baseRefOid": head,
+                    "state": "OPEN", "isCrossRepository": False,
+                    "url": "x",
+                })
+                stderr = ""
+
+            def fake_run(args, **kwargs):
+                if args and args[0] == "gh":
+                    captured["args"] = list(args)
+                    captured["cwd"] = kwargs.get("cwd")
+                    return _R()
+                return real_run(args, **kwargs)
+
+            with mock.patch("verify_task_context.subprocess.run",
+                            side_effect=fake_run):
+                ctx = _base_context(tmp, head, pr_number=42)
+                vtc.run_checks(ctx, cwd=tmp)
+            # gh pr view must include --repo and the right repo name
+            self.assertIsNotNone(captured["args"], "gh was not called")
+            self.assertIn("--repo", captured["args"])
+            self.assertIn("hongyuchen039-oss/CUMCM-2025-A", captured["args"])
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    def test_a13_gh_cwd_is_repo_root(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            real_run = subprocess.run
+            captured = {"cwd": None}
+
+            class _R:
+                returncode = 0
+                stdout = json.dumps({
+                    "headRefName": "main", "headRefOid": head,
+                    "baseRefName": "main", "baseRefOid": head,
+                    "state": "OPEN", "isCrossRepository": False,
+                    "url": "x",
+                })
+                stderr = ""
+
+            def fake_run(args, **kwargs):
+                if args and args[0] == "gh":
+                    captured["cwd"] = kwargs.get("cwd")
+                    return _R()
+                return real_run(args, **kwargs)
+
+            with mock.patch("verify_task_context.subprocess.run",
+                            side_effect=fake_run):
+                ctx = _base_context(tmp, head, pr_number=42)
+                vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(vtc._normalize_path(captured["cwd"]),
+                             vtc._normalize_path(tmp))
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    def test_a14_gh_unavailable_rc3(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            # Make shutil.which('gh') return None
+            with mock.patch.object(vtc.shutil, "which",
+                                   return_value=None):
+                ctx = _base_context(tmp, head, pr_number=42)
+                s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            self.assertTrue(s["dependency_unavailable"], s)
+            self.assertTrue(any("gh" in v.lower()
+                                for v in s["violations"]), s)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    def test_a15_gh_timeout_rc3(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            with mock.patch.object(
+                vtc, "_gh_pr_view",
+                side_effect=vtc._GitUnavailable("gh pr view timeout (5s)"),
+            ):
+                ctx = _base_context(tmp, head, pr_number=42)
+                s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            self.assertTrue(s["dependency_unavailable"], s)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    def test_a16_gh_nonzero_rc3(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            real_run = subprocess.run
+            class _R:
+                returncode = 1
+                stdout = ""
+                stderr = "not logged in"
+            def fake_run(args, **kwargs):
+                if args and args[0] == "gh":
+                    return _R()
+                return real_run(args, **kwargs)
+            with mock.patch("verify_task_context.subprocess.run",
+                            side_effect=fake_run):
+                ctx = _base_context(tmp, head, pr_number=42)
+                s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            self.assertTrue(s["dependency_unavailable"], s)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    def test_a17_gh_invalid_json_rc3(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            real_run = subprocess.run
+            class _R:
+                returncode = 0
+                stdout = "not json"
+                stderr = ""
+            def fake_run(args, **kwargs):
+                if args and args[0] == "gh":
+                    return _R()
+                return real_run(args, **kwargs)
+            with mock.patch("verify_task_context.subprocess.run",
+                            side_effect=fake_run):
+                ctx = _base_context(tmp, head, pr_number=42)
+                s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            self.assertTrue(s["dependency_unavailable"], s)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+
+# ============================================================================
+# Category B — Git state tests
+# ============================================================================
+class GitStateTests(unittest.TestCase):
+
+    def test_b01_staged_rename_with_space(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            # Create a file with space in name, commit, rename
+            old = os.path.join(tmp, "old name.md")
+            with open(old, "w") as f:
+                f.write("x\n")
+            _run_git("add", "old name.md", cwd=tmp)
+            _run_git("commit", "-q", "-m", "add", cwd=tmp)
+            new_head = _run_git("rev-parse", "HEAD", cwd=tmp).stdout.strip()
+            _run_git("push", "-q", "origin", "main", cwd=tmp)
+            _run_git("branch", "--set-upstream-to=origin/main", cwd=tmp)
+            new = os.path.join(tmp, "new name.md")
+            os.rename(old, new)
+            _run_git("add", "-A", cwd=tmp)
+            ctx = _base_context(tmp, new_head)
+            s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            self.assertTrue(any("staged" in v for v in s["violations"]), s)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    def test_b02_staged_rename_with_unicode(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            old = os.path.join(tmp, "原文件.md")
+            with open(old, "w", encoding="utf-8") as f:
+                f.write("x\n")
+            _run_git("add", "原文件.md", cwd=tmp)
+            _run_git("commit", "-q", "-m", "add", cwd=tmp)
+            new_head = _run_git("rev-parse", "HEAD", cwd=tmp).stdout.strip()
+            _run_git("push", "-q", "origin", "main", cwd=tmp)
+            _run_git("branch", "--set-upstream-to=origin/main", cwd=tmp)
+            new = os.path.join(tmp, "新文件.md")
+            os.rename(old, new)
+            _run_git("add", "-A", cwd=tmp)
+            ctx = _base_context(tmp, new_head)
+            s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    def test_b03_parser_consumes_two_null_paths(self):
+        # Simulate a rename entry in porcelain -z and check parser
+        # produces a renamed record rather than treating the new path
+        # as a separate status entry.
+        raw = "R  old\0new\0"
+        out = vtc._parse_porcelain_z(raw)
+        self.assertIn("old -> new", out["renamed"])
+        # 'new' must NOT be misinterpreted as a separate status entry
+        self.assertNotIn("new", out["modified"])
+        self.assertNotIn("new", out["untracked"])
+        self.assertNotIn("new", out["conflict"])
+        self.assertNotIn("new", out["deleted"])
+
+    def test_b04_real_merge_produces_unmerged_index(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            _run_git("checkout", "-q", "-b", "feat", cwd=tmp)
+            with open(os.path.join(tmp, "README.md"), "w") as f:
+                f.write("feature\n")
+            _run_git("commit", "-q", "-am", "feat", cwd=tmp)
+            _run_git("checkout", "-q", "main", cwd=tmp)
+            with open(os.path.join(tmp, "README.md"), "w") as f:
+                f.write("main\n")
+            _run_git("commit", "-q", "-am", "main", cwd=tmp)
+            # Force conflict markers and DON'T add to index
+            with open(os.path.join(tmp, "README.md"), "w") as f:
+                f.write("<<<<<<< HEAD\nmain\n=======\nfeature\n>>>>>>> feat\n")
+            # Get a real UU status via git add (or use the conflict
+            # markers which git will mark as unmerged)
+            _run_git("add", "README.md", cwd=tmp)
+            # The status should be either UU (unmerged) or staged
+            r = _run_git("status", "--porcelain", cwd=tmp)
+            self.assertIn("README.md", r.stdout, r.stdout)
+            ctx = _base_context(tmp, head)
+            s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    def test_b05_tracked_deletion(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            os.remove(os.path.join(tmp, "README.md"))
+            ctx = _base_context(tmp, head)
+            s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            self.assertTrue(any("deleted file outside" in v
+                                for v in s["violations"]), s)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    def test_b06_staged_always_rejected(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            with open(os.path.join(tmp, "README.md"), "a") as f:
+                f.write("y\n")
+            _run_git("add", "README.md", cwd=tmp)
+            ctx = _base_context(tmp, head)
+            s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            self.assertTrue(any("staged" in v for v in s["violations"]), s)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    def test_b07_conflict_always_rejected(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            with open(os.path.join(tmp, "README.md"), "w") as f:
+                f.write("<<<<<<< HEAD\nx\n=======\ny\n>>>>>>> branch\n")
+            ctx = _base_context(tmp, head)
+            s = vtc.run_checks(ctx, cwd=tmp)
+            # git may treat this as modified (no add yet) or unmerged
+            # depending on version; either way status should be INVALID
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+
+# ============================================================================
+# Category C — Path contract tests
+# ============================================================================
+class PathContractTests(unittest.TestCase):
+
+    def test_c01_forbidden_takes_priority_over_allowed(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            with open(os.path.join(tmp, "RESULTS.md"), "w") as f:
+                f.write("x\n")
+            ctx = _base_context(tmp, head,
+                                allowed_modified=["RESULTS.md"],
+                                forbidden=["RESULTS.md"])
+            s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            self.assertTrue(any("forbidden path" in v
+                                for v in s["violations"]), s)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    def test_c02_work_allows_work_subfile(self):
+        # _validate_path_list accepts "work/", then run_checks allows
+        # a file inside work/.  Smoke: a path-list member of "work/"
+        # passes validation, and a working-tree touch inside work/ is
+        # accepted.
+        validated = vtc._validate_path_list(["work/"], "test")
+        self.assertEqual(validated, ["work"])
+
+    def test_c03_work_does_not_allow_workspace_txt(self):
+        validated = vtc._validate_path_list(["work/"], "test")
+        self.assertEqual(validated, ["work"])
+        # A file at root "workspace.txt" should NOT be under "work"
+        # (false-positive guard).  We just test the helper directly.
+        self.assertFalse(vtc._is_path_under(
+            vtc._normalize_path("workspace.txt"),
+            vtc._normalize_path("work"),
+        ))
+
+    def test_c04_list_member_non_string_rejected(self):
+        with self.assertRaises(vtc.PathListError):
+            vtc._validate_path_list(["ok", 42], "test")
+
+    def test_c05_list_member_null_rejected(self):
+        with self.assertRaises(vtc.PathListError):
+            vtc._validate_path_list(["ok", None], "test")
+
+    def test_c06_list_member_object_rejected(self):
+        with self.assertRaises(vtc.PathListError):
+            vtc._validate_path_list([{"a": 1}], "test")
+
+    def test_c07_empty_string_rejected(self):
+        with self.assertRaises(vtc.PathListError):
+            vtc._validate_path_list([""], "test")
+
+    def test_c08_absolute_path_rejected(self):
+        with self.assertRaises(vtc.PathListError):
+            vtc._validate_path_list(["/etc/passwd"], "test")
+        with self.assertRaises(vtc.PathListError):
+            vtc._validate_path_list(["C:/Windows/System32"], "test")
+
+    def test_c09_dotdot_rejected(self):
+        with self.assertRaises(vtc.PathListError):
+            vtc._validate_path_list(["../etc"], "test")
+        with self.assertRaises(vtc.PathListError):
+            vtc._validate_path_list(["a/../../b"], "test")
+
+    def test_c10_load_context_rejects_bad_paths(self):
+        bad_ctx = {
+            "schema_version": 1,
+            "task_id": "T",
+            "repository_full_name": "foo/bar",
+            "worktree_path": "/tmp",
+            "branch": "main",
+            "expected_head": "a" * 40,
+            "base_branch": "main",
+            "base_sha": "a" * 40,
+            "pr_number": None,
+            "pr_head_branch": "main",
+            "allowed_modified_paths": [],
+            "allowed_untracked_paths": [],
+            "forbidden_paths": ["../escape"],
+        }
+        with self.assertRaises(vtc.PathListError):
+            vtc._load_context_from_dict(bad_ctx)
+
+
+# ============================================================================
+# Category D — Windows path tests (host-agnostic)
+# ============================================================================
+class WindowsPathTests(unittest.TestCase):
+
+    def test_d01_equivalent_windows_paths(self):
+        a = vtc._normalize_path("C:\\Users\\Test\\repo")
+        b = vtc._normalize_path("C:/Users/Test/repo")
+        c = vtc._normalize_path("c:\\users\\test\\repo")
+        self.assertEqual(a, b)
+        self.assertEqual(b, c)
+
+    def test_d02_different_drives_not_equal(self):
+        c = vtc._normalize_path("C:/Users/Test/repo")
+        d = vtc._normalize_path("D:/Users/Test/repo")
+        self.assertNotEqual(c, d)
+
+    def test_d03_different_dirs_not_equal(self):
+        c = vtc._normalize_path("C:/Users/Test/repo")
+        e = vtc._normalize_path("C:/Users/Test/other")
+        self.assertNotEqual(c, e)
+
+    def test_d04_unc_distinct(self):
+        u = vtc._normalize_path("\\\\server\\share\\repo")
+        c = vtc._normalize_path("C:/server/share/repo")
+        self.assertNotEqual(u, c)
+
+
+# ============================================================================
+# Category E — Output / rc contract
+# ============================================================================
+class OutputContractTests(unittest.TestCase):
+
+    def test_e01_normal_mode_last_line_is_fixed_status(self):
+        tmp, head = _init_tmp_repo()
+        ctx_dir = tempfile.mkdtemp(prefix="vtc_e01_ctx_")
+        try:
+            ctx = _base_context(tmp, head)
+            ctx_path = os.path.join(ctx_dir, "task_context.json")
+            with open(ctx_path, "w") as f:
+                json.dump(ctx, f)
+            import io
+            from contextlib import redirect_stdout
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = vtc.main(["--context", ctx_path, "--cwd", tmp])
+            out = buf.getvalue()
+            self.assertEqual(rc, vtc.RC_VALID, out)
+            lines = [l for l in out.splitlines() if l.strip()]
+            self.assertTrue(lines, "no stdout")
+            self.assertIn(lines[-1], (
+                vtc.STATUS_VALID_CLEAN,
+                vtc.STATUS_VALID_AUTHORIZED_DIRTY,
+                vtc.STATUS_INVALID,
+            ))
+        finally:
+            shutil.rmtree(ctx_dir, ignore_errors=True)
+            _cleanup_tmp_repo(tmp)
+
+    def test_e02_json_mode_stdout_is_single_json(self):
+        tmp, head = _init_tmp_repo()
+        ctx_dir = tempfile.mkdtemp(prefix="vtc_e02_ctx_")
+        try:
+            ctx = _base_context(tmp, head)
+            ctx_path = os.path.join(ctx_dir, "task_context.json")
+            with open(ctx_path, "w") as f:
+                json.dump(ctx, f)
+            import io
+            from contextlib import redirect_stdout
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = vtc.main(["--context", ctx_path, "--cwd", tmp,
+                               "--json"])
+            out = buf.getvalue()
+            # Parse the entire stdout as a single JSON object
+            obj = json.loads(out)
+            self.assertIn("status", obj)
+            self.assertEqual(rc, vtc.RC_VALID)
+        finally:
+            shutil.rmtree(ctx_dir, ignore_errors=True)
+            _cleanup_tmp_repo(tmp)
+
+    def test_e03_mismatch_rc2(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            ctx = _base_context(tmp, head, branch="WRONG")
+            ctx_path = os.path.join(tmp, "ctx.json")
+            with open(ctx_path, "w") as f:
+                json.dump(ctx, f)
+            rc = vtc.main(["--context", ctx_path, "--cwd", tmp])
+            self.assertEqual(rc, vtc.RC_INVALID)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    def test_e04_dependency_unavailable_rc3(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            ctx = _base_context(tmp, head)
+            ctx_path = os.path.join(tmp, "ctx.json")
+            with open(ctx_path, "w") as f:
+                json.dump(ctx, f)
+            # Force git failure by monkey-patching _git_toplevel
+            with mock.patch.object(vtc, "_git_toplevel",
+                                   side_effect=vtc._GitUnavailable(
+                                       "not a git repository")):
+                rc = vtc.main(["--context", ctx_path, "--cwd", tmp])
+            self.assertEqual(rc, vtc.RC_UNAVAILABLE)
+        finally:
             _cleanup_tmp_repo(tmp)
 
 

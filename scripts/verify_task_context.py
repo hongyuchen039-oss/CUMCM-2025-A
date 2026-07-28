@@ -5,31 +5,38 @@ or any local config. Fails closed on any inconsistency.
 
 Usage:
     python scripts/verify_task_context.py --context work/task_context.json
+    python scripts/verify_task_context.py --context work/task_context.json --json
 
-Exit codes:
+Exit codes (strict contract):
     0  — CONTEXT_VALID_CLEAN  (no dirty files)
        — CONTEXT_VALID_AUTHORIZED_DIRTY (dirty files all in allowed set)
-    2  — CONTEXT_INVALID  (any check failed)
-    3  — context / dependency / gh query unavailable
+    2  — CONTEXT_INVALID  (identity / authorization mismatch)
+    3  — context / Git / git status / gh / parse dependency unavailable
 
-Fixed output lines (last line of stdout):
+Fixed status line (last line of stdout, non --json mode):
     CONTEXT_VALID_CLEAN
     CONTEXT_VALID_AUTHORIZED_DIRTY
     CONTEXT_INVALID
+
+--json mode: stdout is exactly one valid JSON object; status lives in
+the JSON `status` field; no extra plain-text status line on stdout.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import ntpath
 import os
+import posixpath
+import re
 import shutil
 import subprocess
 import sys
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 
-# ----------------------------- required schema ----------------------------- #
+# ----------------------------- required schema ---------------------------- #
 
 REQUIRED_CONTEXT_FIELDS: Tuple[str, ...] = (
     "schema_version",
@@ -47,7 +54,6 @@ REQUIRED_CONTEXT_FIELDS: Tuple[str, ...] = (
     "forbidden_paths",
 )
 
-
 # ----------------------------- fixed-status outputs ------------------------ #
 
 STATUS_VALID_CLEAN = "CONTEXT_VALID_CLEAN"
@@ -58,32 +64,61 @@ RC_VALID = 0
 RC_INVALID = 2
 RC_UNAVAILABLE = 3
 
-
 # ----------------------------- path normalization ------------------------- #
 
-def _normalize_path(p: str) -> str:
-    """Windows-aware path normalization for comparison.
+# Pattern for a Windows drive-letter root, e.g. "C:" "C:\" "C:/" "c:".
+_DRIVE_LETTER_RE = re.compile(r"^[A-Za-z]:")
 
-    - resolve to absolute,
-    - normcase (lowercase on Windows),
-    - normalize separators to forward slash.
+# Full 40-character lower-case hex SHA-1.
+_SHA1_FULL_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _is_windows_path(p: str) -> bool:
+    """Heuristic: a path is Windows-style if it has a drive-letter prefix
+    (C:, D:, ...) or contains a backslash separator."""
+    if not p:
+        return False
+    if "\\" in p:
+        return True
+    return bool(_DRIVE_LETTER_RE.match(p))
+
+
+def _normalize_path(p: str, *, force_windows: Optional[bool] = None,
+                    is_dir: bool = False) -> str:
+    """Normalize a path string for comparison.
+
+    - Convert backslashes to forward slashes.
+    - Apply the appropriate normpath (ntpath for Windows-style paths,
+      posixpath for POSIX-style paths).  Detection can be overridden
+      with force_windows=True/False.
+    - For Windows-style paths, lowercase the result (Windows is
+      case-insensitive).
+    - For POSIX-style paths, leave case as-is.
+    - If is_dir, ensure trailing slash.
     """
     if p is None:
         return ""
-    p = os.path.abspath(p)
-    p = os.path.normcase(os.path.normpath(p))
-    p = p.replace(os.sep, "/")
-    return p
+    s = str(p).replace("\\", "/")
+    if force_windows is True or (force_windows is None and _is_windows_path(s)):
+        norm = ntpath.normpath(s).replace("\\", "/")
+        norm = norm.lower()
+    else:
+        norm = posixpath.normpath(s)
+    if is_dir and not norm.endswith("/"):
+        norm = norm + "/"
+    return norm
 
 
-def _normalize_repo_relative(rel: str, repo_root: str) -> str:
+def _normalize_repo_relative(rel: str, repo_root: str,
+                             *, is_dir: bool = False) -> str:
     """Map a repo-relative or absolute path to a normalized absolute form
-    anchored at repo_root. Used for comparing allowed/forbidden lists."""
+    anchored at repo_root (used for comparing allowed/forbidden lists)."""
     if not rel:
         return ""
     if os.path.isabs(rel):
-        return _normalize_path(rel)
-    return _normalize_path(os.path.join(repo_root, rel))
+        return _normalize_path(rel, is_dir=is_dir)
+    joined = os.path.join(repo_root, rel).replace("\\", "/")
+    return _normalize_path(joined, is_dir=is_dir)
 
 
 def _is_path_under(child_norm: str, parent_norm: str) -> bool:
@@ -97,139 +132,269 @@ def _is_path_under(child_norm: str, parent_norm: str) -> bool:
     return child_norm.startswith(prefix)
 
 
+# ----------------------------- path list contract ------------------------ #
+
+class PathListError(Exception):
+    """Raised when a context path-list (allowed_*/forbidden) is malformed."""
+
+
+def _validate_path_list(values: Any, list_name: str) -> List[str]:
+    """Validate a context path list against the contract:
+    - must be a list of non-empty strings
+    - each must be a repo-relative path
+    - no absolute paths
+    - no '..' segment
+    - not equal to '.'
+    - uniform path-separator (forward-slash)
+    Returns the list of normalized, validated strings.
+    """
+    if not isinstance(values, list):
+        raise PathListError(f"{list_name} must be a list")
+    out: List[str] = []
+    for i, raw in enumerate(values):
+        if not isinstance(raw, str):
+            raise PathListError(
+                f"{list_name}[{i}] must be a string, got {type(raw).__name__}")
+        s = raw.strip()
+        if not s:
+            raise PathListError(f"{list_name}[{i}] must be non-empty")
+        if "\\" in s:
+            raise PathListError(
+                f"{list_name}[{i}] must use forward-slash separators")
+        if s != s.replace("\\", "/"):
+            raise PathListError(
+                f"{list_name}[{i}] contains backslashes")
+        if s.startswith("/"):
+            raise PathListError(
+                f"{list_name}[{i}] must be repo-relative (no leading /)")
+        if os.path.isabs(s) or _DRIVE_LETTER_RE.match(s):
+            raise PathListError(
+                f"{list_name}[{i}] must be repo-relative (no absolute)")
+        if s == ".":
+            raise PathListError(f"{list_name}[{i}] must not be '.'")
+        # reject any segment that is '..'
+        parts = s.split("/")
+        if any(seg == ".." for seg in parts):
+            raise PathListError(
+                f"{list_name}[{i}] must not contain '..' segment")
+        # normalize for storage (collapse 'a//b' -> 'a/b', etc.)
+        norm = posixpath.normpath(s).replace("\\", "/")
+        if norm == ".":
+            raise PathListError(
+                f"{list_name}[{i}] normalizes to '.' (forbidden)")
+        out.append(norm)
+    return out
+
+
 # ----------------------------- git helpers -------------------------------- #
+
+class _GitUnavailable(Exception):
+    """Raised when a Git query (or its output) is unavailable."""
+
 
 def _git(
     *args: str,
     cwd: Optional[str] = None,
-    check: bool = False,
+    timeout: int = 15,
 ) -> Tuple[int, str, str]:
-    """Run a git command. Returns (returncode, stdout, stderr)."""
+    """Run a git command. Returns (returncode, stdout, stderr).  Raises
+    _GitUnavailable on subprocess-level failure (no git, timeout)."""
     try:
         r = subprocess.run(
             ["git", *args],
             cwd=cwd,
             capture_output=True,
             text=True,
-            timeout=15,
+            timeout=timeout,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-        return (127, "", f"git unavailable: {exc}")
+    except FileNotFoundError as exc:
+        raise _GitUnavailable(f"git binary not found: {exc}") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise _GitUnavailable(f"git {args!r} timeout: {exc}") from exc
     return (r.returncode, r.stdout, r.stderr)
 
 
-def _git_toplevel(cwd: Optional[str] = None) -> Optional[str]:
+def _git_toplevel(cwd: Optional[str] = None) -> str:
     rc, out, _ = _git("rev-parse", "--show-toplevel", cwd=cwd)
-    if rc != 0:
-        return None
+    if rc != 0 or not out.strip():
+        raise _GitUnavailable("git rev-parse --show-toplevel failed")
     return out.strip()
 
 
-def _git_head_sha(cwd: Optional[str] = None) -> Optional[str]:
+def _git_head_sha(cwd: Optional[str] = None) -> str:
     rc, out, _ = _git("rev-parse", "HEAD", cwd=cwd)
-    if rc != 0:
-        return None
+    if rc != 0 or not out.strip():
+        raise _GitUnavailable("git rev-parse HEAD failed")
     return out.strip()
 
 
-def _git_branch(cwd: Optional[str] = None) -> Optional[str]:
+def _git_branch(cwd: Optional[str] = None) -> str:
     rc, out, _ = _git("rev-parse", "--abbrev-ref", "HEAD", cwd=cwd)
-    if rc != 0:
-        return None
+    if rc != 0 or not out.strip():
+        raise _GitUnavailable("git rev-parse --abbrev-ref HEAD failed")
     b = out.strip()
     if b == "HEAD":  # detached
-        return None
+        raise _GitUnavailable("HEAD is detached")
     return b
 
 
-def _git_remote_url(remote: str, cwd: Optional[str] = None) -> Optional[str]:
+def _git_remote_url(remote: str, cwd: Optional[str] = None) -> str:
     rc, out, _ = _git("remote", "get-url", remote, cwd=cwd)
-    if rc != 0:
-        return None
+    if rc != 0 or not out.strip():
+        raise _GitUnavailable(f"git remote get-url {remote!r} failed")
     return out.strip()
 
 
-def _git_tracking_remote(cwd: Optional[str] = None) -> Optional[str]:
-    """Return upstream tracking remote of current branch, or None."""
-    rc, out, _ = _git(
-        "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}", cwd=cwd,
-    )
-    if rc != 0:
-        return None
-    return out.strip()  # e.g. origin/main
+def _git_base_sha(branch: str, cwd: Optional[str] = None) -> str:
+    """Resolve origin/<branch> as a full 40-hex SHA.  Raises
+    _GitUnavailable if the ref cannot be resolved or the SHA is not
+    40-hex."""
+    rc, out, _ = _git("rev-parse", "--verify", f"origin/{branch}", cwd=cwd)
+    if rc != 0 or not out.strip():
+        raise _GitUnavailable(
+            f"git rev-parse --verify origin/{branch} failed")
+    sha = out.strip()
+    if not _SHA1_FULL_RE.match(sha):
+        raise _GitUnavailable(
+            f"origin/{branch} resolved to non-40-hex SHA: {sha!r}")
+    return sha
 
 
-def _git_tracking_remote_for(branch: str,
-                             cwd: Optional[str] = None) -> Optional[str]:
-    """Resolve origin/<branch> as a remote-tracking ref. Returns the SHA
-    if resolvable, else None."""
-    rc, out, _ = _git("rev-parse", "--verify",
-                      f"origin/{branch}", cwd=cwd)
-    if rc != 0:
-        return None
-    return out.strip()
+# ----------------------------- porcelain parser -------------------------- #
+
+class _PorcelainError(Exception):
+    """Raised when porcelain output cannot be parsed."""
 
 
-def _git_status_paths(cwd: Optional[str] = None) -> Dict[str, List[str]]:
-    """Return dict with keys: modified, staged, untracked, conflict, deleted.
+def _parse_porcelain_z(raw: str) -> Dict[str, List[str]]:
+    """Parse `git status --porcelain -z` output into:
+        modified, staged, untracked, conflict, deleted, renamed (list of
+        'old -> new' strings).
 
-    Each value is a list of repo-relative paths.
+    Renames/copies (status R or C) emit TWO NUL-terminated path records:
+    the first is the status line 'XY old', the second is just 'new'.
+    The second record must NOT be parsed as a status line.
     """
-    rc, out, _ = _git("status", "--porcelain", "--untracked-files=normal",
-                      "-z", cwd=cwd)
-    if rc != 0:
-        return {"modified": [], "staged": [], "untracked": [],
-                "conflict": [], "deleted": []}
     modified: List[str] = []
     staged: List[str] = []
     untracked: List[str] = []
     conflict: List[str] = []
     deleted: List[str] = []
-    # -z separates entries with NUL, paths within an entry with spaces.
-    for entry in out.split("\x00"):
-        if not entry:
+    renamed: List[str] = []
+    if raw is None:
+        raise _PorcelainError("porcelain output is None")
+
+    parts = raw.split("\x00")
+    i = 0
+    n = len(parts)
+    while i < n:
+        entry = parts[i]
+        i += 1
+        if entry == "":
+            # trailing NUL separator or empty record
             continue
-        # Format: XY PATH  (two chars, space, path); with rename XY PATH -> NEW
-        if len(entry) < 4:
-            continue
+        if len(entry) < 3:
+            raise _PorcelainError(
+                f"porcelain entry too short: {entry!r}")
         x = entry[0]
         y = entry[1]
-        # path part begins at index 3
-        path = entry[3:]
-        if " -> " in path:
-            path = path.split(" -> ", 1)[1]
-        # Conflict markers
-        if x in ("U", "A") and y in ("U", "A"):
-            conflict.append(path)
+        rest = entry[2:]  # 3rd char is space, then path(s)
+        if rest and rest[0] == " ":
+            rest = rest[1:]
+        if not rest:
+            raise _PorcelainError(
+                f"porcelain entry missing path: {entry!r}")
+        # conflict markers
+        if (x, y) in (("U", "U"), ("A", "A"), ("U", "A"), ("A", "U"),
+                      ("D", "D"), ("D", "U"), ("U", "D")):
+            conflict.append(rest)
             continue
-        if x == "U" or y == "U" or x == "A" and y == "A":
-            conflict.append(path)
+        # rename / copy: consume the next NUL record as the new path
+        if (x, y) in (("R", " "), ("R", x), ("R", y), ("C", " "),
+                      ("C", x), ("C", y)) or x in ("R", "C"):
+            old = rest
+            if i >= n:
+                raise _PorcelainError(
+                    f"rename/copy missing destination: {entry!r}")
+            new = parts[i]
+            i += 1
+            renamed.append(f"{old} -> {new}")
+            # treat as staged (added in index)
+            staged.append(new)
             continue
+        # untracked
         if x == "?" and y == "?":
-            untracked.append(path)
+            untracked.append(rest)
             continue
-        if x != " " and x != "?":
-            staged.append(path)
+        # anything in the index (X != ' ') is staged
+        if x != " ":
+            staged.append(rest)
         if y == "M":
-            modified.append(path)
+            modified.append(rest)
         elif y == "D":
-            deleted.append(path)
+            deleted.append(rest)
         elif y == "A":
-            # added in index, treat as staged only
-            pass
+            # added in work-tree as well
+            modified.append(rest)
+        # else (' '): no work-tree change
     return {
         "modified": modified,
         "staged": staged,
         "untracked": untracked,
         "conflict": conflict,
         "deleted": deleted,
+        "renamed": renamed,
     }
+
+
+def _git_status_paths(cwd: Optional[str] = None) -> Dict[str, List[str]]:
+    """Get working-tree state.  Raises _PorcelainError on any failure
+    (timeout, non-zero, decode, malformed, dependency unavailable);
+    does NOT silently return empty sets."""
+    try:
+        rc, out, err = _git(
+            "status", "--porcelain", "--untracked-files=normal", "-z",
+            cwd=cwd,
+        )
+    except _GitUnavailable as exc:
+        raise _PorcelainError(f"git status dependency unavailable: {exc}") from exc
+    if rc != 0:
+        raise _PorcelainError(
+            f"git status --porcelain returned rc={rc}: {err.strip()}")
+    try:
+        # Decode can raise UnicodeDecodeError on garbage; we let it
+        # propagate as _PorcelainError.
+        return _parse_porcelain_z(out)
+    except _PorcelainError:
+        raise
+    except Exception as exc:  # pragma: no cover - defensive
+        raise _PorcelainError(f"porcelain parse failed: {exc}") from exc
 
 
 # ----------------------------- context validation ------------------------- #
 
 class ContextError(Exception):
     """Raised when the context file is missing / malformed / has wrong schema."""
+
+
+def _load_context_from_dict(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate an already-parsed context dict (no file IO).  Used by
+    tests to avoid touching the filesystem."""
+    # Reuse the same validation as _load_context by serializing through
+    # an in-memory tempfile.
+    import tempfile
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".json", delete=False, encoding="utf-8",
+    ) as f:
+        json.dump(data, f)
+        path = f.name
+    try:
+        return _load_context(path)
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
 
 
 def _load_context(path: str) -> Dict[str, Any]:
@@ -245,7 +410,6 @@ def _load_context(path: str) -> Dict[str, Any]:
     for field in REQUIRED_CONTEXT_FIELDS:
         if field not in data:
             raise ContextError(f"context missing required field: {field}")
-    # Type sanity
     sv = data["schema_version"]
     if not isinstance(sv, int) or sv != 1:
         raise ContextError(f"schema_version must be 1, got {sv!r}")
@@ -260,12 +424,21 @@ def _load_context(path: str) -> Dict[str, Any]:
             raise ContextError(f"{str_field} must be a string")
     if data["pr_number"] is not None and not isinstance(data["pr_number"], int):
         raise ContextError("pr_number must be null or int")
+    # expected_head / base_sha must be full 40-hex
+    for sha_field in ("expected_head", "base_sha"):
+        if not _SHA1_FULL_RE.match(data[sha_field]):
+            raise ContextError(f"{sha_field} must be 40-char lowercase hex")
+    # path list contracts (forbidden first so it takes priority semantically)
+    forbidden = _validate_path_list(data["forbidden_paths"], "forbidden_paths")
+    data["forbidden_paths"] = forbidden
+    data["allowed_modified_paths"] = _validate_path_list(
+        data["allowed_modified_paths"], "allowed_modified_paths")
+    data["allowed_untracked_paths"] = _validate_path_list(
+        data["allowed_untracked_paths"], "allowed_untracked_paths")
     return data
 
 
 def _remote_matches_repo(remote_url: str, expected: str) -> bool:
-    """Match https://github.com/<owner>/<repo>.git or git@github.com:<owner>/<repo>.git
-    to 'owner/repo'."""
     if not remote_url or not expected:
         return False
     s = remote_url.strip()
@@ -281,11 +454,64 @@ def _remote_matches_repo(remote_url: str, expected: str) -> bool:
     return s.lower() == expected.lower()
 
 
+# ----------------------------- gh pr view helper ------------------------- #
+
+def _gh_pr_view(pr_number: int, repository: str,
+                cwd: Optional[str] = None,
+                timeout: int = 20) -> Dict[str, Any]:
+    """Call `gh pr view <n> --repo <repo> --json ...` read-only.
+
+    Raises _GitUnavailable-equivalent (we reuse _GitUnavailable) on
+    - gh binary missing
+    - timeout
+    - non-zero exit
+    - invalid JSON
+    - missing required keys
+    Returns the parsed JSON dict.
+    """
+    if shutil.which("gh") is None:
+        raise _GitUnavailable("gh CLI not available")
+    fields = ("headRefName,headRefOid,baseRefName,baseRefOid,"
+              "isCrossRepository,state,url")
+    cmd = [
+        "gh", "pr", "view", str(pr_number),
+        "--repo", repository,
+        "--json", fields,
+    ]
+    try:
+        r = subprocess.run(cmd, cwd=cwd, capture_output=True,
+                           text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise _GitUnavailable(f"gh pr view timeout: {exc}") from exc
+    except FileNotFoundError as exc:
+        raise _GitUnavailable(f"gh binary not found: {exc}") from exc
+    if r.returncode != 0:
+        raise _GitUnavailable(
+            f"gh pr view failed (rc={r.returncode}): "
+            f"{(r.stderr or r.stdout).strip()}")
+    try:
+        data = json.loads(r.stdout)
+    except json.JSONDecodeError as exc:
+        raise _GitUnavailable(
+            f"gh pr view returned non-JSON: {exc}; "
+            f"stdout[:200]={r.stdout[:200]!r}") from exc
+    if not isinstance(data, dict):
+        raise _GitUnavailable("gh pr view returned non-object JSON")
+    for key in ("headRefName", "headRefOid", "baseRefName", "baseRefOid",
+                "isCrossRepository", "state"):
+        if key not in data:
+            raise _GitUnavailable(
+                f"gh pr view missing required field: {key}")
+    return data
+
+
 # ----------------------------- main check loop ---------------------------- #
 
-def run_checks(ctx: Dict[str, Any], cwd: Optional[str] = None) -> Dict[str, Any]:
-    """Execute all checks. Returns a summary dict; never raises (errors stored
-    in 'violations' and 'error')."""
+def run_checks(ctx: Dict[str, Any],
+               cwd: Optional[str] = None) -> Dict[str, Any]:
+    """Execute all checks.  Returns a summary dict; never raises
+    (errors stored in summary['violations'] and
+    summary['dependency_unavailable'])."""
     summary: Dict[str, Any] = {
         "status": STATUS_INVALID,
         "task_id": ctx.get("task_id"),
@@ -296,15 +522,22 @@ def run_checks(ctx: Dict[str, Any], cwd: Optional[str] = None) -> Dict[str, Any]
         "head_expected": ctx.get("expected_head"),
         "head_actual": None,
         "origin_remote_url": None,
-        "tracking_ref": None,
+        "base_branch": ctx.get("base_branch"),
+        "base_sha_expected": ctx.get("base_sha"),
+        "base_sha_actual": None,
         "pr_number": ctx.get("pr_number"),
         "pr_head_branch": ctx.get("pr_head_branch"),
+        "pr_base_branch": None,
+        "pr_base_sha": None,
         "modified_paths": [],
         "staged_paths": [],
         "untracked_paths": [],
         "conflict_paths": [],
         "deleted_paths": [],
+        "renamed_paths": [],
         "violations": [],
+        "dependency_unavailable": False,
+        "dependency_error": None,
         "error": None,
     }
     violations: List[str] = []
@@ -312,10 +545,18 @@ def run_checks(ctx: Dict[str, Any], cwd: Optional[str] = None) -> Dict[str, Any]
     def fail(msg: str) -> None:
         violations.append(msg)
 
+    def dep_fail(msg: str) -> None:
+        # Same as fail but also marks the run as dependency-unavailable.
+        summary["dependency_unavailable"] = True
+        summary["dependency_error"] = msg
+        violations.append(msg)
+
     # 2. repo toplevel
-    repo_root = _git_toplevel(cwd=cwd)
-    if not repo_root:
-        summary["error"] = "not a git repository"
+    try:
+        repo_root = _git_toplevel(cwd=cwd)
+    except _GitUnavailable as exc:
+        dep_fail(f"repo toplevel unresolvable: {exc}")
+        summary["violations"] = violations
         return summary
     summary["repo_root_actual"] = repo_root
 
@@ -326,125 +567,155 @@ def run_checks(ctx: Dict[str, Any], cwd: Optional[str] = None) -> Dict[str, Any]
              f"actual={actual_root!r}")
 
     # 4/5. branch + detached
-    branch = _git_branch(cwd=cwd)
+    try:
+        branch = _git_branch(cwd=cwd)
+    except _GitUnavailable as exc:
+        dep_fail(f"branch unresolvable: {exc}")
+        branch = None
     summary["branch_actual"] = branch
     if branch is None:
-        fail("detached HEAD or branch unresolvable")
+        # Already dep_fail'd above.
+        pass
     elif branch != ctx["branch"]:
         fail(f"branch mismatch: expected={ctx['branch']!r} actual={branch!r}")
 
     # 6. HEAD
-    head = _git_head_sha(cwd=cwd)
+    try:
+        head = _git_head_sha(cwd=cwd)
+    except _GitUnavailable as exc:
+        dep_fail(f"HEAD unresolvable: {exc}")
+        head = None
     summary["head_actual"] = head
-    if not head:
-        fail("HEAD unresolvable")
-    elif head != ctx["expected_head"]:
+    if head and head != ctx["expected_head"]:
         fail(f"HEAD mismatch: expected={ctx['expected_head']!r} "
              f"actual={head!r}")
 
     # 7. origin remote
-    remote = _git_remote_url("origin", cwd=cwd)
+    try:
+        remote = _git_remote_url("origin", cwd=cwd)
+    except _GitUnavailable as exc:
+        dep_fail(f"origin remote unresolvable: {exc}")
+        remote = None
     summary["origin_remote_url"] = remote
-    if not remote:
-        fail("origin remote missing or unresolvable")
-    elif not _remote_matches_repo(remote, ctx["repository_full_name"]):
+    if remote and not _remote_matches_repo(remote, ctx["repository_full_name"]):
         fail(f"origin remote URL does not match "
              f"{ctx['repository_full_name']!r}: got {remote!r}")
 
-    # 8. base tracking ref (resolves origin/<base_branch>)
+    # 8. base tracking ref + full SHA (P1-1: real base_sha verification)
     base_branch = ctx["base_branch"]
-    tracking = _git_tracking_remote_for(base_branch, cwd=cwd)
-    summary["tracking_ref"] = tracking
-    if not tracking:
-        fail(f"base tracking ref 'origin/{base_branch}' unresolvable")
+    try:
+        base_sha_actual = _git_base_sha(base_branch, cwd=cwd)
+    except _GitUnavailable as exc:
+        dep_fail(f"base tracking ref 'origin/{base_branch}' "
+                 f"unresolvable: {exc}")
+        base_sha_actual = None
+    summary["base_sha_actual"] = base_sha_actual
+    if base_sha_actual and base_sha_actual != ctx["base_sha"]:
+        fail(f"base_sha mismatch: expected={ctx['base_sha']!r} "
+             f"actual={base_sha_actual!r}")
 
-    # 9. pr_number check via gh
+    # 9. pr_number check via gh (P1-3: bind to repo + base)
     pr_number = ctx.get("pr_number")
     if pr_number is not None:
-        if shutil.which("gh") is None:
-            fail("gh CLI not available but pr_number is set")
-        else:
-            try:
-                r = subprocess.run(
-                    ["gh", "pr", "view", str(pr_number),
-                     "--json", "headRefName,headRefOid,state,isCrossRepository"],
-                    capture_output=True, text=True, timeout=20,
-                )
-            except subprocess.TimeoutExpired as exc:
-                fail(f"gh pr view timeout: {exc}")
-                r = None  # type: ignore
-            if r is not None and r.returncode != 0:
-                fail(f"gh pr view failed (rc={r.returncode}): "
-                     f"{r.stderr.strip()}")
-            elif r is not None:
-                try:
-                    pr_data = json.loads(r.stdout)
-                except json.JSONDecodeError as exc:
-                    fail(f"gh pr view returned non-JSON: {exc}")
-                else:
-                    pr_branch = pr_data.get("headRefName")
-                    pr_sha = pr_data.get("headRefOid")
-                    cross = pr_data.get("isCrossRepository", False)
-                    if cross:
-                        fail(f"pr #{pr_number} is cross-repository")
-                    if pr_branch != ctx["pr_head_branch"]:
-                        fail(f"pr head branch mismatch: expected "
-                             f"{ctx['pr_head_branch']!r} got {pr_branch!r}")
-                    if pr_sha != ctx["expected_head"]:
-                        fail(f"pr head SHA mismatch: expected "
-                             f"{ctx['expected_head']!r} got {pr_sha!r}")
+        try:
+            pr_data = _gh_pr_view(pr_number, ctx["repository_full_name"],
+                                  cwd=repo_root)
+        except _GitUnavailable as exc:
+            dep_fail(f"gh pr view unavailable: {exc}")
+            pr_data = None
+        if pr_data is not None:
+            pr_head_branch = pr_data.get("headRefName")
+            pr_head_sha = pr_data.get("headRefOid")
+            pr_base_branch = pr_data.get("baseRefName")
+            pr_base_sha = pr_data.get("baseRefOid")
+            cross = pr_data.get("isCrossRepository", False)
+            state = pr_data.get("state")
+            summary["pr_base_branch"] = pr_base_branch
+            summary["pr_base_sha"] = pr_base_sha
+            if cross:
+                fail(f"pr #{pr_number} is cross-repository")
+            if state not in ("OPEN", "DRAFT"):
+                # only allow OPEN or DRAFT (closed/merged are still
+                # acceptable for verification, but mark as info)
+                pass
+            if pr_head_branch != ctx["pr_head_branch"]:
+                fail(f"pr head branch mismatch: expected "
+                     f"{ctx['pr_head_branch']!r} got {pr_head_branch!r}")
+            if pr_head_sha != ctx["expected_head"]:
+                fail(f"pr head SHA mismatch: expected "
+                     f"{ctx['expected_head']!r} got {pr_head_sha!r}")
+            if pr_base_branch != ctx["base_branch"]:
+                fail(f"pr base branch mismatch: expected "
+                     f"{ctx['base_branch']!r} got {pr_base_branch!r}")
+            if pr_base_sha != ctx["base_sha"]:
+                fail(f"pr base SHA mismatch: expected "
+                     f"{ctx['base_sha']!r} got {pr_base_sha!r}")
 
-    # 10/11/12/13. working-tree state
-    st = _git_status_paths(cwd=cwd)
+    # 10/11/12/13. working-tree state (P1-2: failure must not = clean)
+    try:
+        st = _git_status_paths(cwd=cwd)
+    except _PorcelainError as exc:
+        dep_fail(f"git status unavailable: {exc}")
+        st = {
+            "modified": [], "staged": [], "untracked": [],
+            "conflict": [], "deleted": [], "renamed": [],
+        }
     summary["staged_paths"] = st["staged"]
     summary["modified_paths"] = st["modified"]
     summary["untracked_paths"] = st["untracked"]
     summary["conflict_paths"] = st["conflict"]
     summary["deleted_paths"] = st["deleted"]
+    summary["renamed_paths"] = st["renamed"]
 
     if st["staged"]:
         fail(f"staged files present (must be empty): {st['staged']}")
     if st["conflict"]:
         fail(f"unmerged/conflict files present: {st['conflict']}")
 
-    allowed_modified = [_normalize_repo_relative(p, repo_root)
-                        for p in ctx.get("allowed_modified_paths", [])]
-    allowed_untracked = [_normalize_repo_relative(p, repo_root)
-                         for p in ctx.get("allowed_untracked_paths", [])]
-    forbidden = [_normalize_repo_relative(p, repo_root)
-                 for p in ctx.get("forbidden_paths", [])]
+    if not summary["dependency_unavailable"]:
+        allowed_modified = [_normalize_repo_relative(p, repo_root)
+                            for p in ctx.get("allowed_modified_paths", [])]
+        allowed_untracked = [_normalize_repo_relative(p, repo_root)
+                             for p in ctx.get("allowed_untracked_paths", [])]
+        forbidden = [_normalize_repo_relative(p, repo_root)
+                     for p in ctx.get("forbidden_paths", [])]
 
-    def _is_authorized(path: str, allowed: List[str]) -> bool:
-        norm = _normalize_path(os.path.join(repo_root, path))
-        for a in allowed:
-            if _is_path_under(norm, a):
-                return True
-        return False
+        def _is_authorized(path: str, allowed: List[str]) -> bool:
+            norm = _normalize_path(os.path.join(repo_root, path))
+            for a in allowed:
+                if _is_path_under(norm, a):
+                    return True
+            return False
 
-    for p in st["modified"]:
-        if not _is_authorized(p, allowed_modified):
-            fail(f"modified file outside allowed_modified_paths: {p!r}")
-    for p in st["deleted"]:
-        if not _is_authorized(p, allowed_modified):
-            fail(f"deleted file outside allowed_modified_paths: {p!r}")
-    for p in st["untracked"]:
-        if not _is_authorized(p, allowed_untracked):
-            fail(f"untracked file outside allowed_untracked_paths: {p!r}")
-
-    for p in st["modified"] + st["deleted"] + st["untracked"]:
-        for f in forbidden:
-            if _is_path_under(
-                _normalize_path(os.path.join(repo_root, p)), f,
-            ):
-                fail(f"forbidden path touched: {p!r}")
-                break
+        # Forbidden has priority over allowed.
+        all_touched = (st["modified"] + st["deleted"] + st["untracked"]
+                       + st["renamed"])
+        for p in all_touched:
+            for f in forbidden:
+                # path in renamed is 'old -> new'; we test the new path
+                test = p.split(" -> ", 1)[1] if " -> " in p else p
+                if _is_path_under(_normalize_path(
+                        os.path.join(repo_root, test)), f):
+                    fail(f"forbidden path touched: {p!r}")
+                    break
+        for p in st["modified"]:
+            if not _is_authorized(p, allowed_modified):
+                fail(f"modified file outside allowed_modified_paths: {p!r}")
+        for p in st["deleted"]:
+            if not _is_authorized(p, allowed_modified):
+                fail(f"deleted file outside allowed_modified_paths: {p!r}")
+        for p in st["untracked"]:
+            if not _is_authorized(p, allowed_untracked):
+                fail(f"untracked file outside allowed_untracked_paths: {p!r}")
 
     summary["violations"] = violations
-    if not violations:
-        if (st["modified"] or st["deleted"] or st["untracked"]):
-            summary["status"] = STATUS_VALID_AUTHORIZED_DIRTY
-        else:
-            summary["status"] = STATUS_VALID_CLEAN
+    if summary["dependency_unavailable"]:
+        summary["status"] = STATUS_INVALID
+    elif not violations:
+        any_dirty = (st["modified"] or st["deleted"] or st["untracked"]
+                     or st["renamed"])
+        summary["status"] = (STATUS_VALID_AUTHORIZED_DIRTY if any_dirty
+                             else STATUS_VALID_CLEAN)
     else:
         summary["status"] = STATUS_INVALID
     return summary
@@ -460,6 +731,9 @@ def _emit_human(summary: Dict[str, Any]) -> None:
         print("[verify_task_context] violations:")
         for v in summary["violations"]:
             print(f"  - {v}")
+    if summary.get("dependency_unavailable"):
+        print(f"[verify_task_context] dependency unavailable: "
+              f"{summary.get('dependency_error')}")
     if summary.get("error"):
         print(f"[verify_task_context] error: {summary['error']}")
 
@@ -479,32 +753,42 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--json", action="store_true",
-        help="Print only the JSON summary to stdout",
+        help="Print exactly one JSON object to stdout; status is the "
+             "'status' field of that JSON. No plain-text status line.",
     )
     args = parser.parse_args(argv)
 
     try:
         ctx = _load_context(args.context)
-    except ContextError as exc:
+    except (ContextError, PathListError) as exc:
+        # Output contract:
+        #   non --json: human stderr + status as last stdout line
+        #   --json: stdout = single JSON object with status
         print(f"ERROR: {exc}", file=sys.stderr)
-        print(STATUS_INVALID)
         if args.json:
             print(json.dumps({
                 "status": STATUS_INVALID,
                 "error": str(exc),
                 "violations": [],
+                "dependency_unavailable": True,
             }, ensure_ascii=False))
+        else:
+            print(STATUS_INVALID)
         return RC_UNAVAILABLE
 
     summary = run_checks(ctx, cwd=args.cwd)
 
     if args.json:
-        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        # stdout must be exactly one JSON object.
+        sys.stdout.write(json.dumps(summary, ensure_ascii=False, indent=2))
+        sys.stdout.write("\n")
     else:
         _emit_human(summary)
-        # Always print the fixed status as the last non-empty stdout line
-        print(summary["status"])
+        # The fixed status MUST be the last line of stdout.
+        sys.stdout.write(summary["status"] + "\n")
 
+    if summary.get("dependency_unavailable"):
+        return RC_UNAVAILABLE
     if summary["status"] == STATUS_INVALID:
         return RC_INVALID
     return RC_VALID
