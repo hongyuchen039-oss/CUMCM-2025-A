@@ -5,7 +5,9 @@
 
 Foundation 已通过 PR #5 合并到 main (commit 8cfe770); 主线 PR #6 (governance skill) 也已合并。
 当前任务是对远程一个未审核 Search prototype commit (6f728d45b3bb776c19bbe8a857b26570eb79dc68) 进行只读审计,
-由监管 CC / Main 决定是否接受 / 抢救 / 丢弃。
+Audit CC 只读形成审核建议,
+Hermes 只读核验仓库事实,
+由 MAIN 作最终处置决定。
 
 本轮**不等待 CI**; CI 不作为合并硬门槛; CI timeout 不代表数学失败。
 正式 Search 尚未运行; result*.xlsx 尚未生成。
@@ -101,12 +103,15 @@ Foundation 已通过 PR #5 合并到 main (commit 8cfe770); 主线 PR #6 (govern
 
 ## 当前任务 (唯一)
 
-**TASK_004 SEARCH PROTOTYPE AUDIT AND SALVAGE** — 远程未审核 Search prototype 的审计与抢救.
+**TASK_004 SEARCH PROTOTYPE READ-ONLY AUDIT AND SALVAGE DECISION** — 远程未审核 Search prototype 的只读审核与处置决策.
 
 任务目的:
 - Foundation 已合并; 主线 governance 已落地; 全量 205/205 本地通过
 - 远程存在一份未审核 Search prototype commit (6f728d45b3bb776c19bbe8a857b26570eb79dc68)
-- 必须由监管 CC / Main CC 决定是否接受 / 抢救 / 丢弃
+- Audit CC 只读审核并形成建议 (审核代码 / 测试 / 算法 / 数学合同 / 性能预算 / 可复用性)
+- Hermes 只读核验仓库事实 (branch / SHA / changed files / PR 状态)
+- MAIN 综合两家证据后作出最终处置决定 (整体采用 / 局部抢救 / 不采用并重写)
+- "Salvage" 只表示形成处置建议, 不表示实施修改
 - 不得在审计前擅自 cherry-pick / merge / 重写
 - 仍不得生成 result1.xlsx
 - 不删除现有 prototype commit; 不删除远程分支
@@ -115,12 +120,15 @@ Foundation 已通过 PR #5 合并到 main (commit 8cfe770); 主线 PR #6 (govern
 
 SEARCH PROTOTYPE 决策后的下一阶段仍在冻结中。
 可能路径:
-- 接受 prototype → 启动 Search 正式施工
-- 改造 prototype → 抢救后启动
-- 丢弃 prototype → 重新设计 Search
+- 整体采用
+- 局部抢救
+- 不采用并重写
 
-均由 Main CC / Hermes 决定。
+无论选择哪条路径, 旧 prototype commit 和远程分支均保留,
+"不采用"不等于删除历史.
+
+由 MAIN 综合 Audit CC 与 Hermes 证据后作最终处置决定.
 
 ## 下一步只做一件事
-本轮完成 → 等监管 CC / Main CC / Hermes 对 Search prototype 的审计与决策。
+本轮完成 → 等 Audit CC 只读审核 + Hermes 仓库事实核验 + MAIN 最终处置决定.
 不得提前切换任何分支或 PR.

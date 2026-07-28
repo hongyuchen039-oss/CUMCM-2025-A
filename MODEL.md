@@ -352,7 +352,8 @@ find_strict_intervals(samples, scan_step=0.01)
 > 本节固定 TASK_004 Search 启动前必须确认的合同.
 > 当前层级: 已通过 PR #5 合并到 main (merge commit 8cfe770).
 > 正式 Q2 搜索尚未启动; 远程存在未审核 Search prototype commit
-> (`6f728d45b3bb776c19bbe8a857b26570eb79dc68`), 等待监管 CC / Hermes 审计决策.
+> (`6f728d45b3bb776c19bbe8a857b26570eb79dc68`), 等待 Audit CC 只读审核与 Hermes 仓库事实核验,
+> 由 MAIN 作出最终处置决定 (整体采用 / 局部抢救 / 不采用并重写).
 > 等级: **TASK_004 FOUNDATION / NOT AN OPTIMIZATION RESULT**, 不得冒充 Q2 VERIFIED / FINAL.
 
 ### 1. 决策变量: 4 个独立变量 (Section 五)
@@ -498,6 +499,8 @@ warm-up 异常与 formal repeat 异常在 CLI 退出码上**严格同权**:
 - Foundation 状态: **已通过 PR #5 合并到 main** (merge commit 8cfe770); 仍为 NOT AN OPTIMIZATION RESULT
 - 下一阶段: **TASK_004 SEARCH PROTOTYPE AUDIT AND SALVAGE**
   - 远程存在未审核 Search prototype commit (`6f728d45b3bb776c19bbe8a857b26570eb79dc68`)
-  - 等待监管 CC / Main CC / Hermes 对该 prototype 做只读审计
+  - 等待 Audit CC 对真实 artifact 做只读审核,
+    由 Hermes 核验 branch / SHA / changed files / PR 状态,
+    最后由 MAIN 决定整体采用 / 局部抢救 / 不采用并重写
   - 决策路径: 接受 / 抢救 / 丢弃
 - 不得在审计前预先接受 prototype; 不得在 prototype 决策前启动 TASK_004 Search 正式施工

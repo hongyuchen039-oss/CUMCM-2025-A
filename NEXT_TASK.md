@@ -1,42 +1,50 @@
 # 当前唯一任务
 
 ## 本轮任务
-**TASK_004 SEARCH PROTOTYPE AUDIT AND SALVAGE**
-— 远程未审核 Search prototype commit (6f728d45b3bb776c19bbe8a857b26570eb79dc68) 的只读审计与决策。
-本轮**不修改代码 / 测试 / CI**, 不重跑 205 项本地测试,
-不等待 CI; CI 不作为合并硬门槛.
+**TASK_004 SEARCH PROTOTYPE READ-ONLY AUDIT AND SALVAGE DECISION**
+— 远程未审核 Search prototype commit (6f728d45b3bb776c19bbe8a857b26570eb79dc68) 的只读审计与处置决策.
+
+本任务**全程只读**; 不修改任何仓库文件; 不 commit / push / 创建或修改 PR;
+不 merge / cherry-pick / rebase / reset; 不运行正式 Search; 不生成结果文件.
+
+PR #8 (本次状态同步) 合并后, Main CC 保持待命, 不进入施工.
 
 Foundation PR #5 已合并 (commit 8cfe770); Governance PR #6 已合并 (commit 72c7523).
 当前 main = 72c7523. 全量 205/205 本地通过.
 
-只记录真实完成证据 (本地实测):
+### 角色合同 (已合并到 main)
 
-- Q2 Foundation **88/88** 本地通过
-- Q1 baseline **42/42** 本地通过
-- Q1 cylinder **75/75** 本地通过
-- 全量 **205/205** 本地通过
-- profile-measure 正常 → **rc=0**
-- warm-up 程序异常 → **rc=1**
-- repeat 程序异常 → **rc=1**
-- 参数错误 → **rc=2**
-- 默认 smoke → **rc=0**
+- **Audit CC**: 只读审核 Search prototype 的真实代码 / 测试 / 算法 / 数学合同 /
+  性能预算 / 可复用性; 输出审计结论与建议; 不修改仓库; 不作最终决定.
+- **Hermes**: 只读核验 prototype 分支 / commit SHA / changed files / 与 main 的分叉
+  关系 / 是否存在 PR; 不评价搜索算法; 不修改仓库; 不作最终决定.
+- **MAIN**: 综合 Audit CC 与 Hermes 证据, 作出最终处置决定:
+  1. 整体采用;
+  2. 局部抢救;
+  3. 不采用并重写.
+- **用户**: 批准任何后续写入 / 分支对齐 / 代码修改 / PR 操作.
+- **Main CC / BUILD CC**: 在用户批准后执行 MAIN 冻结的施工方案;
+  不是本轮只读审核者; 不是最终决策者; 当前保持停止和待命.
 
-下一步: 监管 CC / Main CC / Hermes 对 Search prototype 做只读审计, 决定是否接受 / 抢救 / 丢弃.
-本轮不等待 CI; 正式 Search 尚未运行; result*.xlsx 尚未生成.
+### 当前任务写入边界
+
+- 本任务为只读;
+- 不允许修改任何仓库文件;
+- 不允许 commit / push / 创建或修改 PR;
+- 不允许 merge / cherry-pick / rebase / reset;
+- 不运行正式 Search;
+- 不生成结果文件;
+- Main CC 保持待命;
+- PR #8 是进入该任务前的一次性状态同步, 不属于审核阶段施工内容.
 
 ### 范围 (本轮)
+
 - 只读审计 6f728d45b3bb776c19bbe8a857b26570eb79dc68 (搜索算法 / 收敛标准 / 候选生成 / 性能预算)
 - 该 commit 当前状态: **保留, 尚未接受, 未创建 PR, 不代表正式 Search, 不代表 Q2 数值结果**
 - 不得在审计前 cherry-pick / merge / 重写 / 删改
 - 不得删除该 commit, 不得删除远程分支
 - 不生成 result1.xlsx
 - 不启动 TASK_004 Search 正式施工
-
-### 仅允许新建 / 修改 (本轮)
-1. `START_HERE.md` (阶段同步)
-2. `NEXT_TASK.md` (本文件)
-3. `README.md` (状态同步)
-4. `MODEL.md` (Foundation 状态同步)
 
 ### 库限制
 - 只使用 Python 标准库
@@ -54,6 +62,7 @@ Foundation PR #5 已合并 (commit 8cfe770); Governance PR #6 已合并 (commit 
 - 不修改 outputs/q1/q1_cylinder_comparison.svg
 - 不 cherry-pick / 不重写 6f728d45b3bb776c19bbe8a857b26570eb79dc68
 - 不删除 6f728d45b3bb776c19bbe8a857b26570eb79dc68
+- 不 force push / 不重写历史 / 不删除远程分支
 
 ### Foundation 已冻结的实际交付 (PR #5)
 
@@ -71,36 +80,19 @@ Foundation PR #5 已合并 (commit 8cfe770); Governance PR #6 已合并 (commit 
 - commit: `6f728d45b3bb776c19bbe8a857b26570eb79dc68`
 - 状态: **保留, 尚未接受, 未创建 PR**
 - 待审计的内容: 搜索算法 / 收敛标准 / 候选生成 / 性能预算 / 数学结论
-- 决策路径: 接受 / 抢救 / 丢弃 (由 Main CC / Hermes 决定)
-- 不得在本任务内决策
+- 决策路径: 整体采用 / 局部抢救 / 不采用并重写 (由 MAIN 决定)
+- 无论选择哪条路径, 旧 prototype commit 和远程分支均保留; "不采用"不等于删除历史
+- 不得在本任务内决策; 不得在合并前预先接受 prototype
 
 ## 下一阶段 (待 Search prototype 审计决策后)
 
 ### TASK_004 SEARCH 正式施工 (待决策)
 
-仅在 Search prototype 审计通过后才进入。
+仅在 Search prototype 审计决策后才进入。
 
 可能路径:
-- 接受 prototype → 启动 Search 正式施工 (保留 commit, 拆 PR)
-- 抢救 prototype → 改造后启动 Search (新建 PR, 旧 commit 保留)
-- 丢弃 prototype → 重新设计 Search (旧 commit 保留, 不予合并)
+- 整体采用 → 启动 Search 正式施工
+- 局部抢救 → 改造后启动 Search
+- 不采用并重写 → 重新设计 Search (旧 commit 与远程分支保留)
 
 决策前禁止启动 Search; 禁止在合并前预先接受 prototype.
-
-## 历史上下文 (合并后归档)
-
-### Foundation PR #5 合并
-
-- HEAD: 1d39c79
-- merge commit: 8cfe770c92485be0425379a984578f77ee6485a9
-- 评审方: Hermes (只读)
-- 合并方: MAIN 按用户授权
-- 合并后状态: search_entry 阶段
-
-### Governance PR #6 合并
-
-- HEAD: 353dc4d8fd1f3d534f57e456cd8de95a3f1b8630
-- merge commit: 72c75234789ea42fbe8bc69d577e4d74a8d0be89
-- 评审方: Hermes (只读)
-- 合并方: MAIN 按用户授权
-- 合并后状态: governance skill 就绪, 可被后续任务引用

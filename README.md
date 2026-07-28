@@ -19,7 +19,7 @@ CI：GitHub Actions 自动运行 Python 编译、单元测试与 Q1 smoke test�
 - TASK_INFRA_001 CI 已通过 PR #4 合并并进入 main
 - 完整圆柱模型合同已经冻结，可供 TASK_004 复用
 - **TASK_004 FOUNDATION 已完成并通过 PR #5 合并到 main**: 88 个 Q2 本地单元测试全过
-- TASK_004 SEARCH PROTOTYPE AUDIT AND SALVAGE 阶段: 远程存在未审核 Search prototype commit (`6f728d45b3bb776c19bbe8a857b26570eb79dc68`), 等待监管 CC / Main CC / Hermes 审计决策
+- TASK_004 SEARCH PROTOTYPE AUDIT AND SALVAGE 阶段: 远程存在未审核 Search prototype commit (`6f728d45b3bb776c19bbe8a857b26570eb79dc68`), 等待 Audit CC 只读审核与 Hermes 仓库事实核验, 随后由 MAIN 作最终处置决定
 - 远程未审核 Search prototype **不**代表正式 Search; **不**代表 Q2 数值结果
 - 本轮不生成 result1.xlsx
 - 数学模型: 方案 A (点目标基线) + 方案 B (完整圆柱严格遮蔽, FULL-CYLINDER CANDIDATE)
