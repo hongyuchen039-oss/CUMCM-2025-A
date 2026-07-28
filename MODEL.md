@@ -347,10 +347,12 @@ find_strict_intervals(samples, scan_step=0.01)
 
 ## Q2 单弹策略评估合同 (TASK_004 FOUNDATION / NOT AN OPTIMIZATION RESULT)
 
-> 已在 `src/q2_single_bomb.py` 实现, 通过 `tests/test_q2_single_bomb.py` 85 个本地单元测试
-> (Section 五 ~ 十七 + 3 个 P1 返工加固类 U2/R2/S2 + G2/J2/K2/N2/P/Q 共 14 组) 验证.
+> 已在 `src/q2_single_bomb.py` 实现, 通过 `tests/test_q2_single_bomb.py` 88 个本地单元测试
+> (Section 五 ~ 十七 + 7 个 P1 加固 (G2/J2/K2/N2/P/Q + U2/R2/S2 返工) 共 14 组) 验证.
 > 本节固定 TASK_004 Search 启动前必须确认的合同.
-> 当前层级为 FOUNDATION (基础评估器), 尚未启动正式 Q2 搜索.
+> 当前层级: 已通过 PR #5 合并到 main (merge commit 8cfe770).
+> 正式 Q2 搜索尚未启动; 远程存在未审核 Search prototype commit
+> (`6f728d45b3bb776c19bbe8a857b26570eb79dc68`), 等待监管 CC / Hermes 审计决策.
 > 等级: **TASK_004 FOUNDATION / NOT AN OPTIMIZATION RESULT**, 不得冒充 Q2 VERIFIED / FINAL.
 
 ### 1. 决策变量: 4 个独立变量 (Section 五)
@@ -431,7 +433,7 @@ find_strict_intervals(samples, scan_step=0.01)
   - `window_start`, `window_end`, `scan_step`: 显式传入
 - 不修改 `src/q1_cylinder.py` 即可工作 (`evaluate_single_bomb_strategy` 直接
   调 `find_strict_intervals`, 全部参数用关键字传入)
-- 现有 75 个 Q1 cylinder 单元测试 + 42 个 Q1 baseline 测试保持全过
+- 现有 75 个 Q1 cylinder 单元测试 + 42 个 Q1 baseline 测试 + 88 个 Q2 Foundation 单元测试保持全过 (205/205)
 - Q1 数值结果与冻结候选**不**变化
 
 ### 6. 当前局限 (本轮 Foundation, 不得隐去)
@@ -488,13 +490,14 @@ warm-up 异常与 formal repeat 异常在 CLI 退出码上**严格同权**:
 
 仍为 NOT AN OPTIMIZATION RESULT; 仍未启动 Search; 仍未生成 result1.xlsx.
 
-### 8. 本轮唯一入口与建议下一步
+### 8. 当前状态与下一阶段入口
 
 - 主程序: `python -m src.q2_single_bomb --smoke-count 100 --seed 2025 --profile coarse`
 - 单元测试: `python -m unittest tests.test_q2_single_bomb -v`
 - 全部测试: `python -m unittest discover -s tests -p "test_*.py" -v`
-- 进入 **TASK_004 Search** 的条件:
-  1. Foundation PR 审核并合并
-  2. CI 持续 PASS
-  3. 本地 Foundation smoke 性能已记入下一阶段预算
-  4. 搜索算法 / 收敛标准 / 性能预算重新冻结
+- Foundation 状态: **已通过 PR #5 合并到 main** (merge commit 8cfe770); 仍为 NOT AN OPTIMIZATION RESULT
+- 下一阶段: **TASK_004 SEARCH PROTOTYPE AUDIT AND SALVAGE**
+  - 远程存在未审核 Search prototype commit (`6f728d45b3bb776c19bbe8a857b26570eb79dc68`)
+  - 等待监管 CC / Main CC / Hermes 对该 prototype 做只读审计
+  - 决策路径: 接受 / 抢救 / 丢弃
+- 不得在审计前预先接受 prototype; 不得在 prototype 决策前启动 TASK_004 Search 正式施工
