@@ -931,7 +931,12 @@ def _canonicalize_output(output: Mapping[str, Any]) -> Dict[str, Any]:
         if k in output:
             v = output[k]
             if isinstance(v, Mapping):
-                out[k] = dict(v)
+                # best_known_candidate 是 row; 排除 wall_clock_s (非确定性)
+                if k == "best_known_candidate":
+                    out[k] = {kk: vv for kk, vv in v.items()
+                               if kk != "wall_clock_s"}
+                else:
+                    out[k] = dict(v)
             elif isinstance(v, (list, tuple)):
                 out[k] = list(v)
             else:
@@ -1846,7 +1851,7 @@ def run_search_pipeline(seed: int,
                 final_best_row=best_resume,
                 lineage_manifest=lineage_resume,
                 controlled_interruption=False,
-                completed_count=len(resume_ck.completed_evaluation_ids),
+                completed_count=len(all_rows_resume),
                 extra={
                     "resumed_from_checkpoint": True,
                     "resumed_n_completed": len(
@@ -1867,6 +1872,9 @@ def run_search_pipeline(seed: int,
             raise ValueError(
                 f"checkpoint status 不可 resume: '{resume_ck.status}'; "
                 f"仅 'running' / 'controlled_interruption' 可 resume")
+
+    # 标记本轮为 resumed (供 build_pilot_output 使用)
+    was_resumed = (resume_ck is not None)
 
     # ── evaluation-safe checkpoint helper (RP1-1) ──
     os.makedirs(output_dir, exist_ok=True)
@@ -2206,9 +2214,13 @@ def run_search_pipeline(seed: int,
             final_best_row=final_best_row,
             lineage_manifest=lineage,
             controlled_interruption=False,
-            completed_count=eval_counter["n"],
+            completed_count=len(all_rows),
             extra={
-                "resumed_from_checkpoint": False,
+                "resumed_from_checkpoint": bool(was_resumed),
+                "resumed_n_completed": (len(resume_ck.completed_evaluation_ids)
+                                         if was_resumed else 0),
+                "resumed_status": (str(resume_ck.status) if was_resumed
+                                    else "complete"),
                 "dirty_worktree_at_start": bool(code_ident["worktree_dirty"]),
             },
         )
