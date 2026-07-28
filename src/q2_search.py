@@ -80,7 +80,7 @@ import tempfile
 import time
 import traceback
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 
 # =============================================================================
@@ -802,6 +802,81 @@ def build_fine_lineage(
             "parent_total_duration_s": parent_total,
         })
     return out
+
+
+# =============================================================================
+#  FIXED-163 BUDGET GATE: production result invariant (single source of truth)
+# =============================================================================
+EXPECTED_STAGE_COUNTS_PRODUCTION: Dict[str, int] = {
+    "global_coarse": 97,    # 96 random + 1 anchor
+    "global_medium": 8,
+    "local_coarse": 48,
+    "local_medium": 8,
+    "fine": 2,
+}
+
+
+class FixedProductionBudgetInvariantError(ValueError):
+    """FIXED-163 gate violation. production 不得返回 rc=0."""
+
+
+def validate_fixed_production_result(
+    *,
+    stage_counts: Dict[str, int],
+    all_rows: Sequence[Any],
+    completed_count: int,
+) -> None:
+    """production rc=0 路径的唯一 invariant 校验.
+
+    任一不满足 → raise FixedProductionBudgetInvariantError;
+    caller 必须 catch 并转为 rc=2 + 输出 'fixed production budget invariant
+    failed' 错误信息 (不向用户暴露 rc=0).
+
+    Checks:
+      - stage_counts 精确等于 EXPECTED_STAGE_COUNTS_PRODUCTION
+      - sum(stage_counts.values()) == EXPECTED_TOTAL_EVALUATIONS (163)
+      - len(all_rows) == EXPECTED_TOTAL_EVALUATIONS
+      - set(evaluation_id) 长度 == EXPECTED_TOTAL_EVALUATIONS (无重复)
+      - completed_count == len(all_rows)
+    """
+    # stage_counts 精确匹配
+    if dict(stage_counts) != EXPECTED_STAGE_COUNTS_PRODUCTION:
+        raise FixedProductionBudgetInvariantError(
+            f"fixed production budget invariant failed: "
+            f"stage_counts={dict(stage_counts)} != "
+            f"EXPECTED_STAGE_COUNTS_PRODUCTION="
+            f"{EXPECTED_STAGE_COUNTS_PRODUCTION}")
+    # sum(stage_counts.values()) == 163
+    s = sum(int(v) for v in stage_counts.values())
+    if s != EXPECTED_TOTAL_EVALUATIONS:
+        raise FixedProductionBudgetInvariantError(
+            f"fixed production budget invariant failed: "
+            f"sum(stage_counts.values())={s} != "
+            f"EXPECTED_TOTAL_EVALUATIONS={EXPECTED_TOTAL_EVALUATIONS}")
+    # len(all_rows) == 163
+    n_rows = len(list(all_rows))
+    if n_rows != EXPECTED_TOTAL_EVALUATIONS:
+        raise FixedProductionBudgetInvariantError(
+            f"fixed production budget invariant failed: "
+            f"len(all_rows)={n_rows} != "
+            f"EXPECTED_TOTAL_EVALUATIONS={EXPECTED_TOTAL_EVALUATIONS}")
+    # evaluation_id 唯一性
+    try:
+        ids: Set[str] = {str(r.evaluation_id) for r in all_rows}
+    except Exception as e:
+        raise FixedProductionBudgetInvariantError(
+            f"fixed production budget invariant failed: cannot read "
+            f"evaluation_id from rows: {e}")
+    if len(ids) != EXPECTED_TOTAL_EVALUATIONS:
+        raise FixedProductionBudgetInvariantError(
+            f"fixed production budget invariant failed: "
+            f"unique evaluation_ids={len(ids)} != "
+            f"EXPECTED_TOTAL_EVALUATIONS={EXPECTED_TOTAL_EVALUATIONS}")
+    # completed_count == len(all_rows)
+    if int(completed_count) != n_rows:
+        raise FixedProductionBudgetInvariantError(
+            f"fixed production budget invariant failed: "
+            f"completed_count={completed_count} != len(all_rows)={n_rows}")
 
 
 # =============================================================================
@@ -1678,6 +1753,7 @@ def run_search_pipeline(seed: int,
                           require_clean_worktree: bool = False,
                           workdir: Optional[str] = None,
                           cli_overrides: Optional[Mapping[str, Any]] = None,
+                          enforce_fixed_production_result: bool = True,
                           ) -> Dict[str, Any]:
     """完整 pilot pipeline (5 阶段): global_coarse → global_medium → local_coarse
     → local_medium → fine. v1.2 RP1 全量整合:
@@ -1688,7 +1764,11 @@ def run_search_pipeline(seed: int,
       - dirty worktree → rc=2 (RP1-5; 默认 False 仅 CLI 显式开启)
       - resume identity 推导自当前 stage_plan (RP1-2)
       - uniq output constructor (RP1 P2)
+      - production FIXED-163 result invariant (默认 True; 测试可传 False)
     """
+    # 保存 enforce 标志供嵌套函数闭包使用 (rc=0 调用 validate 前检查)
+    _enforce_fixed_production_result = bool(
+        enforce_fixed_production_result)
     if t_arrival <= 0:
         raise ValueError(f"t_arrival 必须 > 0, 实际 {t_arrival}")
 
@@ -1845,6 +1925,16 @@ def run_search_pipeline(seed: int,
             lineage_sha_resume = (resume_ck.lineage_manifest_sha256
                                     or compute_lineage_manifest_sha256(lineage_resume))
             os.makedirs(output_dir, exist_ok=True)
+            # FIXED-163 BUDGET GATE: resume / complete-checkpoint-reload path.
+            # 校验必须先于 build_pilot_output; 不通过 → 抛 ValueError →
+            # main() rc=2 (fail-closed). 测试可通过传
+            # enforce_fixed_production_result=False 来 opt out (小预算 unit test).
+            if _enforce_fixed_production_result:
+                validate_fixed_production_result(
+                    stage_counts=stage_counts_resume,
+                    all_rows=all_rows_resume,
+                    completed_count=len(all_rows_resume),
+                )
             output_resume = build_pilot_output(
                 task="TASK_004 Q2 REAL SEARCH CORE V1 — FINAL REMAINING-P1 CLOSURE",
                 declaration="PILOT / NOT A FORMAL Q2 RESULT",
@@ -2259,6 +2349,17 @@ def run_search_pipeline(seed: int,
                 [r for r in fine_rows if r.status == "ok" and r.valid],
                 key=lambda r: r.total_duration_s)
 
+        # FIXED-163 BUDGET GATE: uninterrupted path.
+        # 校验 stage_counts / all_rows / completed_count 不变量.
+        # 不通过 → raise ValueError → main() rc=2 (fail-closed).
+        # 测试可通过 enforce_fixed_production_result=False opt out.
+        if _enforce_fixed_production_result:
+            validate_fixed_production_result(
+                stage_counts=stage_counts_final,
+                all_rows=all_rows,
+                completed_count=len(all_rows),
+            )
+
         output = build_pilot_output(
             task="TASK_004 Q2 REAL SEARCH CORE V1 — FINAL REMAINING-P1 CLOSURE",
             declaration="PILOT / NOT A FORMAL Q2 RESULT",
@@ -2401,13 +2502,13 @@ def _build_argparser() -> argparse.ArgumentParser:
                     help="checkpoint path (RP1-2: identity 推导自 current plan)")
     p.add_argument("--workers", type=int, default=1,
                     help="workers 数; real 模式下 workers > 1 拒绝")
-    p.add_argument("--global-coarse-count", type=int, default=None)
-    p.add_argument("--coarse-top-k", type=int, default=None)
-    p.add_argument("--medium-re-evaluate-count", type=int, default=None)
-    p.add_argument("--local-per-top", type=int, default=None)
-    p.add_argument("--local-max-count", type=int, default=None)
-    p.add_argument("--local-medium-count", type=int, default=None)
-    p.add_argument("--fine-final-count", type=int, default=None)
+    # NOTE: production CLI 不得暴露 budget override 参数:
+    #   --global-coarse-count / --coarse-top-k / --medium-re-evaluate-count /
+    #   --local-per-top / --local-max-count / --local-medium-count /
+    #   --fine-final-count 均已删除 (FIXED-163 BUDGET GATE).
+    # 试图传入这些 flag 会被 argparse 直接 unparsed → rc=2.
+    # 内部 test-only API `resolve_effective_config(..., cli_overrides=...)`
+    # 仍存在但仅供 tests/test_q2_search.py 使用, production main() 永不调用.
     p.add_argument("--stop-after-evaluations", type=int, default=None,
                     help="(pilot only) 累计完成 N evaluations 后中断, "
                          "写 partial checkpoint + rc=3 (RP1-1)")
@@ -2461,23 +2562,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     t_arrival = missile_arrival_time()
     u0_vec = tuple(U0)
 
-    # CLI overrides (允许的 budget 整数键 + local_delta)
-    cli_overrides: Dict[str, Any] = {}
-    if args.global_coarse_count is not None:
-        cli_overrides["global_coarse_count"] = int(args.global_coarse_count)
-    if args.coarse_top_k is not None:
-        cli_overrides["coarse_top_k"] = int(args.coarse_top_k)
-    if args.medium_re_evaluate_count is not None:
-        cli_overrides["medium_re_evaluate_count"] = int(
-            args.medium_re_evaluate_count)
-    if args.local_per_top is not None:
-        cli_overrides["local_per_top"] = int(args.local_per_top)
-    if args.local_max_count is not None:
-        cli_overrides["local_max_count"] = int(args.local_max_count)
-    if args.local_medium_count is not None:
-        cli_overrides["local_medium_count"] = int(args.local_medium_count)
-    if args.fine_final_count is not None:
-        cli_overrides["fine_final_count"] = int(args.fine_final_count)
+    # FIXED-163 BUDGET GATE:
+    # production CLI 不得修改 budget. budget override 参数已从 argparse 删除
+    # (见 _build_argparser 注释). 这里显式 assert: 没有 budget override 被传入.
+    # resolve_effective_config 仍接受 cli_overrides 作为 test-only API,
+    # 但 production main() 永不向其传非空 cli_overrides.
+    # 防御性扫描: 如果 argparse 因某种原因未来又加入了 budget flag,
+    # 并通过 env / 隐藏路径悄悄设置了 args 上的字段, 此处仍可拦截.
+    _FORBIDDEN_PRODUCTION_BUDGET_ATTRS = (
+        "global_coarse_count", "coarse_top_k",
+        "medium_re_evaluate_count", "local_per_top",
+        "local_max_count", "local_medium_count",
+        "fine_final_count",
+    )
+    _caught: List[str] = []
+    for attr in _FORBIDDEN_PRODUCTION_BUDGET_ATTRS:
+        v = getattr(args, attr, None)
+        if v is not None:
+            _caught.append(f"{attr}={v}")
+    if _caught:
+        print(f"ERROR: production CLI 不得修改预算参数; "
+              f"捕获以下 budget override 尝试: {_caught}; "
+              f"fixed production budget invariant failed. rc=2.",
+              file=sys.stderr)
+        return 2
 
     # 校验 config (RP1-3 fail-closed): 缺失或无效 → rc=2
     cfg_path = args.config
@@ -2502,13 +2610,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             stop_after_evaluations=args.stop_after_evaluations,
             require_clean_worktree=(not args.allow_dirty_worktree),
             workdir=args.workdir,
-            cli_overrides=(cli_overrides if cli_overrides else None),
+            # FIXED-163 BUDGET GATE: production 永远传 None;
+            # cli_overrides 仅在 tests 中通过 run_search_pipeline(...) 直接传入.
+            cli_overrides=None,
         )
     except _ControlledInterruption as ci:
         print(f"[CLI] controlled_interruption 已触发; "
               f"completed_count={ci.completed_count}; rc=3",
               file=sys.stderr)
         return 3
+    except FixedProductionBudgetInvariantError as e:
+        # FIXED-163 BUDGET GATE: invariant violation = rc=2 (fail-closed)
+        print(f"ERROR: {type(e).__name__}: {e}; "
+              f"fixed production budget invariant failed. rc=2.",
+              file=sys.stderr)
+        return 2
     except (ValueError, FileNotFoundError) as e:
         print(f"ERROR: {type(e).__name__}: {e}", file=sys.stderr)
         return 2

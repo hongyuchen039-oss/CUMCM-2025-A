@@ -104,6 +104,10 @@ from src.q2_search import (
     CANONICAL_RESULT_FIELDS,
     _ControlledInterruption,
     _build_argparser,
+    # FIXED-163 BUDGET GATE
+    validate_fixed_production_result,
+    FixedProductionBudgetInvariantError,
+    EXPECTED_STAGE_COUNTS_PRODUCTION,
 )
 
 
@@ -928,6 +932,7 @@ class JPipeline(unittest.TestCase):
                     "local_delta": (0.1, 5.0, 0.5, 0.3),
                 },
                 output_dir=out_dir,
+                enforce_fixed_production_result=False,
             )
             sc = out["stage_counts"]
             self.assertEqual(set(sc.keys()), set(PIPELINE_STAGES))
@@ -963,6 +968,7 @@ class JPipeline(unittest.TestCase):
                     "local_delta": (0.1, 5.0, 0.5, 0.3),
                 },
                 output_dir=out_dir,
+                enforce_fixed_production_result=False,
             )
             # 若 fine_rows 非空, final_best 必来自 fine
             if out["best_known_candidate"] is not None:
@@ -993,6 +999,7 @@ class JPipeline(unittest.TestCase):
                     "local_delta": (0.1, 5.0, 0.5, 0.3),
                 },
                 output_dir=out_dir,
+                enforce_fixed_production_result=False,
             )
             # 即便 fine total_duration 比 coarse 低, final best 仍来自 fine
             if out["best_known_candidate"] is not None:
@@ -1018,6 +1025,7 @@ class JPipeline(unittest.TestCase):
                     "local_delta": (0.1, 5.0, 0.5, 0.3),
                 },
                 output_dir=out_dir,
+                enforce_fixed_production_result=False,
             )
             self.assertIn("lineage_manifest_sha256", out)
             self.assertEqual(len(out["lineage_manifest_sha256"]), 64)
@@ -1330,7 +1338,10 @@ class AEffectiveConfig(unittest.TestCase):
         cfg = resolve_effective_config(config_path=DEFAULT_CONFIG_PATH)
         self.assertEqual(cfg["algorithm_version"], ALGORITHM_VERSION)
 
-    def test_a11_cli_overrides_apply_to_budget(self):
+    def test_a11_test_only_internal_cli_overrides_bypass_production_gate(self):
+        # FIXED-163 BUDGET GATE: resolve_effective_config(cli_overrides=...) 是
+        # internal-only / test-only API. production CLI (main()) 永不调用它
+        # 携带非空 cli_overrides; 本测试明确该能力仅用于 unit test.
         cfg = resolve_effective_config(cli_overrides={
             "fine_final_count": 5,
         })
@@ -1339,6 +1350,22 @@ class AEffectiveConfig(unittest.TestCase):
         # 即: 96 + 1 anchor + 8 + 48 + 8 + 5 = 166
         self.assertEqual(cfg["total_expected_evaluations"],
                          96 + ANCHOR_COUNT + 8 + 48 + 8 + 5)
+        # production CLI argparse 不得含 budget override flag:
+        parser = _build_argparser()
+        for forbidden in ("--global-coarse-count", "--coarse-top-k",
+                          "--local-max-count", "--local-medium-count",
+                          "--fine-final-count",
+                          "--medium-re-evaluate-count", "--local-per-top"):
+            with self.assertRaises(SystemExit):
+                parser.parse_args(["--run-search", forbidden, "10"])
+        # production main() 调用 resolve_effective_config 时 cli_overrides 必为 None:
+        # 通过 _get_production_cli_overrides 不存在性来确认:
+        # 直接调用 resolve_effective_config without cli_overrides → production 形态
+        cfg_prod = resolve_effective_config(config_path=DEFAULT_CONFIG_PATH)
+        self.assertEqual(
+            cfg_prod["total_expected_evaluations"],
+            EXPECTED_TOTAL_EVALUATIONS)
+        # production 不得被 cli_overrides 绕过; 必须 == 163
 
     def test_a12_stage_plan_for_pipeline_deterministic(self):
         budget = dict(DEFAULT_PILOT_BUDGET)
@@ -1829,6 +1856,7 @@ class HPilotSmoke(unittest.TestCase):
                 output_dir=out_dir,
                 config_path=DEFAULT_CONFIG_PATH,
                 require_clean_worktree=False,
+                enforce_fixed_production_result=False,
             )
             self.assertIn("canonical_result_sha256", out)
             self.assertEqual(len(out["canonical_result_sha256"]), 64)
@@ -1900,6 +1928,7 @@ class HPilotSmoke(unittest.TestCase):
                 output_dir=out_dir_a,
                 config_path=DEFAULT_CONFIG_PATH,
                 require_clean_worktree=False,
+                enforce_fixed_production_result=False,
             )
             # resume from checkpoint_v2.json → same schema
             ck_path = os.path.join(out_dir_a, "checkpoint_v2.json")
@@ -1921,6 +1950,7 @@ class HPilotSmoke(unittest.TestCase):
                 config_path=DEFAULT_CONFIG_PATH,
                 require_clean_worktree=False,
                 resume_from=ck_path,
+                enforce_fixed_production_result=False,
             )
             schema_a = set(out_a.keys())
             schema_b = set(out_b.keys())
@@ -1986,6 +2016,199 @@ class ICLI(unittest.TestCase):
         args = parser.parse_args(["--run-search",
                                    "--workdir", "/tmp/wt"])
         self.assertEqual(args.workdir, "/tmp/wt")
+
+
+# =============================================================================
+#  J2 — FIXED-163 BUDGET GATE (Production CLI + Result Invariant)
+# =============================================================================
+class JFIXED163Gate(unittest.TestCase):
+
+    # ────────────── §五-1: wrong config file rejects ──────────────
+
+    def test_jz01_modified_config_with_global_coarse_count_97_raises(self):
+        # 临时复制 production config, 修改 global_coarse_count 到 97
+        # (实际总数 = 97 + 1 anchor + 8 + 48 + 8 + 2 = 164).
+        # 不传 cli_overrides → 必须 raise ValueError (RP1-3 fail-closed).
+        tmp = tempfile.mkdtemp(prefix="q2cfg97_")
+        try:
+            tmp_cfg = os.path.join(tmp, "q2_search_gate_modified.json")
+            shutil.copyfile(DEFAULT_CONFIG_PATH, tmp_cfg)
+            # 强制改回 97
+            with open(tmp_cfg, "r", encoding="utf-8") as f:
+                cfg_data = json.load(f)
+            cfg_data["budget"]["global_coarse_count"] = 97
+            with open(tmp_cfg, "w", encoding="utf-8") as f:
+                json.dump(cfg_data, f, ensure_ascii=False)
+            with self.assertRaises(ValueError) as ctx:
+                resolve_effective_config(config_path=tmp_cfg)
+            # 错误信息必须明确说明固定 163 门禁
+            self.assertIn("163", str(ctx.exception))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    # ────────────── §五-2: production CLI 拒绝 global_coarse_count override ──────────────
+
+    def test_jz02_production_cli_rejects_global_coarse_count(self):
+        try:
+            rc = qs_main(["--run-search", "--global-coarse-count", "97"])
+        except SystemExit as e:
+            rc = e.code if isinstance(e.code, int) else 2
+        self.assertEqual(rc, 2)
+
+    # ────────────── §五-3: production CLI 拒绝所有 budget override flags ──────────────
+
+    def test_jz03_production_cli_rejects_coarse_top_k(self):
+        try:
+            rc = qs_main(["--run-search", "--coarse-top-k", "10"])
+        except SystemExit as e:
+            rc = e.code if isinstance(e.code, int) else 2
+        self.assertEqual(rc, 2)
+
+    def test_jz04_production_cli_rejects_local_max_count(self):
+        try:
+            rc = qs_main(["--run-search", "--local-max-count", "100"])
+        except SystemExit as e:
+            rc = e.code if isinstance(e.code, int) else 2
+        self.assertEqual(rc, 2)
+
+    def test_jz05_production_cli_rejects_local_medium_count(self):
+        try:
+            rc = qs_main(["--run-search", "--local-medium-count", "100"])
+        except SystemExit as e:
+            rc = e.code if isinstance(e.code, int) else 2
+        self.assertEqual(rc, 2)
+
+    def test_jz06_production_cli_rejects_fine_final_count(self):
+        try:
+            rc = qs_main(["--run-search", "--fine-final-count", "100"])
+        except SystemExit as e:
+            rc = e.code if isinstance(e.code, int) else 2
+        self.assertEqual(rc, 2)
+
+    def test_jz07_production_cli_rejects_medium_re_evaluate_count(self):
+        try:
+            rc = qs_main(["--run-search", "--medium-re-evaluate-count", "10"])
+        except SystemExit as e:
+            rc = e.code if isinstance(e.code, int) else 2
+        self.assertEqual(rc, 2)
+
+    # ────────────── §五-5: validate_fixed_production_result 单点检查 ──────────────
+
+    def _make_valid_inputs(self):
+        # 构造通过形态的 stage_counts + 163 个 unique evaluation_id rows
+        rows = []
+        seen = set()
+        # 97 + 8 + 48 + 8 + 2 = 163
+        order = [("global_coarse", 97), ("global_medium", 8),
+                 ("local_coarse", 48), ("local_medium", 8),
+                 ("fine", 2)]
+        for stage, n in order:
+            for i in range(n):
+                eid = f"{stage}-row-{i}"
+                assert eid not in seen
+                seen.add(eid)
+                rows.append(_make_row(
+                    1.0 + 0.01 * i, 100.0 + i, 1.0, 0.5,
+                    source_stage=stage, sample_level=stage,
+                    scan_step=0.05, total=1.0 + 0.001 * i,
+                    eval_id=eid))
+        return EXPECTED_STAGE_COUNTS_PRODUCTION.copy(), rows, 163
+
+    def test_jz08_validate_accepts_canonical_163_shape(self):
+        sc, rows, cc = self._make_valid_inputs()
+        validate_fixed_production_result(
+            stage_counts=sc, all_rows=rows, completed_count=cc)
+        # 不抛即通过
+
+    def test_jz09_validate_rejects_wrong_stage_counts(self):
+        sc, rows, cc = self._make_valid_inputs()
+        sc["global_coarse"] = 99  # 任意一处错
+        with self.assertRaises(FixedProductionBudgetInvariantError) as ctx:
+            validate_fixed_production_result(
+                stage_counts=sc, all_rows=rows, completed_count=cc)
+        self.assertIn("stage_counts", str(ctx.exception))
+
+    def test_jz10_validate_rejects_total_rows_not_163(self):
+        sc, rows, cc = self._make_valid_inputs()
+        rows = rows[:-1]  # 162
+        with self.assertRaises(FixedProductionBudgetInvariantError) as ctx:
+            validate_fixed_production_result(
+                stage_counts=sc, all_rows=rows, completed_count=cc)
+        self.assertIn("len(all_rows)", str(ctx.exception))
+
+    def test_jz11_validate_rejects_duplicate_evaluation_ids(self):
+        sc, rows, cc = self._make_valid_inputs()
+        # 制造重复: 用最后两个 row 共享 evaluation_id
+        rows[-1] = _make_row(
+            1.0 + 0.01 * 96, 100.0 + 96, 1.0, 0.5,
+            source_stage="fine", sample_level="fine",
+            scan_step=0.05, total=1.5,
+            eval_id=rows[-2].evaluation_id)
+        with self.assertRaises(FixedProductionBudgetInvariantError) as ctx:
+            validate_fixed_production_result(
+                stage_counts=sc, all_rows=rows, completed_count=cc)
+        self.assertIn("unique evaluation_ids", str(ctx.exception))
+
+    def test_jz12_validate_rejects_completed_count_mismatch(self):
+        sc, rows, cc = self._make_valid_inputs()
+        cc = 100  # 谎报
+        with self.assertRaises(FixedProductionBudgetInvariantError) as ctx:
+            validate_fixed_production_result(
+                stage_counts=sc, all_rows=rows, completed_count=cc)
+        self.assertIn("completed_count", str(ctx.exception))
+
+    def test_jz13_validate_rejects_stage_sum_not_163(self):
+        sc, rows, cc = self._make_valid_inputs()
+        # stage_counts 各项都为 dict() == EXPECTED... 仍可通过精确相等检查,
+        # 所以 sum 不可能 mismatch. 此处验证 sum 分支: 通过篡改 rows 让
+        # validator 在 stage_counts 精确匹配路径之后, 仍可能 sum != 163.
+        # 为此我们构造 rows 然后通过一个修改副本:
+        sc["global_coarse"] = 96  # 先让精确匹配失败
+        # 删除之前已构造的 1 行 global_coarse 来避免 sum overflow; 用空集.
+        # 实际上精确匹配已 catch sum 路径. 此测试改为验证精确匹配兜底.
+        with self.assertRaises(FixedProductionBudgetInvariantError):
+            validate_fixed_production_result(
+                stage_counts=sc, all_rows=rows, completed_count=cc)
+
+    # ────────────── §五-6: stop-after-evaluations 严格等号 ──────────────
+
+    def test_jz14_stop_after_evaluations_strict_equality(self):
+        # stop_after_evaluations=3 必须精确停在 3 (not >= 3).
+        out_dir = tempfile.mkdtemp(prefix="q2jz_strict_")
+        try:
+            with self.assertRaises(_ControlledInterruption) as ci_ctx:
+                run_search_pipeline(
+                    seed=2025, u0=TEST_U0, g=TEST_G,
+                    t_arrival=TEST_T_ARRIVAL,
+                    budget={
+                        "global_coarse_count": 4,
+                        "coarse_top_k": 2,
+                        "medium_re_evaluate_count": 2,
+                        "local_per_top": 2,
+                        "local_max_count": 4,
+                        "local_medium_count": 2,
+                        "fine_final_count": 2,
+                        "local_delta": (0.1, 5.0, 0.5, 0.3),
+                    },
+                    output_dir=out_dir,
+                    config_path=DEFAULT_CONFIG_PATH,
+                    require_clean_worktree=False,
+                    stop_after_evaluations=3,
+                )
+            ci = ci_ctx.exception
+            # ci.completed_count 必须精确 = 3 (not >=)
+            self.assertEqual(ci.completed_count, 3)
+            # ckpt 文件存在 + rows 数 == 3
+            ck_path = os.path.join(out_dir, "checkpoint_v2.json")
+            self.assertTrue(os.path.exists(ck_path))
+            ck = load_checkpoint_v2(ck_path)
+            self.assertEqual(len(ck.rows), 3)
+            self.assertEqual(len(ck.completed_evaluation_ids), 3)
+            # marker 文件存在
+            marker = os.path.join(out_dir, "controlled_interruption.json")
+            self.assertTrue(os.path.exists(marker))
+        finally:
+            shutil.rmtree(out_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

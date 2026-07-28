@@ -548,7 +548,8 @@ evaluator 仍必须做最终合法性判断.
 A. Anchor: Q1 固定策略 (heading=π, speed=120, release=1.5, delay=3.6)
    用于确认 Search 调用的真实 evaluator 能复现已知非零策略.
 
-B. Global exploration: `random.Random(seed)` 生成的 stratified 样本; 不依赖
+B. Global exploration: `random.Random(seed)` 生成的 deterministic uniform
+   pseudorandom samples (各维独立确定性均匀伪随机采样); 不依赖
    第三方库; 同一 (seed, domain, count) 必须产生完全一致候选.
 
 C. Local candidates: 围绕 medium 阶段 top-k 候选生成局部扰动;
@@ -567,7 +568,7 @@ C. Local candidates: 围绕 medium 阶段 top-k 候选生成局部扰动;
 [5] 围绕 medium Top 生成 local candidates (≤ 48)
 [6] local coarse 评估
 [7] 合并并去重
-[8] 取 combined 阶段 top-2 进入 fine
+[8] 从去重后的 medium-confirmed pool 选择 top-2 进入 fine
 [9] 输出 best-known candidate 与完整证据
 ```
 
