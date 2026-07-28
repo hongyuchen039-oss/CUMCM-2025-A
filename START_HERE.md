@@ -1,21 +1,34 @@
 # 项目驾驶舱
 
 ## 当前阶段
-**TASK_004 FOUNDATION (Q2 单弹评估器基础, NOT AN OPTIMIZATION RESULT)** —
-Q2 单弹策略四变量合同、合法性判断、单候选完整圆柱评估器与 100 候选
-本地 smoke 已实现. 已通过 **FIX 加固** (7 个 P1 修复组 + 本轮 3 个 P1 返工:
-u0 与地面合法性统一、profile-measure 暴露 system_error、真实非零邻域候选),
-85 个 Q2 单元测试 + 117 个 Q1 回归测试 = 202/202 全过.
-正式 Q2 搜索尚未启动. PR #3 / PR #4 均已合并; CI 已进入 main.
+**TASK_004 SEARCH PROTOTYPE AUDIT AND SALVAGE** — 远程未审核 Search prototype 的审计与抢救阶段。
 
-## 本轮交付物 (TASK_004 Foundation)
+Foundation 已通过 PR #5 合并到 main (commit 8cfe770); 主线 PR #6 (governance skill) 也已合并。
+当前任务是对远程一个未审核 Search prototype commit (6f728d45b3bb776c19bbe8a857b26570eb79dc68) 进行只读审计,
+Audit CC 只读形成审核建议,
+Hermes 只读核验仓库事实,
+由 MAIN 作最终处置决定。
+
+本轮**不等待 CI**; CI 不作为合并硬门槛; CI timeout 不代表数学失败。
+正式 Search 尚未运行; result*.xlsx 尚未生成。
+
+## 主线状态 (合并后)
+
+- Foundation PR #5 → main (merge commit 8cfe770)
+- Governance PR #6 → main (merge commit 72c7523)
+- 当前 main = 72c7523 (含 Foundation + governance skill)
+- Q2 Foundation 88/88 本地通过; Q1 baseline 42/42 + Q1 cylinder 75/75 = 117/117; 全量 205/205 本地通过
+- profile-measure 退出码合同: 0 正常 / 1 任一程序异常 / 2 参数错误
+- 默认 smoke 退出码: 0 无 system_error / 1 有 system_error / 2 参数错误
+
+## 本轮交付物 (TASK_004 Foundation, 已合并)
 - `src/q2_single_bomb.py` — Q2 单弹评估器主程序 (Python 标准库, 复用 q1_baseline 与 q1_cylinder)
-- `tests/test_q2_single_bomb.py` — 单元测试 (85 测, 22 组 A-Q + U2/R2/S2 返工加固类, 全过)
-- `MODEL.md` — 增加"Q2 单弹策略评估合同"章节 + 本轮 FIX 7 P1 变更表
-- `NEXT_TASK.md` — 更新为 TASK_004 Foundation + 下一阶段 TASK_004 Search
-- `README.md` — 同步当前阶段
+- `tests/test_q2_single_bomb.py` — 单元测试 (88 测, 22 组 A-Q + U2/R2/S2 返工加固类, 全过)
+- `MODEL.md` — 增加"Q2 单弹策略评估合同"章节 + 本轮 FIX 7 P1 + Profile Measurement 程序错误行为合同
+- `NEXT_TASK.md` — 已升级为 TASK_004 SEARCH PROTOTYPE AUDIT AND SALVAGE
+- `README.md` — 同步当前阶段与测试计数
 
-## 本轮交付物 (历史: TASK_003, 等待 TASK_004 Search 接续)
+## 本轮交付物 (历史: TASK_003, 已合并)
 - `src/q1_cylinder.py` — 主程序 (Python 标准库, 仅复用 q1_baseline)
 - `tests/test_q1_cylinder.py` — 单元测试 (75 测, 12 组 A-L, 全过, 含 2 个失败路径测试)
 - `outputs/q1/q1_cylinder_comparison.svg` — x-z 投影 + 时间对照图 (`os.path.getsize` = 78857 字节 ≈ 77 KB)
@@ -58,6 +71,9 @@ u0 与地面合法性统一、profile-measure 暴露 system_error、真实非零
 - [x] SVG 合法可解析, 含圆柱标识 + 时间对照面板 + 图例, 红色副标题标 NOT FINAL
 - [x] Python 标准库, 无第三方依赖
 - [x] Q1 点目标基线 42/42 测试仍通过 (回归保证)
+- [x] Q2 Foundation 88/88 测试通过 (PR #5 已合并)
+- [x] profile-measure 退出码合同已加固 (PR #5 已合并)
+- [x] 全量 205/205 本地通过
 
 ## 当前对题目的理解
 2025 A 题"烟幕干扰弹的投放策略"——用 1~5 架无人机 (FY1~FY5) 投放烟幕干扰弹,
@@ -65,7 +81,7 @@ u0 与地面合法性统一、profile-measure 暴露 system_error、真实非零
 **下底面圆心 (0, 200, 0)**, 几何中心 (0, 200, 5)) 之间形成烟幕云团
 (云团 3 m/s 下沉, 起爆后 20 s 内、中心 10 m 范围有效遮蔽)。共 5 个问题:
 - Q1: 给定参数求遮蔽时长 — 方案 A 1.435082 s ✓, 方案 B 1.392384 s ✓
-- Q2: 单弹求最优策略 (待审后启动)
+- Q2: 单弹求最优策略 (Foundation 已就绪, Search 等待审核)
 - Q3: 单机 3 弹, result1.xlsx
 - Q4: 三机各 1 弹, result2.xlsx
 - Q5: 五机各至多 3 弹, result3.xlsx
@@ -83,32 +99,36 @@ u0 与地面合法性统一、profile-measure 暴露 system_error、真实非零
 - 严格遮蔽裕量有上下界 (上界由粗采样锁定, 严格判据下限由 fine 锁定).
 - 覆盖率仅作辅助诊断, 当前**不**使用人为覆盖率阈值 (避免人造结果).
 - 仍标记为 FULL-CYLINDER CANDIDATE / EXPERIMENTAL, 不得冒充 VERIFIED / FINAL.
+- **远程存在未审核 Search prototype commit (6f728d45b3bb776c19bbe8a857b26570eb79dc68)**, 尚未审计, 尚未接受, 尚未创建 PR.
 
-## 需要陈虹宇决定
-- 是否接受本轮方案 B 1.392384 s 作为完整圆柱正式候选 (FULL-CYLINDER CANDIDATE / EXPERIMENTAL)?
-- 是否接受 ΔT = −0.042698 s (方案 B 比方案 A 短 2.975%) 作为 Q1 点目标近似误差的量化?
-- 是否接受 margin_max = 5.282478 m (0.001 s 局部网格估计) 报告口径?
-- 是否接受 ρ=1 平台持续 1.380 s 作为口径?
-- 是否批准合并 PR #3?
+## 当前任务 (唯一)
 
-## 下一任务 (本轮已唯一固定)
-
-**TASK_004 Foundation 已完成** — 等 PR 审核合并.
+**TASK_004 SEARCH PROTOTYPE READ-ONLY AUDIT AND SALVAGE DECISION** — 远程未审核 Search prototype 的只读审核与处置决策.
 
 任务目的:
-- 仅建立四变量合同、合法性、单候选评估器与 smoke, **不**启动搜索
-- 现有 Q1 几何冻结保持不变 (42 + 75 = 117 个回归测试全过)
+- Foundation 已合并; 主线 governance 已落地; 全量 205/205 本地通过
+- 远程存在一份未审核 Search prototype commit (6f728d45b3bb776c19bbe8a857b26570eb79dc68)
+- Audit CC 只读审核并形成建议 (审核代码 / 测试 / 算法 / 数学合同 / 性能预算 / 可复用性)
+- Hermes 只读核验仓库事实 (branch / SHA / changed files / PR 状态)
+- MAIN 综合两家证据后作出最终处置决定 (整体采用 / 局部抢救 / 不采用并重写)
+- "Salvage" 只表示形成处置建议, 不表示实施修改
+- 不得在审计前擅自 cherry-pick / merge / 重写
+- 仍不得生成 result1.xlsx
+- 不删除现有 prototype commit; 不删除远程分支
 
-下一阶段: **TASK_004 Search** (尚未启动), 进入条件:
-- Foundation PR 审核并合并
-- CI 持续 PASS
-- 本地 Foundation smoke 性能已记入下一阶段预算
-- 搜索算法 / 收敛标准 / 性能预算重新冻结
-- 仍需外部授权才能启动 Search
+## 下一阶段 (待当前任务结束)
 
-不得在本轮启动 TASK_004 Search.
-不得提前切换任何分支或 PR.
+SEARCH PROTOTYPE 决策后的下一阶段仍在冻结中。
+可能路径:
+- 整体采用
+- 局部抢救
+- 不采用并重写
+
+无论选择哪条路径, 旧 prototype commit 和远程分支均保留,
+"不采用"不等于删除历史.
+
+由 MAIN 综合 Audit CC 与 Hermes 证据后作最终处置决定.
 
 ## 下一步只做一件事
-本轮完成 → 等 Foundation PR 审核 → 等待授权后再进入 TASK_004 Search.
+本轮完成 → 等 Audit CC 只读审核 + Hermes 仓库事实核验 + MAIN 最终处置决定.
 不得提前切换任何分支或 PR.

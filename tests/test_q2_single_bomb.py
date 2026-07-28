@@ -1394,6 +1394,179 @@ class R2ProfileMeasureSystemError(unittest.TestCase):
         self.assertEqual(rc, 2,
                           f"参数错误应返回 2, 实际 {rc}")
 
+    # ----- DEBT-Q2-PROFILE-EXIT-001 关闭: warm-up 异常 → main 返回 1 -----
+
+    def test_r2_07_warmup_only_error_returns_one(self):
+        """DEBT-Q2-PROFILE-EXIT-001: warm-up-only error → main 必须返回 1.
+
+        warm_up_error 字段非空, n_system_error 仍为 0 (warm-up 不计入).
+        后续 formal repeat 仍执行 (mock 验证). 任何 row 有 warm_up_error
+        即视为程序错误, CLI rc=1, 不得静默吞掉返回 0.
+        """
+        fake_plan = [
+            (q2.CANDIDATE_KIND_ANCHOR, q2.Q1_FIXED_STRATEGY),
+            (q2.CANDIDATE_KIND_NEIGHBOR, q2.Q1_NEIGHBORHOOD[0]),
+            (q2.CANDIDATE_KIND_ZERO, q2.ZERO_OBJECTIVE_STRATEGY),
+        ]
+
+        def warmup_only_error(strategy, sample_level, repeat=3,
+                                warm_up=True, **kwargs):
+            return {
+                "sample_level": sample_level,
+                "scan_step": q2.PROFILE_SCAN_STEPS[sample_level],
+                "repeat": repeat,
+                "warm_up": warm_up,
+                "samples_reused": True,
+                "n_system_error": 0,
+                "system_errors": [],
+                "warm_up_error": "RuntimeError: injected warm-up only",
+                "results": [{
+                    "elapsed_s": 0.001,
+                    "status": "ok",
+                    "total_duration_s": 1.0,
+                    "n_intervals": 1,
+                }],
+                "median_elapsed_s": 0.001,
+                "min_elapsed_s": 0.001,
+                "max_elapsed_s": 0.001,
+                "range_s": 0.0,
+                "first_status": "ok",
+                "first_total_duration_s": 1.0,
+                "first_n_intervals": 1,
+                "window_length_s": 20.0,
+            }
+
+        with patch("src.q2_single_bomb._default_profile_plan",
+                    return_value=fake_plan), \
+             patch("src.q2_single_bomb.profile_evaluation",
+                    side_effect=warmup_only_error), \
+             patch("src.q2_single_bomb._print_profile_measurement"):
+            rc = q2_main(["--profile-measure", "--repeat", "1"])
+
+        # DEBT 关闭: warm-up-only error 必须返回 1, 不是 0
+        self.assertEqual(rc, 1,
+                          f"warm-up-only error → main 必须返回 1, 实际 {rc}")
+
+    def test_r2_08_warmup_and_repeat_error_returns_one(self):
+        """DEBT-Q2-PROFILE-EXIT-001: warm-up + repeat 同时异常 → main 返回 1.
+
+        两类错误字段同时保留:
+          - warm_up_error 非空
+          - n_system_error > 0
+          - system_errors 列表保留 repeat 异常详情
+        CLI rc=1.
+        """
+        fake_plan = [
+            (q2.CANDIDATE_KIND_ANCHOR, q2.Q1_FIXED_STRATEGY),
+            (q2.CANDIDATE_KIND_NEIGHBOR, q2.Q1_NEIGHBORHOOD[0]),
+            (q2.CANDIDATE_KIND_ZERO, q2.ZERO_OBJECTIVE_STRATEGY),
+        ]
+
+        def both_error(strategy, sample_level, repeat=3,
+                          warm_up=True, **kwargs):
+            return {
+                "sample_level": sample_level,
+                "scan_step": q2.PROFILE_SCAN_STEPS[sample_level],
+                "repeat": repeat,
+                "warm_up": warm_up,
+                "samples_reused": True,
+                "n_system_error": 1,
+                "system_errors": [(strategy, "RuntimeError", "injected repeat")],
+                "warm_up_error": "RuntimeError: injected warm-up",
+                "results": [
+                    {
+                        "elapsed_s": 0.001,
+                        "status": "ok",
+                        "total_duration_s": 1.0,
+                        "n_intervals": 1,
+                    },
+                    {"error": "RuntimeError: injected repeat"},
+                ],
+                "median_elapsed_s": 0.001,
+                "min_elapsed_s": 0.001,
+                "max_elapsed_s": 0.001,
+                "range_s": 0.0,
+                "first_status": "ok",
+                "first_total_duration_s": 1.0,
+                "first_n_intervals": 1,
+                "window_length_s": 20.0,
+            }
+
+        with patch("src.q2_single_bomb._default_profile_plan",
+                    return_value=fake_plan), \
+             patch("src.q2_single_bomb.profile_evaluation",
+                    side_effect=both_error), \
+             patch("src.q2_single_bomb._print_profile_measurement"):
+            rc = q2_main(["--profile-measure", "--repeat", "2"])
+
+        self.assertEqual(rc, 1,
+                          f"warm-up + repeat error → main 必须返回 1, 实际 {rc}")
+
+    def test_r2_09_single_cell_warmup_error_returns_one(self):
+        """DEBT-Q2-PROFILE-EXIT-001: 9 cell 中仅 1 cell warm-up error → exit 1.
+
+        验证:
+          - profile_evaluation 仍被调用 9 次 (3 cell × 3 candidate)
+          - 仅第一个 cell (anchor + coarse) 报告 warm_up_error
+          - 其他 8 cell 正常
+          - 全部 9 cell 仍被处理 (不得提前崩溃)
+          - CLI rc=1
+        """
+        fake_plan = [
+            (q2.CANDIDATE_KIND_ANCHOR, q2.Q1_FIXED_STRATEGY),
+            (q2.CANDIDATE_KIND_NEIGHBOR, q2.Q1_NEIGHBORHOOD[0]),
+            (q2.CANDIDATE_KIND_ZERO, q2.ZERO_OBJECTIVE_STRATEGY),
+        ]
+
+        n_calls = [0]
+
+        def selective_warmup_error(strategy, sample_level, repeat=3,
+                                       warm_up=True, **kwargs):
+            n_calls[0] += 1
+            # 仅第一个 cell (anchor + coarse) 报告 warm_up_error
+            is_first_cell = (n_calls[0] == 1)
+            return {
+                "sample_level": sample_level,
+                "scan_step": q2.PROFILE_SCAN_STEPS[sample_level],
+                "repeat": repeat,
+                "warm_up": warm_up,
+                "samples_reused": True,
+                "n_system_error": 0,
+                "system_errors": [],
+                "warm_up_error": (
+                    "RuntimeError: only first cell warm-up fails"
+                    if is_first_cell else None
+                ),
+                "results": [{
+                    "elapsed_s": 0.001,
+                    "status": "ok",
+                    "total_duration_s": 1.0,
+                    "n_intervals": 1,
+                }],
+                "median_elapsed_s": 0.001,
+                "min_elapsed_s": 0.001,
+                "max_elapsed_s": 0.001,
+                "range_s": 0.0,
+                "first_status": "ok",
+                "first_total_duration_s": 1.0,
+                "first_n_intervals": 1,
+                "window_length_s": 20.0,
+            }
+
+        with patch("src.q2_single_bomb._default_profile_plan",
+                    return_value=fake_plan), \
+             patch("src.q2_single_bomb.profile_evaluation",
+                    side_effect=selective_warmup_error), \
+             patch("src.q2_single_bomb._print_profile_measurement"):
+            rc = q2_main(["--profile-measure", "--repeat", "1"])
+
+        # 9 cell 全部处理 (不得提前崩溃)
+        self.assertEqual(n_calls[0], 9,
+                          f"9 cell 必须全部处理, 实际 {n_calls[0]}")
+        # 单 cell warm-up error 仍触发 exit 1
+        self.assertEqual(rc, 1,
+                          f"单 cell warm-up error → main 必须返回 1, 实际 {rc}")
+
 
 # =============================================================================
 #  P1-3 返工 — 真实非零邻域候选 (Section 六)

@@ -1136,11 +1136,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 row["candidate_kind"] = kind
                 rows.append(row)
         _print_profile_measurement(rows, repeat)
-        # 退出码 (P1-2):
-        #   - 至少 1 个 repeat system_error → exit 1
-        #   - 0 个 system_error            → exit 0
+        # 退出码 (DEBT-Q2-PROFILE-EXIT-001 已关闭):
+        #   - 任何 row 存在 warm_up_error (warm-up 异常)          → exit 1
+        #   - 任何 row 的 n_system_error > 0    (repeat 异常)     → exit 1
+        #   - 全部 row 暖成功且 0 个 repeat 异常                  → exit 0
+        #   - 参数错误                                                → exit 2
+        # 注意: warm-up 异常不计入 n_system_error, 仍写入 warm_up_error
+        #   字段; 但与 repeat 异常一样属于程序错误, 共同决定 CLI rc=1.
         total_system_error = sum(int(r.get("n_system_error", 0)) for r in rows)
-        return 1 if total_system_error > 0 else 0
+        any_warm_up_error = any(r.get("warm_up_error") is not None for r in rows)
+        return 1 if (total_system_error > 0 or any_warm_up_error) else 0
 
     if smoke_count is None:
         print("缺少必要参数 --smoke-count", file=sys.stderr)
