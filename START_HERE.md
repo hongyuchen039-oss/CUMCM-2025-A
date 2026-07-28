@@ -1,11 +1,20 @@
 # 项目驾驶舱
 
 ## 当前阶段
-**TASK_003 完整圆柱遮蔽判定候选与 Q1 对照 (FULL-CYLINDER CANDIDATE / EXPERIMENTAL)** —
-完整圆柱正式候选已实现, 与 Q1 点目标基线对照完成, 等待审核冻结。
-等 PR #3 合并后才正式冻结并允许进入 TASK_004。
+**TASK_004 FOUNDATION FINAL REVIEW** — 建模主线文档同步阶段.
+Foundation 代码实现与本地验证已完成; PR #5 等待一次只读审核与合并.
+本轮**不等待 CI**; CI 不作为合并硬门槛; CI timeout 不代表数学失败.
+正式 Search 尚未运行; 远程存在尚未审核的 Search prototype.
+仍未生成 result*.xlsx.
 
-## 本轮交付物
+## 本轮交付物 (TASK_004 Foundation)
+- `src/q2_single_bomb.py` — Q2 单弹评估器主程序 (Python 标准库, 复用 q1_baseline 与 q1_cylinder)
+- `tests/test_q2_single_bomb.py` — 单元测试 (88 测, 22 组 A-Q + U2/R2/S2 返工加固类, 全过)
+- `MODEL.md` — 增加"Q2 单弹策略评估合同"章节 + 本轮 FIX 7 P1 + Final Close 行为合同
+- `NEXT_TASK.md` — TASK_004 FOUNDATION FINAL REVIEW AND MERGE
+- `README.md` — 同步当前阶段
+
+## 本轮交付物 (历史: TASK_003, 等待 TASK_004 Search 接续)
 - `src/q1_cylinder.py` — 主程序 (Python 标准库, 仅复用 q1_baseline)
 - `tests/test_q1_cylinder.py` — 单元测试 (75 测, 12 组 A-L, 全过, 含 2 个失败路径测试)
 - `outputs/q1/q1_cylinder_comparison.svg` — x-z 投影 + 时间对照图 (`os.path.getsize` = 78857 字节 ≈ 77 KB)
@@ -75,24 +84,25 @@
 - 仍标记为 FULL-CYLINDER CANDIDATE / EXPERIMENTAL, 不得冒充 VERIFIED / FINAL.
 
 ## 需要陈虹宇决定
-- 是否接受本轮方案 B 1.392384 s 作为完整圆柱正式候选 (FULL-CYLINDER CANDIDATE / EXPERIMENTAL)?
-- 是否接受 ΔT = −0.042698 s (方案 B 比方案 A 短 2.975%) 作为 Q1 点目标近似误差的量化?
-- 是否接受 margin_max = 5.282478 m (0.001 s 局部网格估计) 报告口径?
-- 是否接受 ρ=1 平台持续 1.380 s 作为口径?
-- 是否批准合并 PR #3?
+- 是否在监管 CC 与 Hermes 核验后合并 PR #5?
 
 ## 下一任务 (本轮已唯一固定)
 
-**TASK_004: Q2 单弹最优策略** — 仅在 PR #3 合并且审核通过后启动.
+**TASK_004 FOUNDATION FINAL REVIEW** — 等只读监管审核与 Hermes 核验.
 
 任务目的:
-- FY1 → M1 单弹最优化 (决策量: 航向, 速度, 投放点, 起爆点)
-- 优化目标: 完整圆柱严格遮蔽总时长 (方案 B 候选模型, PR #3 合并后正式冻结)
-- 起点: TASK_003 严格遮蔽边界函数 strict_boundary_value(t)
-- 输出: result1.xlsx 之前, 先冻结搜索算法与收敛标准
+- Foundation 代码与本地验证已就绪 (88 Q2 + 117 Q1 = 205/205 本地通过)
+- 文档同步: NEXT_TASK / START_HERE / MODEL 一致, 真实反映 Foundation Final Review 状态
+- 本轮不等待 CI; CI 不作为合并硬门槛
 
-不得在本轮启动 TASK_004. 完整圆柱候选审核通过 + PR #3 合并后, 才能进入 Q2 单弹优化.
+下一阶段: **TASK_004 SEARCH PROTOTYPE AUDIT AND SALVAGE** (尚未启动)
+- 远程已存在未审核 Search prototype commit
+- 必须在 Foundation 合并后由监管 CC / Hermes 审核
+- 仍需外部授权才能接受 Search prototype
+
+不得在本轮启动 TASK_004 Search.
+不得提前切换任何分支或 PR.
 
 ## 下一步只做一件事
-本轮完成 → 等 PR #3 合并 → 进入 TASK_004.
+本轮完成 → 等 Foundation PR #5 只读审核 → 等待授权后再进入 Search prototype 审核.
 不得提前切换任何分支或 PR.

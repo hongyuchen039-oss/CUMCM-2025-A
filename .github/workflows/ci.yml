@@ -13,8 +13,8 @@ permissions:
   contents: read
 
 jobs:
-  unit-tests:
-    name: Python unit tests
+  q1-baseline-tests:
+    name: Q1 baseline unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -32,16 +32,72 @@ jobs:
           python --version
           git status --short
 
-      - name: Compile Python sources
+      - name: Compile Q1 baseline source
+        run: |
+          python -m py_compile src/q1_baseline.py
+
+      - name: Run Q1 baseline unit tests
+        run: |
+          python -B -m unittest tests.test_q1_baseline -v
+
+  q1-cylinder-tests:
+    name: Q1 cylinder unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Show environment
+        run: |
+          python --version
+          git status --short
+
+      - name: Compile Q1 sources
         run: |
           python -m py_compile src/q1_baseline.py
           python -m py_compile src/q1_cylinder.py
 
-      - name: Run unit tests
+      - name: Run Q1 cylinder unit tests
         run: |
-          python -m unittest discover -s tests -p "test_*.py" -v
+          python -B -m unittest tests.test_q1_cylinder -v
 
-  smoke-test:
+  q2-foundation-tests:
+    name: Q2 foundation unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Show environment
+        run: |
+          python --version
+          git status --short
+
+      - name: Compile all sources
+        run: |
+          python -m py_compile src/q1_baseline.py
+          python -m py_compile src/q1_cylinder.py
+          python -m py_compile src/q2_single_bomb.py
+
+      - name: Run Q2 foundation unit tests
+        run: |
+          python -B -m unittest tests.test_q2_single_bomb -v
+
+  q1-cylinder-smoke:
     name: Q1 cylinder smoke test
     runs-on: ubuntu-latest
     timeout-minutes: 20

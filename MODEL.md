@@ -18,7 +18,7 @@
 每完成一问需在 `RESULTS.md` 记录数值与单位，并按"PLAN/WORKING/VERIFIED/REVIEW/FIX"
 流程更新同一任务的 Draft PR。
 
-## 当前可能采用的总体建模路线（方案 A 与方案 B 均已实现, 方案 B 在 PR #3 等待审核冻结）
+## 当前可能采用的总体建模路线（方案 A 与方案 B 均已实现, 方案 B 已合并到 main 并在 PR #3 中通过审核）
 
 ### 统一坐标系
 - 假目标为原点 (0, 0, 0)，水平面 xy，z 向上。
@@ -63,9 +63,8 @@
 - 目标：考虑导弹对真目标圆柱可见表面或可见轮廓的视线集合，
   评估烟幕云团对这些视线的遮挡程度。
 - 方案 A 点目标基线与方案 B 完整圆柱正式候选均已实现。
-  方案 B 当前处于 FULL-CYLINDER CANDIDATE / EXPERIMENTAL，
-  等待 PR #3 外部审核与合并；
-  合并后才正式冻结并允许进入 TASK_004。
+  方案 B 已通过 PR #3 合并到 main, 当前在 Q2/Q3/Q4/Q5 中复用.
+  等级: FULL-CYLINDER CANDIDATE / EXPERIMENTAL (合并并不等于升 VERIFIED).
 - 候选冻结的方案 B 几何、采样、判据与收敛标准见下文 "完整圆柱遮蔽正式候选" 章节。
 
 #### 项目路线
@@ -107,10 +106,9 @@
 
 ## 局限
 - 方案 A Q1 点目标基线与方案 B 完整圆柱正式候选均已实现。
-- 方案 B 当前处于 FULL-CYLINDER CANDIDATE / EXPERIMENTAL,
-  等待 PR #3 外部审核与合并; 合并后才正式冻结并允许进入 TASK_004.
+- 方案 B 已通过 PR #3 合并到 main, 等级仍为 FULL-CYLINDER CANDIDATE / EXPERIMENTAL;
+  合并不等于升 VERIFIED.
 - Q1 仅验证了一组参数,未与外部标准解对比.
-- 在 PR #3 合并之前, 方案 B 结果**不能**标为 VERIFIED 或 FINAL.
 
 ---
 
@@ -118,8 +116,8 @@
 
 > 已在 `src/q1_cylinder.py` 实现，并通过 `tests/test_q1_cylinder.py` 的 75 个本地单元测试
 > (A-L 共 12 组, 含 2 个收敛失败路径测试) 验证。
-> 本节固定 Q2 启动前必须冻结的方案 B 几何、采样、判据与收敛标准;
-> 当前层级为候选 (CANDIDATE), 待 PR #3 审核通过后正式冻结。
+> 本节固定 Q2/Q3/Q4/Q5 中复用的方案 B 几何、采样、判据与收敛标准.
+> 等级仍为 FULL-CYLINDER CANDIDATE / EXPERIMENTAL (合并 ≠ VERIFIED).
 
 ### 1. 真目标几何 (复用 FACTS.md §11)
 
@@ -247,8 +245,7 @@ find_strict_intervals(samples, scan_step=0.01)
 - 不考虑导弹在大入射角下对圆柱的轮廓遮挡几何 (本题远距离下不触发)
 - 不引入覆盖率阈值作为正式判据 (避免人造阈值, 由严格遮蔽唯一决定)
 - 严格遮蔽仍标记为 FULL-CYLINDER CANDIDATE / EXPERIMENTAL, 不得冒充 VERIFIED / FINAL
-- 等级仅在 PR #3 合并且外部审核通过后才能升级到 VERIFIED
-- Q2 启动前, 必须复用本节的 strict_boundary_value 作为优化目标
+- Q2/Q3/Q4/Q5 中必须复用本节的 strict_boundary_value 作为优化目标
 
 ### 12. 本轮 FIX 变更 (不改数学结论)
 
@@ -339,10 +336,165 @@ find_strict_intervals(samples, scan_step=0.01)
 
 ### 5. 局限
 
-- 方案 B 完整圆柱正式候选已实现, 但仍标记为 FULL-CYLINDER CANDIDATE / EXPERIMENTAL,
-  等待 PR #3 外部审核与合并; 合并后才能正式冻结并允许进入 TASK_004
+- 方案 B 完整圆柱正式候选已实现并经 PR #3 合并到 main,
+  等级仍为 FULL-CYLINDER CANDIDATE / EXPERIMENTAL; 合并并不等于 VERIFIED.
 - 只验证 Q1 一组参数, 未与外部标准解对比
-- 等级仅 BASELINE / EXPERIMENTAL, **不能**升级为 VERIFIED 或 FINAL,
-  除非 PR #3 合并且外部审核通过
+- 等级仅 BASELINE / EXPERIMENTAL, **不能**升级为 VERIFIED 或 FINAL
 - 重力 g=9.8 与 9.80665 标准值差异未量化
 - 风场、云团水平漂移、起爆时序误差均按 §15 假设忽略
+
+---
+
+## Q2 单弹策略评估合同 (TASK_004 FOUNDATION / NOT AN OPTIMIZATION RESULT)
+
+> 已在 `src/q2_single_bomb.py` 实现, 通过 `tests/test_q2_single_bomb.py` 85 个本地单元测试
+> (Section 五 ~ 十七 + 3 个 P1 返工加固类 U2/R2/S2 + G2/J2/K2/N2/P/Q 共 14 组) 验证.
+> 本节固定 TASK_004 Search 启动前必须确认的合同.
+> 当前层级为 FOUNDATION (基础评估器), 尚未启动正式 Q2 搜索.
+> 等级: **TASK_004 FOUNDATION / NOT AN OPTIMIZATION RESULT**, 不得冒充 Q2 VERIFIED / FINAL.
+
+### 1. 决策变量: 4 个独立变量 (Section 五)
+
+- `heading_rad` / θ: 归一化到 [0, 2π)
+  - θ=0: +x; θ=π/2: +y; θ=π: -x; 角度逆时针为正
+  - 方向向量由 heading 推导: `u(θ) = (cosθ, sinθ, 0)` (不得独立储存)
+- `speed_mps` / v: 70 ≤ v ≤ 140 (**[官] FACTS.md §9**, 含端点)
+- `release_time_s` / t_release: t_release ≥ 0 (**[约定]**, 项目边界; 允许 t_release = 0)
+- `delay_s` / δ: δ ≥ 0 (**[约定]**, 项目边界; 允许 δ = 0)
+
+**不得重复参数化**: 飞行方向向量 / 投放点 / 起爆时刻 / 起爆点 / 云团轨迹均由上述 4 个变量推导.
+
+### 2. 运动学公式 (Section 六, 与 src/q1_baseline 一致)
+
+- FY1 初始位置: F0 = (17800, 0, 1800) (**[官] FACTS.md §8**)
+- FY1 速度: v_FY1 = v · u(θ) = (v cosθ, v sinθ, 0) (等高度直线)
+- FY1 位置: F(t) = F0 + v_FY1 · t
+- 投放点 (推导): R = F(t_release)
+- 烟幕弹初速 = FY1 当时速度 (**[假设] FACTS.md §15**: 投放瞬间共速)
+- 起爆时刻 (推导): t_d = t_release + δ
+- 起爆点 (推导): D = R + v δ u + (0, 0, -0.5 g δ²)
+  等价形式: D = F0 + v (t_release + δ) u + (0, 0, -0.5 g δ²)
+  (两种形式须由测试证明一致)
+- 重力加速度: g = 9.8 m/s² (**[假设] FACTS.md §15**, 方向 -z)
+- 云团中心 (t ≥ t_d): C(t) = D + (0, 0, -3(t - t_d))
+- 云团半径 R_cloud = 10 m, 有效持续 20 s (**[官] FACTS.md §10**)
+- 忽略: 风, 空气阻力, 水平漂移, 地面反弹, 云团形变, 触地后自动失效
+  (均按 FACTS.md §15 [假设] 处理)
+
+### 3. 候选合法性 (Section 七)
+
+**A. 物理/合同非法 (status = "invalid", 不评估)**:
+- 任意变量非有限数 (NaN / Inf)
+- speed_mps ∉ [70, 140]
+- release_time_s < 0
+- delay_s < 0
+- 起爆点 z < 0 (允许 z = 0)
+
+**B. 合法但目标值为 0 的候选**:
+- 评估窗口为空 (window_end ≤ window_start)
+- 整个窗口内严格遮蔽始终不成立
+- t_detonate = t_arrival (search-domain 边界)
+
+**C. 搜索域无损截断 (status = "pruned_zero")**:
+- 条件: t_detonate > t_arrival
+- 含义: 起爆晚于 M1 到达假目标, 对到达前遮蔽目标没有正收益, 搜索时无损排除
+- 文档约束: **不得写成"题目禁止晚于到达时刻起爆"**
+- **明确说明**: 这是针对当前"到达前遮蔽目标"的**搜索域无损剪枝**, 不是官
+  方物理禁令. valid=True 表示物理/合同合法, 仅在当前目标函数下零收益.
+
+**D. 程序错误 (必须向上传播, 不得吞掉)**:
+- 几何函数合同错误 (空可见集 ValueError 等)
+- 参数类型编程错误 (非数值 scan_step, sample_level 不在 SAMPLE_GRADES 等)
+- 内部断言失败 / 代码 bug / 意外 I/O
+
+策略评估 (`evaluate_single_bomb_strategy`) 仅 try 评估阶段异常 (空可见集等),
+这些异常**不**被吞掉, 直接传播. Smoke CLI (`run_smoke`) 在外层捕获以计数.
+
+### 4. 评估窗口与目标函数 (Section 八)
+
+- 窗口起点: t_start = t_detonate
+- 窗口终点: t_end = min(t_detonate + 20, t_arrival)
+  当 t_end ≤ t_start 时, 目标值为 0 (合法)
+- 严格遮蔽判据: 复用 `src/q1_cylinder.strict_boundary_value`
+  `f_cylinder(t) ≤ 0 ⇔ t 时刻严格遮蔽`
+- 严格遮蔽区间: 复用 `src/q1_cylinder.find_strict_intervals`
+- 区间必须按起点升序, 无重叠, 不产生负长度, 限制在评估窗口内
+- 正式目标: `J = measure(union(I_1, I_2, ..., I_k))`
+  **不得**只保留最长区间; **不得**以 coverage 阈值代替严格遮蔽判据
+
+### 5. 复用 TASK_003 完整圆柱 (Section 十)
+
+- 通过回调注入, **不**复制一份新的圆柱几何实现:
+  - `samples`: 复用 `src/q1_cylinder.generate_cylinder_samples`
+  - `missile_position_fn`: 默认 `missile_position` (Q1 trajectory)
+  - `cloud_center_fn`: 由 `make_cloud_center_fn(strategy, D)` 生成的闭包
+  - `window_start`, `window_end`, `scan_step`: 显式传入
+- 不修改 `src/q1_cylinder.py` 即可工作 (`evaluate_single_bomb_strategy` 直接
+  调 `find_strict_intervals`, 全部参数用关键字传入)
+- 现有 75 个 Q1 cylinder 单元测试 + 42 个 Q1 baseline 测试保持全过
+- Q1 数值结果与冻结候选**不**变化
+
+### 6. 当前局限 (本轮 Foundation, 不得隐去)
+
+- 只实现单候选评估器; **尚未实现搜索算法** (网格 / 局部 / 全局)
+- **未启动 Q2 优化**; 本轮 100 个候选 smoke 中的临时最高 objective = 0 (随机策略
+  难产生遮蔽区间, 这是预期的, **不**代表最终 Q2 结果)
+- 不修改 TASK_003 几何核心; 不修改官方原题; 不修改重参数化
+- 不声称全局最优, 不写 `result1.xlsx`, 不进 RESULTS.md 正式数值表
+- 等级仅 FOUNDATION, Search 后才可推进到 EXPERIMENTAL, 再到 VERIFIED, 最后到 FINAL
+
+### 7. 本轮加固 (FIX commit, 7 个 P1, 仍为 NOT AN OPTIMIZATION RESULT)
+
+`valid` 仅表示物理/项目合同合法性; `status` 描述评估结果:
+
+| status | valid | 说明 |
+|---|---|---|
+| `invalid` | False | 物理/合同非法 (含 z < -EPS_GROUND) |
+| `pruned_zero` | True | 物理合法, t_detonate > t_arrival (搜索域无损剪枝, 不是官方物理禁令) |
+| `zero_window` | True | 物理合法, 评估窗口为空 |
+| `ok` | True | 物理合法, 已完成评估, intervals 可空可非空 |
+
+地面边界: `EPS_GROUND = 1e-9 m` (1e-10 量级浮点舍入吸收, 不允许物理地下起爆);
+3 区分类: z < -EPS → invalid, -EPS ≤ z < 0 → 归一化为 0, z ≥ 0 → 合法.
+
+### Profile Measurement 程序错误行为
+
+`main --profile-measure` 退出码合同 (保留, 不属于任何债务表):
+
+| 条件 | CLI rc |
+|---|---|
+| 全部 row `warm_up_error is None` 且 `n_system_error == 0` | 0 |
+| 任何 row 存在 `warm_up_error` (warm-up 程序异常) | 1 |
+| 任何 row `n_system_error > 0` (formal repeat 程序异常) | 1 |
+| 参数错误 (--bogus / 类型错 / 范围外 / 互斥) | 2 |
+
+warm-up 异常与 formal repeat 异常在 CLI 退出码上**严格同权**:
+任一发生均返回 rc=1. 字段语义保持分离:
+- `warm_up_error` (warm-up 异常) 不计入 `n_system_error`
+- `n_system_error` / `system_errors` (repeat 异常) 各自独立保留
+
+默认 smoke CLI 退出码: 0 无 system_error, 1 有 system_error, 2 参数错误
+(不因本轮修复而变化).
+
+性能校准 (3 候选 × 3 profile, warm-up=1, repeat=3, samples 复用):
+- Q1 锚点:  coarse 0.196 s / medium 1.85 s / fine 15.05 s
+- Q1 邻域:  coarse 0.196 s / medium 1.82 s / fine 14.86 s
+- 零目标:  coarse 0.182 s / medium 1.76 s / fine 13.63 s
+(以上为 median; Search 预算未冻结, 仅为本轮实测.)
+
+默认 smoke: `candidate_source = prevalidated_nonpruned` (生成阶段已过滤非法,
+故 invalid/pruned 计数恒为 0; 想覆盖这些状态需用 `run_smoke_on_candidates`
+或 mixed-batch 测试).
+
+仍为 NOT AN OPTIMIZATION RESULT; 仍未启动 Search; 仍未生成 result1.xlsx.
+
+### 8. 本轮唯一入口与建议下一步
+
+- 主程序: `python -m src.q2_single_bomb --smoke-count 100 --seed 2025 --profile coarse`
+- 单元测试: `python -m unittest tests.test_q2_single_bomb -v`
+- 全部测试: `python -m unittest discover -s tests -p "test_*.py" -v`
+- 进入 **TASK_004 Search** 的条件:
+  1. Foundation PR 审核并合并
+  2. CI 持续 PASS
+  3. 本地 Foundation smoke 性能已记入下一阶段预算
+  4. 搜索算法 / 收敛标准 / 性能预算重新冻结
