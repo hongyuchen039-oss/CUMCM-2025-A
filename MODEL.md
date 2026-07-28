@@ -701,17 +701,44 @@ CLI 退出码 (v1.2):
        dirty worktree rejected
   3  = controlled_interruption (RP1-1; pilot-only)
 
-### 11. v1.2 pilot 实测 (待 clean-HEAD 执行后填)
+### 11. v1.2 pilot 实测 (clean-HEAD, HEAD=4a8ee08, seed=2025)
 
-> 本节在 clean-HEAD pilot 完成后填入; 当前未测量, 不得预先声明数值.
+#### 11.1 Uninterrupted pilot (rc=0)
+- run_identity_sha256: `9c1f476e1527f5e62e65d49b51bd468a5b23468b4393cb1234c339537fc67a35`
+- code_identity_sha256: `5e2807b5c33712bbf26d3146b1a66d2a5447ba248200c29961b2013e753d4e77`
+- lineage_manifest_sha256: `92fe298a5b8d46870da7629bf78ff55f19d16bfdb7bdf3b16c4779ca6ab4c175`
+- canonical_result_sha256: `8861203ef16fa169ed8976f93ea78365e8ac0484fcabf9b5ccbb215fb19a637d`
+- status_counts: ok=156, invalid=0, pruned_zero=8, zero_window=0, system_error=0
+- stage_counts: global_coarse=98 (97+1 anchor), global_medium=8,
+  local_coarse=48, local_medium=8, fine=2
+- completed_count: 164 (97 + 8 + 48 + 8 + 2 + 1 anchor duplicate in global_coarse)
+- final_best_status: OK_FINE_RESULT
+- final_best (fine stage): total_duration_s=2.482759
+  (heading≈3.1218 rad, speed≈115.43 m/s, release≈1.7673 s, delay≈3.8892 s)
 
-待测量字段:
-- run_identity_sha256 (v1.2, structured code identity)
-- lineage_manifest_sha256 (v1.2, 含 fine_finalists_lineage)
-- canonical_result_sha256 (uninterrupted)
-- canonical_result_sha256 (interrupted + resume) — 应 == uninterrupted
-- status_counts / stage_counts / completed_count
-- controlled_interruption 阶段 final stage 与 completed_count
+#### 11.2 Interrupted pilot (`--stop-after-evaluations 80`, rc=3)
+- Triggered at stage `global_coarse`, completed_count=98
+- checkpoint_v2.json status: `controlled_interruption`
+- controlled_interruption.json: status=CONTROLLED_INTERRUPTION,
+  completed_count=98, interrupted_stage=global_coarse
+
+#### 11.3 Resumed pilot (--resume-from interrupted ckpt, rc=0)
+- canonical_result_sha256: `8861203ef16fa169ed8976f93ea78365e8ac0484fcabf9b5ccbb215fb19a637d`
+  (== uninterrupted, 即 v1.2 resume 与 uninterrupted 完全等价)
+- resumed_from_checkpoint=True, resumed_n_completed=98, resumed_status=controlled_interruption
+- completed_count: 164 (98 resumed + 66 newly evaluated)
+- final_best (fine stage): total_duration_s=2.482759 (相同)
+
+#### 11.4 CLI rc codes 实测
+| 路径                          | rc | 说明                                    |
+|------------------------------|----|------------------------------------------|
+| uninterrupted pilot         | 0  | 完整 5 阶段, 163 evals                   |
+| --stop-after-evaluations 80  | 3  | controlled_interruption + ckpt 完整     |
+| resume from interrupted ckpt | 0  | 继承已完成 evals, 跑完剩余               |
+| --mode formal               | 2  | P2 formal mode disabled                  |
+| --workers 2                 | 2  | real 模式 EXPERIMENTAL                   |
+| --config 不存在              | 2  | RP1-3 fail-closed                         |
+| dirty worktree              | 2  | RP1-5 dirty worktree 拒绝                 |
 
 等级: PILOT / NOT A FORMAL Q2 RESULT / BEST-KNOWN CANDIDATE /
-      NOT A PROVEN GLOBAL OPTIMUM
+      NOT A PROVEN GLOBAL OPTIMUM.
