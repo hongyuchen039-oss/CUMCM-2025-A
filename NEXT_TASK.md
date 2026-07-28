@@ -1,98 +1,68 @@
 # 当前唯一任务
 
-## 本轮任务
-**TASK_004 SEARCH PROTOTYPE READ-ONLY AUDIT AND SALVAGE DECISION**
-— 远程未审核 Search prototype commit (6f728d45b3bb776c19bbe8a857b26570eb79dc68) 的只读审计与处置决策.
+## 任务编号
+TASK_004 Q2 REAL SEARCH CORE V1 — FINAL REMAINING-P1 CLOSURE / VERIFICATION CORRECTION BUILT / WAITING FOR CLEAN-HEAD 3-RUN VERIFICATION
 
-本任务**全程只读**; 不修改任何仓库文件; 不 commit / push / 创建或修改 PR;
-不 merge / cherry-pick / rebase / reset; 不运行正式 Search; 不生成结果文件.
+## 唯一目标
+提交 Verification Correction 单次收口 commit (`FIX: finish evaluation-safe Q2 search closure`) → clean-HEAD uninterrupted/interrupted/resume 三轮验证（无 `--allow-dirty-worktree`）→ push → 更新 PR #9 → 等待独立审查 GPT 复核。
 
-PR #8 (本次状态同步) 合并后, Main CC 保持待命, 不进入施工.
+## 为什么值得做
+v1.2 Verification Correction 已落地:
+- 真实 per-evaluation checkpoint (RP1 evaluation-safe); stage-end 再额外存一次 stage-completed 副本;
+- stop_after_evaluations 必须精确停在 N, 不得等 stage 结束;
+- resume rows 按 source_stage partition; prior-stage rows 不污染当前 stage 排名;
+- budget 修正: `global_coarse_count=96` + ANCHOR_COUNT=1 → stage global_coarse 实际 97; total 固定 163; 写入 97 时因总数=164 被 raise 拒绝;
+- tests/test_q2_search_rp1.py 中 49 项增量 RP1 测试已合并进 tests/test_q2_search.py, rp1 文件已删除;
+- tests/test_q2_search.py 134 个单元测试 (85 v1.1 + 49 RP1) 通过.
 
-Foundation PR #5 已合并 (commit 8cfe770); Governance PR #6 已合并 (commit 72c7523).
-当前 main = 72c7523. 全量 205/205 本地通过.
+但 clean-HEAD 3-run 验证(无 `--allow-dirty-worktree`)尚未执行(spec 要求 commit-before-pilot).
 
-### 角色合同 (已合并到 main)
+## 输入
+- v1.2 Verification Correction 源码（src/q2_search.py + configs/q2_search_gate_v1.json + tests/test_q2_search.py; tests/test_q2_search_rp1.py 已删除）;
+- git HEAD 待 commit;
+- PR #9.
 
-- **Audit CC**: 只读审核 Search prototype 的真实代码 / 测试 / 算法 / 数学合同 /
-  性能预算 / 可复用性; 输出审计结论与建议; 不修改仓库; 不作最终决定.
-- **Hermes**: 只读核验 prototype 分支 / commit SHA / changed files / 与 main 的分叉
-  关系 / 是否存在 PR; 不评价搜索算法; 不修改仓库; 不作最终决定.
-- **MAIN**: 综合 Audit CC 与 Hermes 证据, 作出最终处置决定:
-  1. 整体采用;
-  2. 局部抢救;
-  3. 不采用并重写.
-- **用户**: 批准任何后续写入 / 分支对齐 / 代码修改 / PR 操作.
-- **Main CC / BUILD CC**: 在用户批准后执行 MAIN 冻结的施工方案;
-  不是本轮只读审核者; 不是最终决策者; 当前保持停止和待命.
+## 允许修改
+本轮可写入：MODEL.md, START_HERE.md, NEXT_TASK.md, README.md, configs/q2_search_gate_v1.json, src/q2_search.py, tests/test_q2_search.py, tests/test_q2_search_rp1.py (本轮删除), work/ (untracked, 不入 PR), PR #9 描述; 其它冻结.
 
-### 当前任务写入边界
+## 禁止修改
+- Q1 与 Q2 Foundation 数学和代码 (q1_baseline/q1_cylinder/q2_single_bomb);
+- RESULTS.md;
+- problem/;
+- result1/2/3.xlsx;
+- main;
+- Git 历史;
+- .github/、outputs/、scripts/、CLAUDE.md、.claude/skills/.
 
-- 本任务为只读;
-- 不允许修改任何仓库文件;
-- 不允许 commit / push / 创建或修改 PR;
-- 不允许 merge / cherry-pick / rebase / reset;
-- 不运行正式 Search;
-- 不生成结果文件;
-- Main CC 保持待命;
-- PR #8 是进入该任务前的一次性状态同步, 不属于审核阶段施工内容.
+禁止扩大预算（必须保持 163 evaluations 固定，含 anchor）、进入 Q3、声明全局最优、自动合并、自动转 Ready、使用 `--allow-dirty-worktree`、把旧 4a8ee08 / f81f436 pilot identity (`8861203e...` / `98 global_coarse` / `164 completed_count`) 写回 MODEL.md / PR 描述 / 代码.
 
-### 范围 (本轮)
+## 必须执行
+- 仅一次最终 commit (`FIX: finish evaluation-safe Q2 search closure`), 不得 baseline commit / 中间 commit / amend;
+- commit BEFORE pilot (clean HEAD first);
+- clean-HEAD pilot (A) uninterrupted → rc=0 + global_coarse=97 + total=163 + completed_count=163 + worktree_dirty=false + system_error=0 + fine finalists=2;
+- clean-HEAD pilot (B) interrupted (`--stop-after-evaluations 50`) → rc=3 + completed_count=50 + interrupted_stage=global_coarse (不得继续到 97) + checkpoint_v2.json + controlled_interruption.json 完整;
+- clean-HEAD pilot (C) resume from B → rc=0 + resumed_n_completed=50 + newly_evaluated=113 + total=163 + 无重复 ID + canonical_result_sha256 / run_identity_sha256 / lineage_manifest_sha256 / finalists / final_best 与 A 完全一致;
+- 每轮之后 `git status --short` 必须为空 (不允许 dirty);
+- 不得使用 `--allow-dirty-worktree`;
+- push + 更新 PR #9 描述 (移除 4a8ee08 / f81f436 旧 identity, 记录 Verification Correction clean-HEAD 3-run 证据);
+- 50-item 验收报告.
 
-- 只读审计 6f728d45b3bb776c19bbe8a857b26570eb79dc68 (搜索算法 / 收敛标准 / 候选生成 / 性能预算)
-- 该 commit 当前状态: **保留, 尚未接受, 未创建 PR, 不代表正式 Search, 不代表 Q2 数值结果**
-- 不得在审计前 cherry-pick / merge / 重写 / 删改
-- 不得删除该 commit, 不得删除远程分支
-- 不生成 result1.xlsx
-- 不启动 TASK_004 Search 正式施工
+## 必须产出
+- 一次冻结 commit (`FIX: finish evaluation-safe Q2 search closure`);
+- work/q2_search_final_exact*/ 下三组 pilot artifacts (uninterrupted + interrupted + resume 三轮);
+- PR #9 更新描述 (Verification Correction 证据);
+- tests/test_q2_search.py 中 134 个测试全部 PASS.
 
-### 库限制
-- 只使用 Python 标准库
-- 不得强制安装 numpy / scipy / pandas / matplotlib
+## 验收标准
+1. RP1-1..7 + P2 uniq output 全部闭合, 且在 Verification Correction 下语义重新验证 (per-eval ckpt / stage partition / 163 fixed budget / 47+1 项 RP1 测试合并回 test_q2_search / rp1 文件删除);
+2. 134 个 Q2 search 单元测试通过 (85 v1.1 + 49 RP1 合并);
+3. clean-HEAD uninterrupted/interrupted/resume 三轮验证全部 rc 正确, 数字符合上述要求;
+4. uninterrupted 与 resumed canonical_result_sha256 / run_identity_sha256 / lineage_manifest_sha256 完全一致, finalists 与 final_best 完全一致, 无重复 evaluation_id;
+5. 不修改 Q1/Q2 Foundation; 不写入 RESULTS.md; 不生成 result1/2/3.xlsx; 不使用 `--allow-dirty-worktree`;
+6. PR changed files 严格为 8 个 (MODEL.md / NEXT_TASK.md / README.md / START_HERE.md / configs/q2_search_gate_v1.json / src/q2_search.py / tests/test_q2_search.py / tests/test_q2_search_rp1.py 的删除).
 
-### 本轮明确不做
-- 不生成 result1/2/3.xlsx
-- 不启动 Q2 单弹优化 / 搜索算法
-- 不修改官方原模板 / problem/*.pdf / 题目及模板/ / desktop.ini
-- 不自动 merge 任何 PR
-- 不动 main
-- 不修改 `.github/workflows/ci.yml`
-- 不修改 src/q1_baseline.py / src/q1_cylinder.py / src/q2_single_bomb.py
-- 不修改 tests/* (Q1 baseline / Q1 cylinder / Q2 foundation)
-- 不修改 outputs/q1/q1_cylinder_comparison.svg
-- 不 cherry-pick / 不重写 6f728d45b3bb776c19bbe8a857b26570eb79dc68
-- 不删除 6f728d45b3bb776c19bbe8a857b26570eb79dc68
-- 不 force push / 不重写历史 / 不删除远程分支
+## 返工
+RP1 + Verification Correction 闭合为本轮最后一次返工上限 (spec 明示).
 
-### Foundation 已冻结的实际交付 (PR #5)
-
-1. Q2 单弹评估器 (`src/q2_single_bomb.py`) 已合并
-2. Q2 单弹单元测试 88 测 (22 组 A-Q + U2/R2/S2 加固类) 已合并
-3. profile-measure 退出码合同 (0/1/2) 已合并
-4. EPS_GROUND 三区分类已合并
-5. mixed-batch 8 类独立计数已合并
-6. 默认 smoke 标注 candidate_source + NOT AN OPTIMIZATION RESULT 已合并
-7. 后续 merge 仍为 NOT AN OPTIMIZATION RESULT
-8. 文档当前阶段一致 (MODEL / START_HERE / NEXT_TASK / README)
-
-### Search Prototype 远程未审核 commit 现状
-
-- commit: `6f728d45b3bb776c19bbe8a857b26570eb79dc68`
-- 状态: **保留, 尚未接受, 未创建 PR**
-- 待审计的内容: 搜索算法 / 收敛标准 / 候选生成 / 性能预算 / 数学结论
-- 决策路径: 整体采用 / 局部抢救 / 不采用并重写 (由 MAIN 决定)
-- 无论选择哪条路径, 旧 prototype commit 和远程分支均保留; "不采用"不等于删除历史
-- 不得在本任务内决策; 不得在合并前预先接受 prototype
-
-## 下一阶段 (待 Search prototype 审计决策后)
-
-### TASK_004 SEARCH 正式施工 (待决策)
-
-仅在 Search prototype 审计决策后才进入。
-
-可能路径:
-- 整体采用 → 启动 Search 正式施工
-- 局部抢救 → 改造后启动 Search
-- 不采用并重写 → 重新设计 Search (旧 commit 与远程分支保留)
-
-决策前禁止启动 Search; 禁止在合并前预先接受 prototype.
+## 停止条件
+clean-HEAD 3-run 验证完成 + PR #9 更新后立即停止, 不自动转 Ready、不合并、不进入下一阶段、不启动 Audit CC / Hermes / TASK_GOV_002.

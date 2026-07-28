@@ -1,0 +1,74 @@
+{
+  "schema_version": 2,
+  "gate_id": "q2_search_gate_v1",
+  "task": "TASK_004_Q2_REAL_SEARCH_CORE_V1_FINAL_REMAINING_P1_CLOSURE",
+  "declaration": "PILOT / NOT A FORMAL Q2 RESULT",
+  "algorithm_version": "v1.2",
+  "sampling_method": "deterministic_uniform_pseudorandom",
+  "evaluator_kind": "real",
+  "evaluator_version": "v1",
+  "formal_enabled": false,
+  "checkpoint_schema": 2,
+  "code_revision_source": "git_head_or_file_sha",
+  "workers": 1,
+  "search_domain": {
+    "heading_rad":      {"min": 0.0, "max": 6.283185307179586, "period": 6.283185307179586},
+    "speed_mps":        {"min": 70.0, "max": 140.0},
+    "release_time_s":   {"min": 0.0, "max": null, "upper_bound_rule": "t_arrival - 1 (search contract)"},
+    "delay_s":          {"min": 0.0, "max": null, "upper_bound_rule": "sqrt(2 * u0_z / g) (ground constraint)"}
+  },
+  "budget": {
+    "global_coarse_count": 96,
+    "coarse_top_k": 8,
+    "medium_re_evaluate_count": 8,
+    "local_per_top": 6,
+    "local_max_count": 48,
+    "local_medium_count": 8,
+    "fine_final_count": 2,
+    "local_delta": [0.10, 5.0, 0.5, 0.3]
+  },
+  "scan_steps": {
+    "coarse": 0.05,
+    "medium": 0.02,
+    "fine": 0.01
+  },
+  "pipeline_stages": [
+    "global_coarse",
+    "global_medium",
+    "local_coarse",
+    "local_medium",
+    "fine"
+  ],
+  "stage_plan": [
+    {"stage": "global_coarse",  "sample_level": "coarse", "scan_step": 0.05, "source": "global"},
+    {"stage": "global_medium",  "sample_level": "medium", "scan_step": 0.02, "source": "global"},
+    {"stage": "local_coarse",   "sample_level": "coarse", "scan_step": 0.05, "source": "local"},
+    {"stage": "local_medium",   "sample_level": "medium", "scan_step": 0.02, "source": "local"},
+    {"stage": "fine",           "sample_level": "fine",   "scan_step": 0.01, "source": "final"}
+  ],
+  "manifest_seeds": [2025],
+  "constraints": {
+    "no_results_xlsx": true,
+    "no_results_md": true,
+    "no_pr_modification": ["#5", "#6", "#7", "#8"],
+    "forbidden_paths_modify": [
+      "CLAUDE.md",
+      ".claude/skills/project-mainline-governance/SKILL.md",
+      "problem/",
+      "RESULTS.md",
+      "src/q1_baseline.py",
+      "src/q1_cylinder.py",
+      "src/q2_single_bomb.py",
+      "tests/test_q1_baseline.py",
+      "tests/test_q1_cylinder.py",
+      "tests/test_q2_single_bomb.py",
+      "outputs/",
+      ".github/"
+    ],
+    "no_force_push": true,
+    "no_rebase": true,
+    "no_amend_pushed_history": true
+  },
+  "not_a_formal_q2_result": true,
+  "not_a_proven_global_optimum": true
+}

@@ -497,10 +497,237 @@ warm-up 异常与 formal repeat 异常在 CLI 退出码上**严格同权**:
 - 单元测试: `python -m unittest tests.test_q2_single_bomb -v`
 - 全部测试: `python -m unittest discover -s tests -p "test_*.py" -v`
 - Foundation 状态: **已通过 PR #5 合并到 main** (merge commit 8cfe770); 仍为 NOT AN OPTIMIZATION RESULT
-- 下一阶段: **TASK_004 SEARCH PROTOTYPE AUDIT AND SALVAGE**
-  - 远程存在未审核 Search prototype commit (`6f728d45b3bb776c19bbe8a857b26570eb79dc68`)
-  - 等待 Audit CC 对真实 artifact 做只读审核,
-    由 Hermes 核验 branch / SHA / changed files / PR 状态,
-    最后由 MAIN 决定整体采用 / 局部抢救 / 不采用并重写
-  - 决策路径: 接受 / 抢救 / 丢弃
-- 不得在审计前预先接受 prototype; 不得在 prototype 决策前启动 TASK_004 Search 正式施工
+- 下一阶段: **TASK_004 Q2 REAL SEARCH CORE V1** (PARTIAL SALVAGE 已授权)
+  - 原 prototype commit (`6f728d45b3bb776c19bbe8a857b26570eb79dc68`) 保留为 ancestor
+  - 通过普通 merge (--no-ff) 把 main 同步到 task/TASK_004-search
+  - 实评估器接入: `evaluate_with_real_evaluator` 调用
+    `src.q2_single_bomb.evaluate_single_bomb_strategy`
+  - 串行 pipeline: coarse → medium → local → fine
+  - 五类 status 严格分离: invalid / pruned_zero / zero_window / ok / system_error
+  - 程序异常 (system_error) 不静默转为 0; CLI rc=1
+  - pilot 仍为 NOT A FORMAL Q2 RESULT; best-known 仍为 NOT A PROVEN GLOBAL OPTIMUM
+  - 不得在 pilot 基础上声称 Q2 全局最优; 不得写入 RESULTS.md / result*.xlsx
+
+---
+
+## Q2 Real Search Core v1 (TASK_004 / PILOT / NOT A FORMAL Q2 RESULT)
+
+> 已在 `src/q2_search.py` 实现, 通过 `tests/test_q2_search.py` 单元测试 (单测覆盖 + 真实 evaluator 集成) 验证.
+> 本节固定 Q2 Real Search Core v1 的算法合同.
+> 等级: **PILOT / NOT A FORMAL Q2 RESULT** /
+> **BEST-KNOWN CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM**, 不得冒充 Q2 VERIFIED / FINAL.
+
+### 1. 算法角色
+
+- 候选生成: deterministic (seed 锁定); 不依赖真实 evaluator 的随机性
+- 真实 evaluator: `evaluate_with_real_evaluator` 调用
+  `src.q2_single_bomb.evaluate_single_bomb_strategy`;
+  不得伪造 / 复制完整圆柱几何; 不得使用 fake / 合成公式冒充 Q2 结论
+- FakeEvaluator: 仅用于测试 / dry-run / 调度开销 benchmark; 任何正式 Search
+  都必须 `--evaluator real`
+- 串行 pipeline: workers=1 强制; real 模式 workers > 1 拒绝
+  (EXPERIMENTAL / DISABLED FOR FORMAL SEARCH)
+- Parallel real-evaluator: 暂未启用; 待后续轮次充分验证
+
+### 2. 决策空间 (无魔法上界)
+
+| 变元 | min | max | 来源 |
+|---|---|---|---|
+| heading_rad | 0.0 | 2π | 周期变量 (FACTS §1) |
+| speed_mps | 70.0 | 140.0 | FACTS §9 |
+| release_time_s | 0.0 | t_arrival - 1 | 搜索域剪枝 (避免 t_d > t_arrival) |
+| delay_s | 0.0 | sqrt(2·u0_z / g) | 从 u0_z / g 推导 (Foundation 物理合同) |
+
+域 = **物理合法 ∩ 搜索域无损剪枝**;
+evaluator 仍必须做最终合法性判断.
+
+显式删除: `release_time <= 66` / `delay <= 30` 这类未经说明的硬上界.
+
+### 3. 候选生成 (三段)
+
+A. Anchor: Q1 固定策略 (heading=π, speed=120, release=1.5, delay=3.6)
+   用于确认 Search 调用的真实 evaluator 能复现已知非零策略.
+
+B. Global exploration: `random.Random(seed)` 生成的 deterministic uniform
+   pseudorandom samples (各维独立确定性均匀伪随机采样); 不依赖
+   第三方库; 同一 (seed, domain, count) 必须产生完全一致候选.
+
+C. Local candidates: 围绕 medium 阶段 top-k 候选生成局部扰动;
+   扰动幅度 (heading ~0.10 rad, speed ~5 m/s, release ~0.5 s, delay ~0.3 s)
+   作为可调参数 (后续轮次可微调).
+
+同一 (seed, domain, algorithm_version, budget) 必须产生完全一致的 manifest.
+
+### 4. Pipeline (coarse → medium → local → fine)
+
+```
+[1] coarse global exploration  (96 candidates)
+[2] coarse Top-K               (8)
+[3] medium re-evaluation       (8)
+[4] medium 重新排序后的 Top    (8)
+[5] 围绕 medium Top 生成 local candidates (≤ 48)
+[6] local coarse 评估
+[7] 合并并去重
+[8] 从去重后的 medium-confirmed pool 选择 top-2 进入 fine
+[9] 输出 best-known candidate 与完整证据
+```
+
+禁止:
+- coarse 后直接将大量候选送入 fine
+- 仅看 coarse 数值就声称最佳
+- 将 FakeEvaluator benchmark 当成真实性能
+- 将一次 seed 的结果称为全局最优
+
+### 5. SearchEvaluationRow (统一结构)
+
+字段:
+- candidate_index, stage, seed
+- heading_rad, speed_mps, release_time_s, delay_s
+- valid, status (5 类), total_duration_s, intervals
+- release_point, detonation_time_s, detonation_point
+- sample_level, scan_step_s, evaluator_kind
+- wall_clock_s, error_type, error_message
+
+五类状态严格分离:
+- invalid: 物理 / 合同非法 (valid=False, 不进入 top-k)
+- pruned_zero: 物理合法, t_d > t_arrival (valid=True, 0 目标)
+- zero_window: 物理合法, 评估窗口为空 (valid=True, 0 目标)
+- ok: 物理合法并完成评估 (valid=True, 排
+名)
+- system_error: 程序异常 (valid=False, 不进入排名, CLI rc=1)
+
+### 6. Checkpoint v2 (resume identity 校验)
+
+- schema_version = 2
+- 字段: algorithm_version, seed, domain_hash, manifest_sha256,
+  evaluator_kind, code_revision, stage, sample_level, scan_step_s,
+  completed_indexes, rows, best_index, best_total, status_counts,
+  system_errors
+- 校验: schema / seed / domain_hash / manifest_sha256 / evaluator_kind /
+  stage / sample_level / scan_step_s / code_revision 任一 mismatch
+  即拒绝 resume
+- 原子写入: 临时文件 + rename, 不留残留
+
+### 7. CLI 与退出码
+
+- 默认: `python -m src.q2_search` 仅打印 banner; 不执行 Search
+- 正式 Search: 必须 `--run-search --evaluator real`
+- `--run-search --evaluator fake` 拒绝 (返回 2)
+- real 模式 `--workers > 1` 拒绝 (返回 2)
+- 退出码: 0 表示无 system_error; 1 表示有 system_error; 2 表示参数错误
+
+### 8. 局限 (本轮 PILOT, 不得隐去)
+
+- 仅实现单 seed / 固定预算的 pilot; **未**实现自适应 / 全局最优证明
+- 局部扰动幅度 (heading=0.10 rad, speed=5 m/s, release=0.5 s, delay=0.3 s)
+  来自工程经验, **未**做收敛性证明
+- parallel real-evaluator 暂未启用; 串行路径为唯一正式路径
+- 不声称 Q2 全局最优; 不写入 RESULTS.md; 不生成 result1.xlsx
+- 等级仅 PILOT / NOT A FORMAL Q2 RESULT;
+  必须通过后续轮次 (冷启动 / 多 seed / 收敛证明) 才能升 VERIFIED / FINAL
+
+### 9. P1 REMEDIATION 增量 (v1.1, 已废弃为历史; 当前为 v1.2)
+
+> 注: v1.1 段保留为历史; 当前生效版本是 v1.2 RP1 closure (§10).
+> 旧版的 final_best / run_identity_sha256 / lineage_manifest_sha256 数值
+> 已无效, 不得在新文档/PR/代码中继续引用. 待 clean-HEAD v1.2 pilot 完成后
+> 重新测量.
+
+v1.1 旧版 (HISTORICAL — DO NOT REPRODUCE):
+  - 算法版本号 ALGORITHM_VERSION = "v1.1"
+  - P1-A  local domain clamp (wrap_local_candidate)
+  - P1-B  5 阶段 pipeline (medium-confirmed → fine-only best)
+  - P1-C  evaluation_id + physical_candidate_sha256
+  - P1-D  checkpoint v2 + verify_resume_identity
+  - P1-E  static_run_identity + lineage_manifest (双 SHA)
+  - P1-F  config schema v2
+  - P1-G  sampling 真实表述 (deterministic uniform pseudorandom)
+  - P2    formal mode disabled
+
+### 10. FINAL REMAINING-P1 CLOSURE (v1.2, 当前生效)
+
+v1.2 在 v1.1 基础上闭合 Remaining-P1 + P2 uniq output schema. 算法版本号
+`ALGORITHM_VERSION = "v1.2"`. v1.1 段已废, 不得回退.
+
+RP1-1  evaluation-safe interrupted checkpoint: 每完成一个 evaluation
+       即原子写入 checkpoint, `--stop-after-evaluations N` (pilot-only)
+       → 输出 CONTROLLED_INTERRUPTION 标记 + rc=3. checkpoint 含
+       `status: 'controlled_interruption' | 'running' | 'complete'` +
+       `completed_count` + `stage_counts` 5 字段.
+
+RP1-2  resume identity 推导自 current stage_plan: `verify_resume_identity`
+       不再以 checkpoint.stage/sample_level/scan_step 自证, 而是从当前
+       effective config 的 stage_plan 推导 (P1 resume 阶段期望).
+       RP1-2 同时把 config_sha256 / code_identity_sha256 纳入校验链.
+
+RP1-3  effective config 单一入口: `resolve_effective_config(...)` 是
+       唯一入口, 覆盖 budget / scan_steps / stage_plan / local_delta /
+       sampling_method / workers / formal_enabled / checkpoint_schema.
+       pipeline 仅消费 effective config, 不允许 silent fallback.
+       production pilot 总评估数固定 == 163
+       (97 + 8 + 48 + 8 + 2 = global_coarse + global_medium +
+        local_coarse + local_medium + fine); CLI override 仅允许
+       测试场景, 不得静默扩缩 production budget.
+
+RP1-4  structured code identity: 至少含 5 字段
+       `git_head_sha / worktree_dirty / q2_search_sha256 /
+        config_sha256 / algorithm_version`. `run_identity_sha256`
+       覆盖这些字段, 不可仅用 `git rev-parse HEAD` 代替.
+
+RP1-5  dirty worktree 拒绝: `require_clean_worktree=True` (CLI 默认)
+       → worktree 有未提交/未跟踪变更时 raise ValueError → rc=2.
+       `--allow-dirty-worktree` 仅供本地 dry-run.
+
+RP1-6  clean Patch HEAD pilot+checkpoint 必须重新验证: 本轮 commit
+       必须先于 pilot 执行; clean HEAD 上 pilot + interrupted + resume
+       三轮验证齐全才能升 v1.2.
+
+RP1-7  two fine finalists 完整 lineage: 每个 finalist 含
+       `finalist_rank / physical_candidate / fine_evaluation_id /
+        fine_total_duration_s / parent_medium_source /
+        parent_evaluation_id / parent_total_duration_s`.
+       medium_confirmed lineage 与 finalist lineage 必须可追溯.
+
+P2     uniq output constructor (RP1 P2): uninterrupted path 与
+       resumed-from-checkpoint path 必须通过同一 `build_pilot_output(...)`
+       产出, schema 完全一致; 含 19 个 canonical 字段 + 4 个统一 flag
+       (`resumed_from_checkpoint / resumed_n_completed / resumed_status /
+        dirty_worktree_at_start`) + `canonical_result_sha256` (sort_keys
+       确定性 SHA-256, 仅覆盖 math/lineage 字段, 不含 wall-clock/路径).
+
+CLI 退出码 (v1.2):
+  0  = OK (无 system_error 且 fine 有 best)
+  1  = system_error
+  2  = arg / invalid config / empty fine / formal rejected /
+       dirty worktree rejected
+  3  = controlled_interruption (RP1-1; pilot-only)
+
+### 11. v1.2 最终证据
+
+最终证据(clean-HEAD uninterrupted/interrupted/resume 三轮实测 ＋ CLI rc codes ＋
+所有 v1.2 RP1 + P2 闭合证明)在 PR #9 body 中提供, 本节不再记录具体 measured
+values, 避免文档先于实测漂移.
+
+旧 v1.2 文档(HEAD=4a8ee08 / HEAD=f81f436 pilot 数字:
+`canonical_result_sha256=8861203e...` /
+`run_identity_sha256=9c1f476e...` /
+`lineage_manifest_sha256=92fe298a...` /
+`global_coarse=98 (97+1 anchor)` /
+`completed_count=164`)已被本轮 Verification Correction 主动废弃:
+
+- budget 修语义: `global_coarse_count` 现仅指随机生成候选数, 实际 stage
+  global_coarse = global_coarse_count + ANCHOR_COUNT = 96 + 1 = 97;
+  总评估数 = 97 + 8 + 48 + 8 + 2 = 163; 试图写入 `global_coarse_count=97`
+  现因实际总数 = 164 (≠163) 触发 `resolve_effective_config` 抛 ValueError.
+- checkpoint 改语义: 每完成一个 NEW evaluation 即原子写 checkpoint v2
+  (RP1 evaluation-safe); stage 末尾再额外存一次 stage-completed 副本.
+  旧 v1.2 数字(每 stage-end 才写)不再代表当前实现.
+- resume 改语义: 累计 rows 在 ckpt 中保存; 当前 stage 恢复时只 partition
+  `source_stage == current_stage` 的 rows; prior-stage rows 由
+  `prior_stages_rows` 单独持有, 不得进入当前 stage 排名.
+- 旧数字(`98 global_coarse` / `164 completed_count` / `8861203e...`)来自
+  不区分 anchor + 在 stage 末尾写 checkpoint + 不做 stage partition 的
+  v1.2-OLD 实现; 不得在新文档/PR/代码中重新引用.
+
+等级: PILOT / NOT A FORMAL Q2 RESULT / BEST-KNOWN CANDIDATE /
+      NOT A PROVEN GLOBAL OPTIMUM.

@@ -1,35 +1,21 @@
 # CUMCM 2025 A — 烟幕干扰弹的投放策略
 
-2025 年高教社杯全国大学生数学建模竞赛 A 题。
+本项目研究无人机投放烟幕干扰弹，对来袭导弹实施有效遮蔽的建模与优化策略。
 
-## 入口
+## 项目入口
 
-- [START_HERE.md](./START_HERE.md) — 当前状态、风险、需你决定
-- [MODEL.md](./MODEL.md) — 题目、模型思路、假设、局限
-- [RESULTS.md](./RESULTS.md) — 当前结果与可信等级
-- [NEXT_TASK.md](./NEXT_TASK.md) — 唯一当前任务
-- [CLAUDE.md](./CLAUDE.md) — Claude Code 长期工作规则
-- [problem/FACTS.md](./problem/FACTS.md) — 官方题目事实
+- [START_HERE.md](./START_HERE.md) — 当前状态与唯一任务
+- [MODEL.md](./MODEL.md) — 模型、假设与算法合同
+- [RESULTS.md](./RESULTS.md) — 已验证结果与可信等级
+- [NEXT_TASK.md](./NEXT_TASK.md) — 当前执行边界与验收标准
+- [problem/FACTS.md](./problem/FACTS.md) — 官方题目事实与模板要求
+- [CLAUDE.md](./CLAUDE.md) — 仓库长期工作规则
 
-## 状态
+## 当前状态
 
-CI：GitHub Actions 自动运行 Python 编译、单元测试与 Q1 smoke test。
+Q1 与 Q2 单候选评估基础已经完成；Q2 Real Search Core v1.2 Verification Correction 已落地（真实 per-evaluation checkpoint + stage-end 额外 ckpt / resume rows 按 source_stage partition / 163 fixed budget via anchor-aware accounting: global_coarse_count=96 随机 + ANCHOR_COUNT=1 → stage global_coarse=97 + global_medium=8 + local_coarse=48 + local_medium=8 + fine=2 = 163；试写 `global_coarse_count=97` 因实际总数=164 必 raise；tests/test_q2_search_rp1.py 已合并并删除，49 项增量 RP1 测试全部移入 tests/test_q2_search.py）；134 个单元测试通过；当前等待 clean-HEAD uninterrupted/interrupted/resume 三轮实测（无 `--allow-dirty-worktree`）与独立审查 GPT 复核。
 
-- TASK_003 完整圆柱遮蔽判定已完成审核并通过 PR #3 合并
-- TASK_INFRA_001 CI 已通过 PR #4 合并并进入 main
-- 完整圆柱模型合同已经冻结，可供 TASK_004 复用
-- **TASK_004 FOUNDATION 已完成并通过 PR #5 合并到 main**: 88 个 Q2 本地单元测试全过
-- TASK_004 SEARCH PROTOTYPE AUDIT AND SALVAGE 阶段: 远程存在未审核 Search prototype commit (`6f728d45b3bb776c19bbe8a857b26570eb79dc68`), 等待 Audit CC 只读审核与 Hermes 仓库事实核验, 随后由 MAIN 作最终处置决定
-- 远程未审核 Search prototype **不**代表正式 Search; **不**代表 Q2 数值结果
-- 本轮不生成 result1.xlsx
-- 数学模型: 方案 A (点目标基线) + 方案 B (完整圆柱严格遮蔽, FULL-CYLINDER CANDIDATE)
-  均已实现并对照; Q2 评估器复用完整圆柱接口 (回调注入, 无几何复制)
-- 数值结果 (TASK_003 实测):
-  - 方案 A Q1 基线 = **1.435082 s** (BASELINE / EXPERIMENTAL)
-  - 方案 B 完整圆柱 = **1.392384 s** (FULL-CYLINDER CANDIDATE / EXPERIMENTAL)
-  - ΔT (B − A) = **−0.042698 s** (相对差异 −2.975%, 见 RESULTS.md)
-  - margin_max (0.001 s 局部网格估计) = **5.282478 m** @ t = 9.418317 s (非解析极值)
-  - ρ_max = 1.000; ρ=1 平台 (0.01 s 诊断网格) 约 (8.06, 9.44) s, 跨度 1.380 s
-  - 时间/空间收敛均 PASS (端点 max \|f\| = 1.03e-6)
-- 单元测试计数: 205 个全过 (42 Q1 baseline + 75 Q1 cylinder + 88 Q2 foundation)
-- CI 仅作为**轻量辅助**; CI PASS 不再是合并硬门槛; CI timeout 不代表数学失败
+## 结果等级
+
+pilot 与 best-known candidate 仅用于验证搜索核心：
+NOT A FORMAL Q2 RESULT / NOT A PROVEN GLOBAL OPTIMUM。
