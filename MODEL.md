@@ -624,3 +624,63 @@ C. Local candidates: 围绕 medium 阶段 top-k 候选生成局部扰动;
 - 不声称 Q2 全局最优; 不写入 RESULTS.md; 不生成 result1.xlsx
 - 等级仅 PILOT / NOT A FORMAL Q2 RESULT;
   必须通过后续轮次 (冷启动 / 多 seed / 收敛证明) 才能升 VERIFIED / FINAL
+
+### 9. P1 REMEDIATION 增量 (v1.1)
+
+本轮在 v1 基础上补 7 个 P1 / 1 个 P2, 形成 v1.1. 算法版本号
+`ALGORITHM_VERSION = "v1.1"`.
+
+P1-A  local domain clamp: `wrap_local_candidate` 必须使用 domain 与
+      release_time_max, 把 heading / speed / release / delay 都 clamp 到域内.
+      evaluator 不再静默 clamp 越界候选; Foundation invalid 语义保留.
+
+P1-B  medium-confirmed → fine-only best: 5 阶段 pipeline
+      (global_coarse → global_medium → local_coarse → local_medium → fine).
+      final best 仅取 fine_rows; 若 fine_rows 为空 → EMPTY_FINE_NO_RESULT
+      + CLI rc=2; 不得回退到 coarse best; 同物理候选不得重复占据
+      finalist 名额 (final candidate dedup).
+
+P1-C  evaluation identity: 每行包含 `evaluation_id` (sha256 over
+      source_stage + index + vec), `source_stage`, `source_candidate_index`,
+      `physical_candidate_sha256`. resume key 使用 evaluation_id;
+      checkpoint 不得只用 candidate_index 判定完成.
+
+P1-D  checkpoint 真正接入 pipeline: 5 阶段完成后原子写入
+      `checkpoint_v2.json`; CLI `--resume-from <path>`;
+      verify_resume_identity 校验 9 项 (含 algorithm_version);
+      resume 等价于 uninterrupted run (实测 resumed output 与原一致).
+
+P1-E  完整 run manifest: 区分两层
+      - `static_run_identity_sha256`: 锁定 algorithm_version /
+        code_revision / evaluator_kind / evaluator_version / seed /
+        domain / budget / sampling_method / stage_plan.
+      - `lineage_manifest_sha256`: 锁定 global_coarse / global_medium /
+        local_parent_lineage / local_candidate_vectors / local_medium /
+        medium_confirmed_pool / fine_finalists / final_selection_policy /
+        evaluation_ids / candidate_counts.
+      manifest_record 同时返回 `domain` (结构化), 不再仅藏在 text 字符串里.
+
+P1-F  config truth alignment: `configs/q2_search_gate_v1.json` 升级为
+      `schema_version=2`. CLI 真实加载 (--config); 不含旧 fake skeleton
+      schema1 / magic bounds (release_max=66 / delay_max=30).
+
+P1-G  sampling 真实表述: 文档 / docstring / PR 一致声明
+      **deterministic uniform pseudorandom**; 本轮未实现 LHS / stratified;
+      不得主张超出实际实现的采样方法.
+
+P2    formal mode disabled: `--mode formal` 立即返回退出码 2,
+      不得静默运行 pilot; CLI 不得把 pilot 输出伪装为 formal.
+
+### 10. Run identity 与 lineage manifest 示例 (pilot, seed=2025)
+
+- run_identity_sha256: `9963731da9e498919b5a34e586408e4736ac370a472fd4776635e062a82e37cf`
+- lineage_manifest_sha256: `b27b09747e2fa1daf0fcd7ecfd750f815a25a21df7edb8171a086d40515bbb01`
+- status_counts (fine 阶段后): ok=155, invalid=0, pruned_zero=8,
+  zero_window=0, system_error=0
+- stage_counts: global_coarse=97, global_medium=8, local_coarse=48,
+  local_medium=8, fine=2
+- final_best: stage=fine, sample_level=fine, scan_step=0.01,
+  total_duration_s=2.482759
+  (heading≈3.1218 rad, speed≈115.43 m/s, release≈1.7673 s, delay≈3.8892 s)
+- 等级: PILOT / NOT A FORMAL Q2 RESULT / BEST-KNOWN CANDIDATE /
+  NOT A PROVEN GLOBAL OPTIMUM
