@@ -701,44 +701,32 @@ CLI 退出码 (v1.2):
        dirty worktree rejected
   3  = controlled_interruption (RP1-1; pilot-only)
 
-### 11. v1.2 pilot 实测 (clean-HEAD, HEAD=4a8ee08, seed=2025)
+### 11. v1.2 最终证据
 
-#### 11.1 Uninterrupted pilot (rc=0)
-- run_identity_sha256: `9c1f476e1527f5e62e65d49b51bd468a5b23468b4393cb1234c339537fc67a35`
-- code_identity_sha256: `5e2807b5c33712bbf26d3146b1a66d2a5447ba248200c29961b2013e753d4e77`
-- lineage_manifest_sha256: `92fe298a5b8d46870da7629bf78ff55f19d16bfdb7bdf3b16c4779ca6ab4c175`
-- canonical_result_sha256: `8861203ef16fa169ed8976f93ea78365e8ac0484fcabf9b5ccbb215fb19a637d`
-- status_counts: ok=156, invalid=0, pruned_zero=8, zero_window=0, system_error=0
-- stage_counts: global_coarse=98 (97+1 anchor), global_medium=8,
-  local_coarse=48, local_medium=8, fine=2
-- completed_count: 164 (97 + 8 + 48 + 8 + 2 + 1 anchor duplicate in global_coarse)
-- final_best_status: OK_FINE_RESULT
-- final_best (fine stage): total_duration_s=2.482759
-  (heading≈3.1218 rad, speed≈115.43 m/s, release≈1.7673 s, delay≈3.8892 s)
+最终证据(clean-HEAD uninterrupted/interrupted/resume 三轮实测 ＋ CLI rc codes ＋
+所有 v1.2 RP1 + P2 闭合证明)在 PR #9 body 中提供, 本节不再记录具体 measured
+values, 避免文档先于实测漂移.
 
-#### 11.2 Interrupted pilot (`--stop-after-evaluations 80`, rc=3)
-- Triggered at stage `global_coarse`, completed_count=98
-- checkpoint_v2.json status: `controlled_interruption`
-- controlled_interruption.json: status=CONTROLLED_INTERRUPTION,
-  completed_count=98, interrupted_stage=global_coarse
+旧 v1.2 文档(HEAD=4a8ee08 / HEAD=f81f436 pilot 数字:
+`canonical_result_sha256=8861203e...` /
+`run_identity_sha256=9c1f476e...` /
+`lineage_manifest_sha256=92fe298a...` /
+`global_coarse=98 (97+1 anchor)` /
+`completed_count=164`)已被本轮 Verification Correction 主动废弃:
 
-#### 11.3 Resumed pilot (--resume-from interrupted ckpt, rc=0)
-- canonical_result_sha256: `8861203ef16fa169ed8976f93ea78365e8ac0484fcabf9b5ccbb215fb19a637d`
-  (== uninterrupted, 即 v1.2 resume 与 uninterrupted 完全等价)
-- resumed_from_checkpoint=True, resumed_n_completed=98, resumed_status=controlled_interruption
-- completed_count: 164 (98 resumed + 66 newly evaluated)
-- final_best (fine stage): total_duration_s=2.482759 (相同)
-
-#### 11.4 CLI rc codes 实测
-| 路径                          | rc | 说明                                    |
-|------------------------------|----|------------------------------------------|
-| uninterrupted pilot         | 0  | 完整 5 阶段, 163 evals                   |
-| --stop-after-evaluations 80  | 3  | controlled_interruption + ckpt 完整     |
-| resume from interrupted ckpt | 0  | 继承已完成 evals, 跑完剩余               |
-| --mode formal               | 2  | P2 formal mode disabled                  |
-| --workers 2                 | 2  | real 模式 EXPERIMENTAL                   |
-| --config 不存在              | 2  | RP1-3 fail-closed                         |
-| dirty worktree              | 2  | RP1-5 dirty worktree 拒绝                 |
+- budget 修语义: `global_coarse_count` 现仅指随机生成候选数, 实际 stage
+  global_coarse = global_coarse_count + ANCHOR_COUNT = 96 + 1 = 97;
+  总评估数 = 97 + 8 + 48 + 8 + 2 = 163; 试图写入 `global_coarse_count=97`
+  现因实际总数 = 164 (≠163) 触发 `resolve_effective_config` 抛 ValueError.
+- checkpoint 改语义: 每完成一个 NEW evaluation 即原子写 checkpoint v2
+  (RP1 evaluation-safe); stage 末尾再额外存一次 stage-completed 副本.
+  旧 v1.2 数字(每 stage-end 才写)不再代表当前实现.
+- resume 改语义: 累计 rows 在 ckpt 中保存; 当前 stage 恢复时只 partition
+  `source_stage == current_stage` 的 rows; prior-stage rows 由
+  `prior_stages_rows` 单独持有, 不得进入当前 stage 排名.
+- 旧数字(`98 global_coarse` / `164 completed_count` / `8861203e...`)来自
+  不区分 anchor + 在 stage 末尾写 checkpoint + 不做 stage partition 的
+  v1.2-OLD 实现; 不得在新文档/PR/代码中重新引用.
 
 等级: PILOT / NOT A FORMAL Q2 RESULT / BEST-KNOWN CANDIDATE /
       NOT A PROVEN GLOBAL OPTIMUM.

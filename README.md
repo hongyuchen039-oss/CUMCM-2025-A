@@ -13,7 +13,7 @@
 
 ## 当前状态
 
-Q1 与 Q2 单候选评估基础已经完成；Q2 Real Search Core v1.2 已完成 RP1 全量闭合（effective config / structured code identity / evaluation-safe checkpoint / canonical_result_sha256 / two-finalist lineage / dirty-worktree rejection）；133 个单元测试通过；pilot 固定 163 evaluations 预算；当前等待 clean-HEAD pilot + interrupted + resume 实测与独立审查 GPT 复核。
+Q1 与 Q2 单候选评估基础已经完成；Q2 Real Search Core v1.2 Verification Correction 已落地（真实 per-evaluation checkpoint + stage-end 额外 ckpt / resume rows 按 source_stage partition / 163 fixed budget via anchor-aware accounting: global_coarse_count=96 随机 + ANCHOR_COUNT=1 → stage global_coarse=97 + global_medium=8 + local_coarse=48 + local_medium=8 + fine=2 = 163；试写 `global_coarse_count=97` 因实际总数=164 必 raise；tests/test_q2_search_rp1.py 已合并并删除，49 项增量 RP1 测试全部移入 tests/test_q2_search.py）；134 个单元测试通过；当前等待 clean-HEAD uninterrupted/interrupted/resume 三轮实测（无 `--allow-dirty-worktree`）与独立审查 GPT 复核。
 
 ## 结果等级
 

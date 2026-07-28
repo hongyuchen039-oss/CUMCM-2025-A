@@ -108,10 +108,11 @@ PIPELINE_STAGES = (
 )
 
 # 默认 pilot 预算 (TASK_004 Q2 REAL SEARCH CORE V1, 固定 163 evaluations)
-# 固定预算: global_coarse=97 + global_medium=8 + local_coarse=48 +
-#          local_medium=8 + fine=2 = 163.
+# 固定预算: global_coarse_count=96 (随机) + 1 (anchor) = 97 (stage)
+#          + global_medium=8 + local_coarse=48 + local_medium=8 + fine=2
+#          = 163 (实际 total, 包含 anchor).
 DEFAULT_PILOT_BUDGET: Dict[str, Any] = {
-    "global_coarse_count": 97,
+    "global_coarse_count": 96,
     "coarse_top_k": 8,
     "medium_re_evaluate_count": 8,
     "local_per_top": 6,
@@ -124,8 +125,16 @@ DEFAULT_PILOT_BUDGET: Dict[str, Any] = {
     "scan_step_fine": 0.01,
 }
 
-# Pilot 总评估数 (固定; 若 effective config 改变, 必须 raise, 不得静默)
+# Pilot 总评估数 (固定 163):
+#   global_coarse = global_coarse_count (随机) + 1 (anchor) = 96 + 1 = 97
+#   global_medium = 8
+#   local_coarse  = 48
+#   local_medium  = 8
+#   fine          = 2
+#   total = 97 + 8 + 48 + 8 + 2 = 163
+# global_coarse_count 语义: 仅随机生成候选数, 不含 anchor.
 EXPECTED_TOTAL_EVALUATIONS = 163
+ANCHOR_COUNT = 1  # Q1_ANCHOR_VEC 自动加入 global_coarse pool
 
 
 # =============================================================================
@@ -405,19 +414,24 @@ def resolve_effective_config(
         overrides_applied = True
 
     # 计算总评估数 (RP1-3 / RP1-6):
+    #   actual_total = global_coarse_count + anchor_count(=1)
+    #                  + coarse_top_k + local_max_count
+    #                  + local_medium_count + fine_final_count
     #   - 若无 CLI override: 必须 == 163 (production pilot 固定)
     #   - 若有 CLI override: 允许任意 ≥ 1 总数 (供测试使用)
     total_evals = (
         budget["global_coarse_count"]
-        + budget["coarse_top_k"]   # global_medium re-evaluates coarse_top_k
-        + budget["local_max_count"] # local_coarse
+        + ANCHOR_COUNT
+        + budget["coarse_top_k"]
+        + budget["local_max_count"]
         + budget["local_medium_count"]
         + budget["fine_final_count"]
     )
     if not overrides_applied and total_evals != EXPECTED_TOTAL_EVALUATIONS:
         raise ValueError(
-            f"effective budget 总评估数 {total_evals} != 固定 {EXPECTED_TOTAL_EVALUATIONS}; "
-            f"不得变更 pilot 预算. budget={budget}")
+            f"effective budget 实际总评估数 {total_evals} != 固定 "
+            f"{EXPECTED_TOTAL_EVALUATIONS}; 不得变更 pilot 预算. "
+            f"budget={budget} (anchor={ANCHOR_COUNT})")
     if total_evals < 1:
         raise ValueError(
             f"effective budget 总评估数 {total_evals} < 1; 必须 >= 1. budget={budget}")
@@ -1261,12 +1275,17 @@ def run_serial_real(candidates: Sequence[Tuple[float, float, float, float]],
                      seed: int = 2025,
                      source_stage: str = "unknown",
                      resume_rows: Optional[Sequence[SearchEvaluationRow]] = None,
+                     on_evaluation: Optional[Callable[
+                         [SearchEvaluationRow, List[SearchEvaluationRow]],
+                         None]] = None,
                      ) -> List[SearchEvaluationRow]:
     """workers=1 serial real evaluator (P1-C: resume by evaluation_id).
 
     同一 source_stage 内的 candidate_index 可能重复 (e.g. local parent 与
     global coarse 用同一 vec), 但 evaluation_id 不同. 本函数以
     evaluation_id 集合判重, 不再使用 candidate_index 唯一键.
+
+    on_evaluation(row, cumulative_rows): 每完成一个 NEW evaluation 调用.
     """
     if resume_rows is None:
         resume_rows = []
@@ -1285,6 +1304,13 @@ def run_serial_real(candidates: Sequence[Tuple[float, float, float, float]],
             source_candidate_index=offset,
         )
         out.append(row)
+        # per-evaluation callback (RP1 evaluation-safe)
+        if on_evaluation is not None:
+            try:
+                on_evaluation(row, out)
+            except Exception:
+                # callback raise 不应污染 evaluation 结果; 但停止信号必须穿透
+                raise
     return out
 
 
@@ -1946,49 +1972,96 @@ def run_search_pipeline(seed: int,
                             scan_step: float,
                             resume_rows: Optional[Sequence[SearchEvaluationRow]] = None,
                             ) -> List[SearchEvaluationRow]:
-        """Wrap run_serial_real + evaluation-safe checkpoint writes (RP1-1)."""
+        """Wrap run_serial_real + evaluation-safe checkpoint writes (RP1-1).
+
+        RP1 evaluation-safe:
+          - 每完成一个 NEW evaluation 即原子写 checkpoint (via on_evaluation)
+          - 每 stage 末尾再额外保存 stage-completed checkpoint
+          - stop_after_evaluations 以"本次运行新增 evaluation 数量"为准
+          - 达阈值立刻中断 (精确停在 N)
+
+        resume rows partitioned by stage: 本函数只接受与本 stage
+        source_stage 相同的 rows; 前置 stage 的 rows 由 caller 持有,
+        不污染当前 stage 排名.
+        """
         nonlocal interrupted_flag
+
+        # partition: 仅保留与本 stage 同 source_stage 的 resume rows
+        # (caller 负责把 prior stage rows 不传进来; 此处二次防御)
+        stage_resume_rows: List[SearchEvaluationRow] = []
+        if resume_rows:
+            for r in resume_rows:
+                if r.source_stage == stage_name:
+                    stage_resume_rows.append(r)
+
+        def _on_eval(row: SearchEvaluationRow,
+                     cumulative: List[SearchEvaluationRow]) -> None:
+            """每完成一个 NEW evaluation 触发: 计数 + 写 ckpt + 检查中断."""
+            nonlocal interrupted_flag
+            eval_counter["n"] += 1
+            sc = dict(stage_counts)
+            # 当前 stage 的 row 数 = cumulative 中 source_stage == stage_name 的
+            sc[stage_name] = sum(
+                1 for r in cumulative if r.source_stage == stage_name)
+            # 但我们必须把 prior_stages_rows 也并入 cumulative (写入 ckpt 的)
+            cumulative_with_prior = list(prior_stages_rows) + cumulative
+            _save_intermediate_ck(
+                stage_name=stage_name, sample_level=sample_level,
+                scan_step=scan_step,
+                cumulative_rows=cumulative_with_prior,
+                cumulative_stage_counts=sc,
+                ck_status="running",
+            )
+            # 检查 stop_after_evaluations: 精确停在 N
+            if (stop_after_evaluations is not None
+                    and eval_counter["n"] >= stop_after_evaluations
+                    and not interrupted_flag["raised"]):
+                interrupted_flag["raised"] = True
+                _save_intermediate_ck(
+                    stage_name=stage_name, sample_level=sample_level,
+                    scan_step=scan_step,
+                    cumulative_rows=cumulative_with_prior,
+                    cumulative_stage_counts=sc,
+                    ck_status="controlled_interruption",
+                )
+                raise _ControlledInterruption(
+                    completed_count=eval_counter["n"],
+                    interrupted_stage=stage_name,
+                    checkpoint_path=ck_path,
+                )
+
         rows = run_serial_real(
             list(candidates),
             sample_level=sample_level, scan_step=scan_step,
             seed=seed, source_stage=stage_name,
-            resume_rows=resume_rows,
+            resume_rows=stage_resume_rows,
+            on_evaluation=_on_eval,
         )
-        # 新增的 rows (不在 resume_rows 中) 用于计数
-        prev_ids = {r.evaluation_id for r in (resume_rows or [])}
-        new_rows = [r for r in rows if r.evaluation_id not in prev_ids]
-        eval_counter["n"] += len(new_rows)
-        # 每 stage 末尾: 写一次 checkpoint (含 stage 状态)
-        cumulative = (list(resume_rows or []) + new_rows) if resume_rows else rows
+        # stage 末尾: 再额外保存一次 stage-completed checkpoint
+        cumulative_with_prior = list(prior_stages_rows) + rows
         sc = dict(stage_counts)
         sc[stage_name] = len(rows)
         _save_intermediate_ck(
             stage_name=stage_name, sample_level=sample_level,
             scan_step=scan_step,
-            cumulative_rows=cumulative,
+            cumulative_rows=cumulative_with_prior,
             cumulative_stage_counts=sc,
             ck_status="running",
         )
-        # RP1-1: 若启用 stop_after_evaluations 且超过阈值, 触发中断
-        if (stop_after_evaluations is not None
-                and eval_counter["n"] >= stop_after_evaluations
-                and not interrupted_flag["raised"]):
-            interrupted_flag["raised"] = True
-            _save_intermediate_ck(
-                stage_name=stage_name, sample_level=sample_level,
-                scan_step=scan_step,
-                cumulative_rows=cumulative,
-                cumulative_stage_counts=sc,
-                ck_status="controlled_interruption",
-            )
-            raise _ControlledInterruption(
-                completed_count=eval_counter["n"],
-                interrupted_stage=stage_name,
-                checkpoint_path=ck_path,
-            )
         return rows
 
     stage_counts: Dict[str, int] = {s: 0 for s in PIPELINE_STAGES}
+    # prior_stages_rows 累积 prior stage 已完成的所有 rows (供 ckpt + 中断时使用)
+    # RP1 evaluation-safe: 当前 stage 仅 resume 自己 source_stage 的 rows;
+    # prior stages 的 rows 由 prior_stages_rows 持有, 不污染当前 stage 排名.
+    prior_stages_rows: List[SearchEvaluationRow] = []
+
+    def _stage_resume_rows(ck: Optional[CheckpointV2],
+                            stage_name: str) -> Optional[List[SearchEvaluationRow]]:
+        """Partition checkpoint rows by source_stage; 只返回当前 stage 的 rows."""
+        if ck is None:
+            return None
+        return [r for r in ck.rows if r.source_stage == stage_name]
 
     try:
         # ── Stage 1: global_coarse ──
@@ -2000,10 +2073,10 @@ def run_search_pipeline(seed: int,
         coarse_rows = _run_stage_with_ck(
             "global_coarse", global_cands,
             sample_level="coarse", scan_step=scan_step_coarse,
-            resume_rows=(resume_ck.rows
-                          if resume_ck and resume_ck.stage == "global_coarse"
-                          else None),
+            resume_rows=(_stage_resume_rows(resume_ck, "global_coarse")
+                          if resume_ck else None),
         )
+        prior_stages_rows.extend(coarse_rows)
 
         # ── Stage 2: global_medium ──
         top_k = rank_top_k(coarse_rows, budget["coarse_top_k"])
@@ -2015,10 +2088,10 @@ def run_search_pipeline(seed: int,
             medium_rows = _run_stage_with_ck(
                 "global_medium", top_k_vec,
                 sample_level="medium", scan_step=scan_step_medium,
-                resume_rows=(resume_ck.rows
-                              if resume_ck and resume_ck.stage == "global_medium"
-                              else None),
+                resume_rows=(_stage_resume_rows(resume_ck, "global_medium")
+                              if resume_ck else None),
             )
+        prior_stages_rows.extend(medium_rows)
         medium_top = rank_top_k(medium_rows, budget["medium_re_evaluate_count"])
 
         # ── Stage 3: local_coarse ──
@@ -2034,10 +2107,10 @@ def run_search_pipeline(seed: int,
         local_rows = _run_stage_with_ck(
             "local_coarse", local_cands,
             sample_level="coarse", scan_step=scan_step_coarse,
-            resume_rows=(resume_ck.rows
-                          if resume_ck and resume_ck.stage == "local_coarse"
-                          else None),
+            resume_rows=(_stage_resume_rows(resume_ck, "local_coarse")
+                          if resume_ck else None),
         )
+        prior_stages_rows.extend(local_rows)
 
         # ── Stage 4: local_medium ──
         local_top = rank_top_k(local_rows, budget["local_medium_count"])
@@ -2049,10 +2122,10 @@ def run_search_pipeline(seed: int,
             local_medium_rows = _run_stage_with_ck(
                 "local_medium", local_top_vec,
                 sample_level="medium", scan_step=scan_step_medium,
-                resume_rows=(resume_ck.rows
-                              if resume_ck and resume_ck.stage == "local_medium"
-                              else None),
+                resume_rows=(_stage_resume_rows(resume_ck, "local_medium")
+                              if resume_ck else None),
             )
+        prior_stages_rows.extend(local_medium_rows)
 
         # ── medium-confirmed pool ──
         medium_pool = _dedup_rows_by_physical_candidate(
@@ -2076,14 +2149,18 @@ def run_search_pipeline(seed: int,
             fine_rows = _run_stage_with_ck(
                 "fine", finalists_vec,
                 sample_level="fine", scan_step=scan_step_fine,
-                resume_rows=(resume_ck.rows
-                              if resume_ck and resume_ck.stage == "fine"
-                              else None),
+                resume_rows=(_stage_resume_rows(resume_ck, "fine")
+                              if resume_ck else None),
             )
+        prior_stages_rows.extend(fine_rows)
 
         # ── Final best (RP1 P2 uniq constructor) ──
-        all_rows = (coarse_rows + medium_rows + local_rows
-                    + local_medium_rows + fine_rows)
+        # 去重: resume 路径下 prior_stages_rows 可能已包含部分;
+        # 按 evaluation_id 去重保证 all_rows 无重复.
+        _all_rows_by_id: Dict[str, SearchEvaluationRow] = {}
+        for r in prior_stages_rows:
+            _all_rows_by_id[r.evaluation_id] = r
+        all_rows = list(_all_rows_by_id.values())
         status_counts: Dict[str, int] = {
             "ok": 0, "invalid": 0, "pruned_zero": 0,
             "zero_window": 0, "system_error": 0,
@@ -2169,7 +2246,7 @@ def run_search_pipeline(seed: int,
                 config_sha256=config_sha256,
                 code_identity_sha256=code_identity_sha,
                 status="complete",
-                completed_count=eval_counter["n"],
+                completed_count=len(all_rows),
                 stage_counts=stage_counts_final,
             )
             save_checkpoint_v2(ck, ck_path)

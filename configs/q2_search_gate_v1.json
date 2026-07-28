@@ -18,7 +18,7 @@
     "delay_s":          {"min": 0.0, "max": null, "upper_bound_rule": "sqrt(2 * u0_z / g) (ground constraint)"}
   },
   "budget": {
-    "global_coarse_count": 97,
+    "global_coarse_count": 96,
     "coarse_top_k": 8,
     "medium_re_evaluate_count": 8,
     "local_per_top": 6,
