@@ -1,43 +1,50 @@
 # 当前唯一任务
 
 ## 本轮任务
-**TASK_004 FOUNDATION FINAL REVIEW AND MERGE**
-— 建模主线文档同步; 本轮不修改代码 / 测试 / CI, 不重跑 205 项本地测试,
-不等待 CI; CI 不作为合并硬门槛.
+**TASK_004 SEARCH PROTOTYPE READ-ONLY AUDIT AND SALVAGE DECISION**
+— 远程未审核 Search prototype commit (6f728d45b3bb776c19bbe8a857b26570eb79dc68) 的只读审计与处置决策.
 
-只记录真实完成证据 (本地实测):
+本任务**全程只读**; 不修改任何仓库文件; 不 commit / push / 创建或修改 PR;
+不 merge / cherry-pick / rebase / reset; 不运行正式 Search; 不生成结果文件.
 
-- Q2 Foundation **88/88** 本地通过
-- 全量 **205/205** 本地通过
-- profile-measure 正常 → **rc=0**
-- warm-up 程序异常 → **rc=1**
-- repeat 程序异常 → **rc=1**
-- 参数错误 → **rc=2**
-- 默认 smoke → **rc=0**
+PR #8 (本次状态同步) 合并后, Main CC 保持待命, 不进入施工.
 
-下一步: 只读监管审核、Hermes 核验、MAIN 合并决策.
-本轮不等待 CI; 正式 Search 尚未运行; result*.xlsx 尚未生成.
+Foundation PR #5 已合并 (commit 8cfe770); Governance PR #6 已合并 (commit 72c7523).
+当前 main = 72c7523. 全量 205/205 本地通过.
 
-### 范围
-- 实现 SingleBombStrategy (4 变量: heading_rad, speed_mps, release_time_s, delay_s)
-- 推导量: release_point, detonation_time, detonation_point, cloud_center_fn
-- 合法性 (物理 / 合同) 与程序错误严格分离
-- 搜索域无损剪枝 (t_detonate > t_arrival, valid=True, status="pruned_zero")
-- 单候选评估器: 复用 src/q1_cylinder.find_strict_intervals, 通过闭包注入新 cloud_center_fn
-- Q1 固定策略回归 (heading=π, speed=120, release=1.5, delay=3.6)
-- 100 个候选本地 smoke (coarse), 仅向终端输出, candidate_source=prevalidated_nonpruned
-- 三档 sample 等级 (coarse / medium / fine), scan_step 显式传入
-- 默认 smoke CLI 退出码: 0 无 system_error, 1 有 system_error, 2 参数错误
-- profile-measure CLI 退出码: 0 正常, 1 任一程序异常, 2 参数错误
+### 角色合同 (已合并到 main)
 
-### 仅允许新建 / 修改
-1. `src/q2_single_bomb.py` (主程序, 复用 src/q1_baseline + src/q1_cylinder)
-2. `tests/test_q2_single_bomb.py` (88 测, 22 组 A-Q + U2/R2/S2 加固类)
-3. `MODEL.md` (增加 Q2 单弹合同章节 + 本轮变更表)
-4. `START_HERE.md` (状态同步)
-5. `NEXT_TASK.md` (本文件)
-6. `README.md` (状态同步)
-7. PR #5 描述 (通过 gh pr edit 更新)
+- **Audit CC**: 只读审核 Search prototype 的真实代码 / 测试 / 算法 / 数学合同 /
+  性能预算 / 可复用性; 输出审计结论与建议; 不修改仓库; 不作最终决定.
+- **Hermes**: 只读核验 prototype 分支 / commit SHA / changed files / 与 main 的分叉
+  关系 / 是否存在 PR; 不评价搜索算法; 不修改仓库; 不作最终决定.
+- **MAIN**: 综合 Audit CC 与 Hermes 证据, 作出最终处置决定:
+  1. 整体采用;
+  2. 局部抢救;
+  3. 不采用并重写.
+- **用户**: 批准任何后续写入 / 分支对齐 / 代码修改 / PR 操作.
+- **Main CC / BUILD CC**: 在用户批准后执行 MAIN 冻结的施工方案;
+  不是本轮只读审核者; 不是最终决策者; 当前保持停止和待命.
+
+### 当前任务写入边界
+
+- 本任务为只读;
+- 不允许修改任何仓库文件;
+- 不允许 commit / push / 创建或修改 PR;
+- 不允许 merge / cherry-pick / rebase / reset;
+- 不运行正式 Search;
+- 不生成结果文件;
+- Main CC 保持待命;
+- PR #8 是进入该任务前的一次性状态同步, 不属于审核阶段施工内容.
+
+### 范围 (本轮)
+
+- 只读审计 6f728d45b3bb776c19bbe8a857b26570eb79dc68 (搜索算法 / 收敛标准 / 候选生成 / 性能预算)
+- 该 commit 当前状态: **保留, 尚未接受, 未创建 PR, 不代表正式 Search, 不代表 Q2 数值结果**
+- 不得在审计前 cherry-pick / merge / 重写 / 删改
+- 不得删除该 commit, 不得删除远程分支
+- 不生成 result1.xlsx
+- 不启动 TASK_004 Search 正式施工
 
 ### 库限制
 - 只使用 Python 标准库
@@ -50,77 +57,42 @@
 - 不自动 merge 任何 PR
 - 不动 main
 - 不修改 `.github/workflows/ci.yml`
-- 不修改 src/q1_baseline.py / src/q1_cylinder.py (未动 Q1 数值即可复用)
-- 不修改 outputs/q1/q1_cylinder_comparison.svg (本轮 smoke 不覆盖此图)
-- 不得把 smoke 临时最佳候选写入 RESULTS.md
-- 不得冻结正式 Search 预算 (粗外推已删除, 仅有本轮 3×3 实测)
+- 不修改 src/q1_baseline.py / src/q1_cylinder.py / src/q2_single_bomb.py
+- 不修改 tests/* (Q1 baseline / Q1 cylinder / Q2 foundation)
+- 不修改 outputs/q1/q1_cylinder_comparison.svg
+- 不 cherry-pick / 不重写 6f728d45b3bb776c19bbe8a857b26570eb79dc68
+- 不删除 6f728d45b3bb776c19bbe8a857b26570eb79dc68
+- 不 force push / 不重写历史 / 不删除远程分支
 
-### 本轮完成标准
-1. 四变量无重复参数化 ✓
-2. 投放点 / 起爆时刻 / 起爆点均为推导量 ✓
-3. 合法性判断与程序错误分离 ✓
-4. t_detonate > t_arrival 正确标记为 pruned_zero (valid=True) ✓
-5. 完整圆柱几何核心未被复制 (通过回调注入) ✓
-6. Q1 数值回归不变 ✓
-7. EPS_GROUND 三区分类真实实现 (非测试放宽) ✓
-8. Q1 直接对照测试 (端点容差 ≤ 1e-6 s) ✓
-9. 多区间测试拆为 Q1 锚 + 合成 boundary 双测 ✓
-10. system_error 反映到 CLI 退出码 ✓
-11. 默认 smoke 标注 candidate_source + NOT AN OPTIMIZATION RESULT ✓
-12. mixed-batch 8 类独立计数 ✓
-13. coarse/medium/fine 实测 (warm-up + repeat=3 + samples 复用) ✓
-14. Q1 baseline 42/42 测试全过 ✓
-15. Q1 cylinder 75/75 测试全过 ✓
-16. Q2 Foundation 88/88 测试全过 ✓
-17. 全部 unittest 205/205 全过 ✓
-18. 100 候选 smoke 完成 (EXIT=0) ✓
-19. 默认 smoke 标注 candidate_source ✓
-20. 不生成 result1.xlsx ✓
-21. 不产生正式 Q2 最优声明 ✓
-22. 文档当前阶段一致 (MODEL/START_HERE/NEXT_TASK/README) ✓
-23. 工作流文件已存在 (不再投入建模主线时间) ✓
-24. 工作区无非预期文件 ✓
-25. (P1 返工) u0 与地面合法性统一 (validate_strategy 接受 u0, evaluate 二次分类非 silent) ✓
-26. (P1 返工) profile-measure 暴露 system_error (warm_up_error + n_system_error + system_errors) ✓
-27. (P1 返工) 真实非零邻域 (Q1_NEIGHBORHOOD 内 ok+total>0; 全 0/全异常 → RuntimeError; 9 rows 分类) ✓
-28. profile-measure 任一程序异常 → rc=1 (warm-up 与 repeat 严格同权) ✓
-29. 参数错误 → rc=2 (不变) ✓
+### Foundation 已冻结的实际交付 (PR #5)
 
-### 计算结果 (FOUNDATION SMOKE, NOT AN OPTIMIZATION RESULT)
-- 候选数: 100; 种子: 2025; Profile: coarse (grade=coarse, scan_step=0.05 s)
-- valid (status=ok) = 100; invalid = 0; pruned_zero = 0; system_error = 0
-- 总耗时 = 13.008 s
-- 单候选 mean = 0.1300 s; median = 0.1698 s; p90 = 0.1754 s; max = 0.2121 s
-- 临时最高 objective = 0.000000 s (随机策略难产生严格遮蔽, 符合预期)
-- 该结果**不**写入 RESULTS.md; **不**写入 result1.xlsx; 仅 CLI 终端输出
+1. Q2 单弹评估器 (`src/q2_single_bomb.py`) 已合并
+2. Q2 单弹单元测试 88 测 (22 组 A-Q + U2/R2/S2 加固类) 已合并
+3. profile-measure 退出码合同 (0/1/2) 已合并
+4. EPS_GROUND 三区分类已合并
+5. mixed-batch 8 类独立计数已合并
+6. 默认 smoke 标注 candidate_source + NOT AN OPTIMIZATION RESULT 已合并
+7. 后续 merge 仍为 NOT AN OPTIMIZATION RESULT
+8. 文档当前阶段一致 (MODEL / START_HERE / NEXT_TASK / README)
 
-### 性能校准 (coarse/medium/fine 实测, NOT Search 预算)
-- 3 候选 × 3 profile, warm-up=1, repeat=3, samples 复用
-- Q1 锚点:      coarse 0.196 / medium 1.85 / fine 15.05 s (median)
-- Q1 邻域:      coarse 0.196 / medium 1.82 / fine 14.86 s (median)
-- 零目标:      coarse 0.182 / medium 1.76 / fine 13.63 s (median)
-- 该结果**不**作为 Search 预算; 仅供 Foundation 校准; Search 预算需重启后再冻结.
+### Search Prototype 远程未审核 commit 现状
 
-## 下一阶段 (待 Foundation 合并后)
+- commit: `6f728d45b3bb776c19bbe8a857b26570eb79dc68`
+- 状态: **保留, 尚未接受, 未创建 PR**
+- 待审计的内容: 搜索算法 / 收敛标准 / 候选生成 / 性能预算 / 数学结论
+- 决策路径: 整体采用 / 局部抢救 / 不采用并重写 (由 MAIN 决定)
+- 无论选择哪条路径, 旧 prototype commit 和远程分支均保留; "不采用"不等于删除历史
+- 不得在本任务内决策; 不得在合并前预先接受 prototype
 
-### TASK_004 SEARCH PROTOTYPE AUDIT AND SALVAGE
+## 下一阶段 (待 Search prototype 审计决策后)
 
-远程已存在一个未审核 Search prototype commit:
+### TASK_004 SEARCH 正式施工 (待决策)
 
-`6f728d45b3bb776c19bbe8a857b26570eb79dc68`
+仅在 Search prototype 审计决策后才进入。
 
-该 commit 状态:
-- **保留**但**尚未接受**
-- **未**创建 Search PR
-- **不**代表正式 Search
-- **不**代表 Q2 数值结果
-- 必须在 Foundation 合并后由监管 CC / Hermes 审核
+可能路径:
+- 整体采用 → 启动 Search 正式施工
+- 局部抢救 → 改造后启动 Search
+- 不采用并重写 → 重新设计 Search (旧 commit 与远程分支保留)
 
-TASK_004 Search 任务目的 (粗框架, 进入审核时细化):
-- 在 (heading_rad, speed_mps, release_time_s, delay_s) 四维搜索空间上
-  求 FY1 → M1 单弹最优策略
-- 目标: 完整圆柱严格遮蔽总时长 (复用 TASK_003 strict_boundary_value)
-- 关键决策: 搜索算法 (网格 / 局部 / 全局), 收敛标准, 候选生成约束
-- 输出: result1.xlsx 之前必须冻结搜索算法与收敛标准
-
-不得在没有 Foundation PR 合并前预先接受 Search prototype.
+决策前禁止启动 Search; 禁止在合并前预先接受 prototype.
