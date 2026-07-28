@@ -75,12 +75,20 @@ _SHA1_FULL_RE = re.compile(r"^[0-9a-f]{40}$")
 
 def _is_windows_path(p: str) -> bool:
     """Heuristic: a path is Windows-style if it has a drive-letter prefix
-    (C:, D:, ...) or contains a backslash separator."""
+    (C:, D:, ...), contains a backslash separator, or is a UNC path
+    starting with '//server/share' (treated case-insensitively, like
+    NTFS)."""
     if not p:
         return False
     if "\\" in p:
         return True
-    return bool(_DRIVE_LETTER_RE.match(p))
+    if _DRIVE_LETTER_RE.match(p):
+        return True
+    # UNC: //server/share or \\server\share. After the backslash ->
+    # forward-slash rewrite below this would become //server/share.
+    if p.startswith("//") and len(p) > 2 and p[2] != "/":
+        return True
+    return False
 
 
 def _normalize_path(p: str, *, force_windows: Optional[bool] = None,
@@ -91,8 +99,8 @@ def _normalize_path(p: str, *, force_windows: Optional[bool] = None,
     - Apply the appropriate normpath (ntpath for Windows-style paths,
       posixpath for POSIX-style paths).  Detection can be overridden
       with force_windows=True/False.
-    - For Windows-style paths, lowercase the result (Windows is
-      case-insensitive).
+    - For Windows-style paths (incl. UNC '//server/share'), lowercase
+      the result (Windows / NTFS is case-insensitive).
     - For POSIX-style paths, leave case as-is.
     - If is_dir, ensure trailing slash.
     """
@@ -192,25 +200,52 @@ class _GitUnavailable(Exception):
     """Raised when a Git query (or its output) is unavailable."""
 
 
+class _DetachedHead(Exception):
+    """Raised when HEAD is detached.
+
+    This is NOT a dependency-unavailable condition; it is an identity
+    mismatch against the expected branch. The verifier treats it as
+    CONTEXT_INVALID (rc=2) with dependency_unavailable=False.
+    """
+
+
 def _git(
     *args: str,
     cwd: Optional[str] = None,
     timeout: int = 15,
 ) -> Tuple[int, str, str]:
     """Run a git command. Returns (returncode, stdout, stderr).  Raises
-    _GitUnavailable on subprocess-level failure (no git, timeout)."""
+    _GitUnavailable on subprocess-level failure (no git, timeout) and
+    on text-decoding failure (UnicodeDecodeError from the subprocess
+    pipes).  Decoding failure is treated as dependency unavailable so
+    the verifier fails closed (rc=3, dependency_unavailable=true)
+    rather than letting a traceback escape main().
+
+    We force `encoding="utf-8"` and `errors="replace"` so that Git's
+    UTF-8 output (the documented encoding for porcelain and field
+    output) decodes deterministically across platforms / code pages,
+    instead of relying on the locale-derived encoding that
+    subprocess.run defaults to with text=True.  We still
+    defensively catch UnicodeDecodeError for the rare case where the
+    forced encoding still fails.
+    """
     try:
         r = subprocess.run(
             ["git", *args],
             cwd=cwd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
         )
     except FileNotFoundError as exc:
         raise _GitUnavailable(f"git binary not found: {exc}") from exc
     except subprocess.TimeoutExpired as exc:
         raise _GitUnavailable(f"git {args!r} timeout: {exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise _GitUnavailable(
+            f"git {args!r} output decode failed: {exc}") from exc
     return (r.returncode, r.stdout, r.stderr)
 
 
@@ -234,7 +269,7 @@ def _git_branch(cwd: Optional[str] = None) -> str:
         raise _GitUnavailable("git rev-parse --abbrev-ref HEAD failed")
     b = out.strip()
     if b == "HEAD":  # detached
-        raise _GitUnavailable("HEAD is detached")
+        raise _DetachedHead("HEAD is detached")
     return b
 
 
@@ -267,13 +302,18 @@ class _PorcelainError(Exception):
 
 
 def _parse_porcelain_z(raw: str) -> Dict[str, List[str]]:
-    """Parse `git status --porcelain -z` output into:
-        modified, staged, untracked, conflict, deleted, renamed (list of
-        'old -> new' strings).
+    """Parse `git status --porcelain=v1 -z` output into:
+        modified, staged, untracked, conflict, deleted,
+        renamed (list of 'source -> destination' strings).
 
-    Renames/copies (status R or C) emit TWO NUL-terminated path records:
-    the first is the status line 'XY old', the second is just 'new'.
-    The second record must NOT be parsed as a status line.
+    Renames/copies (status R or C) emit TWO NUL-terminated path
+    records in this order:
+        1. status line + space + destination (the new path)
+        2. source (the old path)
+    The first record's path field is therefore the **destination**,
+    not the source. The summary must express the rename as
+    'source -> destination', which is the human-meaningful form.
+    The second record must NOT be re-parsed as a status line.
     """
     modified: List[str] = []
     staged: List[str] = []
@@ -309,18 +349,23 @@ def _parse_porcelain_z(raw: str) -> Dict[str, List[str]]:
                       ("D", "D"), ("D", "U"), ("U", "D")):
             conflict.append(rest)
             continue
-        # rename / copy: consume the next NUL record as the new path
+        # rename / copy: consume the next NUL record.
+        # Per `git status --porcelain=v1 -z` the FIRST path is the
+        # destination (the new path), and the SECOND NUL record is
+        # the source (the old path).
         if (x, y) in (("R", " "), ("R", x), ("R", y), ("C", " "),
                       ("C", x), ("C", y)) or x in ("R", "C"):
-            old = rest
+            destination = rest
             if i >= n:
                 raise _PorcelainError(
-                    f"rename/copy missing destination: {entry!r}")
-            new = parts[i]
+                    f"rename/copy missing source: {entry!r}")
+            source = parts[i]
             i += 1
-            renamed.append(f"{old} -> {new}")
-            # treat as staged (added in index)
-            staged.append(new)
+            renamed.append(f"{source} -> {destination}")
+            # rename/copy is staged (added in index). Track both
+            # endpoints so downstream authorization sees them.
+            staged.append(destination)
+            staged.append(source)
             continue
         # untracked
         if x == "?" and y == "?":
@@ -569,12 +614,17 @@ def run_checks(ctx: Dict[str, Any],
     # 4/5. branch + detached
     try:
         branch = _git_branch(cwd=cwd)
+    except _DetachedHead as exc:
+        # Detached HEAD is an IDENTITY mismatch (the expected branch
+        # is not checked out), not a dependency-unavailable condition.
+        fail(f"detached HEAD: {exc}")
+        branch = None
     except _GitUnavailable as exc:
         dep_fail(f"branch unresolvable: {exc}")
         branch = None
     summary["branch_actual"] = branch
     if branch is None:
-        # Already dep_fail'd above.
+        # Already fail()'d or dep_fail()'d above.
         pass
     elif branch != ctx["branch"]:
         fail(f"branch mismatch: expected={ctx['branch']!r} actual={branch!r}")

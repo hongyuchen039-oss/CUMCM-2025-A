@@ -17,6 +17,13 @@ import unittest
 from typing import Dict, Optional, Tuple
 from unittest import mock
 
+# Ensure subprocess.run(..., text=True) decodes UTF-8 regardless of
+# Windows / locale code page (e.g. cp1252 / gbk).  Without this,
+# Git's UTF-8 output for non-ASCII filenames would raise
+# UnicodeDecodeError before reaching the porcelain parser.
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+os.environ.setdefault("PYTHONUTF8", "1")
+
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(THIS_DIR)
 SCRIPTS_DIR = os.path.join(REPO_ROOT, "scripts")
@@ -29,7 +36,8 @@ import verify_task_context as vtc  # noqa: E402
 
 def _run_git(*args: str, cwd: str) -> subprocess.CompletedProcess:
     return subprocess.run(
-        ["git", *args], cwd=cwd, capture_output=True, text=True, timeout=10,
+        ["git", *args], cwd=cwd, capture_output=True, text=True,
+        errors="replace", timeout=10,
     )
 
 
@@ -309,13 +317,22 @@ class VerifyTaskContextTests(unittest.TestCase):
             with open(os.path.join(tmp, "README.md"), "w") as f:
                 f.write("main\n")
             _run_git("commit", "-q", "-am", "main", cwd=tmp)
-            # Force conflict markers in working tree, then add to index
-            with open(os.path.join(tmp, "README.md"), "w") as f:
-                f.write("<<<<<<< HEAD\nmain\n=======\nfeature\n>>>>>>> feat\n")
-            _run_git("add", "README.md", cwd=tmp)
+            # Real git merge.  When the index shows UU, git writes
+            # conflict markers to the working tree and the merge
+            # exits with non-zero.  We do NOT manually pre-write
+            # markers — the unmerged state must come from the merge.
+            # Use --no-commit WITHOUT --no-ff so HEAD does not advance
+            # when the merge conflict is held open in the index.
+            r = _run_git("merge", "--no-commit", "feat", cwd=tmp)
+            self.assertNotEqual(r.returncode, 0, r)
+            # Confirm the actual UU is in the porcelain -z output.
+            r2 = _run_git("status", "--porcelain", "-z", cwd=tmp)
+            self.assertIn("UU", r2.stdout, r2.stdout)
             ctx = _base_context(tmp, head)
             s = vtc.run_checks(ctx, cwd=tmp)
             self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            self.assertTrue(any("unmerged/conflict" in v
+                                for v in s["violations"]), s)
         finally:
             _cleanup_tmp_repo(tmp)
 
@@ -830,12 +847,16 @@ class GitStateTests(unittest.TestCase):
 
     def test_b03_parser_consumes_two_null_paths(self):
         # Simulate a rename entry in porcelain -z and check parser
-        # produces a renamed record rather than treating the new path
-        # as a separate status entry.
+        # produces a renamed record rather than treating the source
+        # as a separate status entry. Per git's contract the FIRST
+        # NUL record carries the destination; the SECOND carries the
+        # source. Summary must record 'source -> destination'.
         raw = "R  old\0new\0"
         out = vtc._parse_porcelain_z(raw)
-        self.assertIn("old -> new", out["renamed"])
-        # 'new' must NOT be misinterpreted as a separate status entry
+        self.assertIn("new -> old", out["renamed"])
+        # The source ('new') must NOT be misinterpreted as a
+        # separate status entry.  (It is staged as part of the
+        # rename endpoint tracking, not as modified/untracked/...)
         self.assertNotIn("new", out["modified"])
         self.assertNotIn("new", out["untracked"])
         self.assertNotIn("new", out["conflict"])
@@ -1100,6 +1121,264 @@ class OutputContractTests(unittest.TestCase):
                 rc = vtc.main(["--context", ctx_path, "--cwd", tmp])
             self.assertEqual(rc, vtc.RC_UNAVAILABLE)
         finally:
+            _cleanup_tmp_repo(tmp)
+
+
+# ============================================================================
+# Category F — Final micro-patch tests
+#   (UnicodeDecodeError P1, real rename direction, real merge, UNC,
+#    detached rc=2)
+# ============================================================================
+class FinalMicroPatchTests(unittest.TestCase):
+
+    # ---- F-1: _git() converts UnicodeDecodeError to _GitUnavailable ----
+    def test_f01_unicode_decode_error_in_status_query(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            ctx = _base_context(tmp, head)
+            real_run = subprocess.run
+
+            def fake_run(args, **kwargs):
+                # _git() calls subprocess.run(["git", *args], ...).
+                # Only fail the status query; let other git calls
+                # pass through to the real subprocess.
+                if (isinstance(args, (list, tuple)) and len(args) >= 2
+                        and args[0] == "git" and args[1] == "status"):
+                    raise UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1,
+                                             "invalid start byte")
+                return real_run(args, **kwargs)
+
+            with mock.patch("verify_task_context.subprocess.run",
+                            side_effect=fake_run):
+                s = vtc.run_checks(ctx, cwd=tmp)
+            # No traceback escape, status invalid, dep unavailable,
+            # NOT valid clean (no empty-dirty-set silently returned).
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            self.assertTrue(s["dependency_unavailable"], s)
+            self.assertTrue(any("decode" in v.lower()
+                                for v in s["violations"]), s)
+            self.assertNotEqual(s["status"], vtc.STATUS_VALID_CLEAN)
+            self.assertNotEqual(s["status"], vtc.STATUS_VALID_AUTHORIZED_DIRTY)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    # ---- F-1b: _git() directly converts UnicodeDecodeError ----
+    def test_f01b_git_catches_unicode_decode_error(self):
+        real_run = subprocess.run
+        def fake_run(args, **kwargs):
+            raise UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1,
+                                     "invalid start byte")
+        with mock.patch("verify_task_context.subprocess.run",
+                        side_effect=fake_run):
+            with self.assertRaises(vtc._GitUnavailable) as cm:
+                vtc._git("status", cwd=".")
+            self.assertIn("decode", str(cm.exception).lower())
+
+    # ---- F-2: UnicodeDecodeError normal output mode ----
+    def test_f02_unicode_decode_error_normal_mode_last_line(self):
+        tmp, head = _init_tmp_repo()
+        ctx_dir = tempfile.mkdtemp(prefix="vtc_f02_ctx_")
+        try:
+            ctx = _base_context(tmp, head)
+            ctx_path = os.path.join(ctx_dir, "task_context.json")
+            with open(ctx_path, "w") as f:
+                json.dump(ctx, f)
+            real_run = subprocess.run
+
+            def fake_run(args, **kwargs):
+                if (isinstance(args, (list, tuple)) and len(args) >= 2
+                        and args[0] == "git" and args[1] == "status"):
+                    raise UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1,
+                                             "invalid start byte")
+                return real_run(args, **kwargs)
+
+            with mock.patch("verify_task_context.subprocess.run",
+                            side_effect=fake_run):
+                import io
+                from contextlib import redirect_stdout
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    rc = vtc.main(["--context", ctx_path, "--cwd", tmp])
+            self.assertEqual(rc, vtc.RC_UNAVAILABLE)
+            out = buf.getvalue()
+            lines = [l for l in out.splitlines() if l.strip()]
+            self.assertTrue(lines, "no stdout")
+            self.assertEqual(lines[-1], vtc.STATUS_INVALID)
+        finally:
+            shutil.rmtree(ctx_dir, ignore_errors=True)
+            _cleanup_tmp_repo(tmp)
+
+    # ---- F-3: UnicodeDecodeError --json mode ----
+    def test_f03_unicode_decode_error_json_mode_single_json(self):
+        tmp, head = _init_tmp_repo()
+        ctx_dir = tempfile.mkdtemp(prefix="vtc_f03_ctx_")
+        try:
+            ctx = _base_context(tmp, head)
+            ctx_path = os.path.join(ctx_dir, "task_context.json")
+            with open(ctx_path, "w") as f:
+                json.dump(ctx, f)
+            real_run = subprocess.run
+
+            def fake_run(args, **kwargs):
+                if (isinstance(args, (list, tuple)) and len(args) >= 2
+                        and args[0] == "git" and args[1] == "status"):
+                    raise UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1,
+                                             "invalid start byte")
+                return real_run(args, **kwargs)
+
+            with mock.patch("verify_task_context.subprocess.run",
+                            side_effect=fake_run):
+                import io
+                from contextlib import redirect_stdout
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    rc = vtc.main(["--context", ctx_path, "--cwd", tmp,
+                                   "--json"])
+            self.assertEqual(rc, vtc.RC_UNAVAILABLE)
+            out = buf.getvalue()
+            obj = json.loads(out)
+            self.assertEqual(obj["status"], vtc.STATUS_INVALID)
+            self.assertTrue(obj["dependency_unavailable"])
+        finally:
+            shutil.rmtree(ctx_dir, ignore_errors=True)
+            _cleanup_tmp_repo(tmp)
+
+    # ---- F-4: real staged rename — destination\0source, summary = source -> destination ----
+    def test_f04_real_staged_rename_with_space(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            # Create a file with space in name, commit, rename, stage
+            old = os.path.join(tmp, "old name.md")
+            with open(old, "w") as f:
+                f.write("x\n")
+            _run_git("add", "old name.md", cwd=tmp)
+            _run_git("commit", "-q", "-m", "add", cwd=tmp)
+            new_head = _run_git("rev-parse", "HEAD", cwd=tmp).stdout.strip()
+            _run_git("push", "-q", "origin", "main", cwd=tmp)
+            _run_git("branch", "--set-upstream-to=origin/main", cwd=tmp)
+            new = os.path.join(tmp, "new name.md")
+            os.rename(old, new)
+            _run_git("add", "-A", cwd=tmp)
+            # Verify the raw porcelain -z shape: first record is
+            # "R  new name.md", second is "old name.md"
+            r = _run_git("status", "--porcelain", "-z", cwd=tmp)
+            self.assertIn("R  new name.md", r.stdout, r.stdout)
+            ctx = _base_context(tmp, new_head)
+            s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            # Summary records the rename as source -> destination
+            self.assertTrue(any("old name.md -> new name.md" in p
+                                for p in s["renamed_paths"]), s)
+            # Staged is still unconditionally rejected
+            self.assertTrue(any("staged" in v
+                                for v in s["violations"]), s)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    def test_f04b_real_staged_rename_with_unicode(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            old = os.path.join(tmp, "原文件.md")
+            with open(old, "w", encoding="utf-8") as f:
+                f.write("x\n")
+            _run_git("add", "原文件.md", cwd=tmp)
+            _run_git("commit", "-q", "-m", "add", cwd=tmp)
+            new_head = _run_git("rev-parse", "HEAD", cwd=tmp).stdout.strip()
+            _run_git("push", "-q", "origin", "main", cwd=tmp)
+            _run_git("branch", "--set-upstream-to=origin/main", cwd=tmp)
+            new = os.path.join(tmp, "新文件.md")
+            os.rename(old, new)
+            _run_git("add", "-A", cwd=tmp)
+            r = _run_git("status", "--porcelain", "-z", cwd=tmp)
+            self.assertIn("R  ", r.stdout, r.stdout)
+            ctx = _base_context(tmp, new_head)
+            s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            # The source ("原文件.md") and destination ("新文件.md")
+            # are recorded as 'source -> destination' in the summary.
+            joined = " | ".join(s["renamed_paths"])
+            self.assertIn("原文件.md", joined)
+            self.assertIn("新文件.md", joined)
+            self.assertIn(" -> ", joined)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    # ---- F-5: real git merge conflict producing UU index ----
+    def test_f05_real_merge_conflict_uu_index(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            _run_git("checkout", "-q", "-b", "feat", cwd=tmp)
+            with open(os.path.join(tmp, "README.md"), "w") as f:
+                f.write("feature line\n")
+            _run_git("commit", "-q", "-am", "feat", cwd=tmp)
+            _run_git("checkout", "-q", "main", cwd=tmp)
+            with open(os.path.join(tmp, "README.md"), "w") as f:
+                f.write("main line\n")
+            _run_git("commit", "-q", "-am", "main", cwd=tmp)
+            # Real merge — produces UU in the index and conflict
+            # markers in the working tree (does NOT call git add).
+            r = _run_git("merge", "--no-commit", "--no-ff", "feat",
+                         cwd=tmp)
+            self.assertNotEqual(r.returncode, 0,
+                                "merge should have conflicted")
+            # Confirm the actual UU is in the porcelain -z output.
+            r2 = _run_git("status", "--porcelain", "-z", cwd=tmp)
+            self.assertIn("UU", r2.stdout, r2.stdout)
+            ctx = _base_context(tmp, head)
+            s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            self.assertIn("README.md", s["conflict_paths"], s)
+            self.assertTrue(any("unmerged/conflict" in v
+                                for v in s["violations"]), s)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    # ---- F-6: UNC path equivalence ----
+    def test_f06_unc_path_equivalence(self):
+        a = vtc._normalize_path("\\\\SERVER\\Share\\repo")
+        b = vtc._normalize_path("//server/share/repo")
+        c = vtc._normalize_path("\\\\SERVER\\Share\\other")
+        d = vtc._normalize_path("\\\\SERVER\\Other\\repo")
+        # Same share/repo must be equivalent regardless of slash style
+        self.assertEqual(a, b)
+        # Different subdirectory
+        self.assertNotEqual(a, c)
+        # Different share
+        self.assertNotEqual(a, d)
+        # Subfile under UNC must be 'under' the UNC root
+        self.assertTrue(vtc._is_path_under(
+            vtc._normalize_path("\\\\SERVER\\Share\\repo\\sub\\file.txt"),
+            vtc._normalize_path("//server/share/repo"),
+        ))
+        self.assertFalse(vtc._is_path_under(
+            vtc._normalize_path("\\\\SERVER\\Share\\other\\file.txt"),
+            vtc._normalize_path("//server/share/repo"),
+        ))
+
+    # ---- F-7: detached HEAD is identity mismatch (rc=2, dep_unavailable=False) ----
+    def test_f07_detached_head_rc2_not_rc3(self):
+        tmp, head = _init_tmp_repo()
+        ctx_dir = tempfile.mkdtemp(prefix="vtc_f07_ctx_")
+        try:
+            _run_git("checkout", "--detach", "-q", head, cwd=tmp)
+            ctx = _base_context(tmp, head)
+            ctx_path = os.path.join(ctx_dir, "task_context.json")
+            with open(ctx_path, "w") as f:
+                json.dump(ctx, f)
+            s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            self.assertFalse(s["dependency_unavailable"], s)
+            self.assertTrue(any("detached" in v
+                                for v in s["violations"]), s)
+            # main() must return rc=2, NOT rc=3
+            import io
+            from contextlib import redirect_stdout
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = vtc.main(["--context", ctx_path, "--cwd", tmp])
+            self.assertEqual(rc, vtc.RC_INVALID, buf.getvalue())
+        finally:
+            shutil.rmtree(ctx_dir, ignore_errors=True)
             _cleanup_tmp_repo(tmp)
 
 
