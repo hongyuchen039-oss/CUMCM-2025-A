@@ -13,7 +13,7 @@
 
 ## 当前状态
 
-Q1 与 Q2 单候选评估基础已经完成；Q2 Real Search Core v1.1 已完成 P1 补丁施工，pilot 与 resume 已验证等价；当前处于等待独立审查 GPT 复核阶段。
+Q1 与 Q2 单候选评估基础已经完成；Q2 Real Search Core v1.2 已完成 RP1 全量闭合（effective config / structured code identity / evaluation-safe checkpoint / canonical_result_sha256 / two-finalist lineage / dirty-worktree rejection）；133 个单元测试通过；pilot 固定 163 evaluations 预算；当前等待 clean-HEAD pilot + interrupted + resume 实测与独立审查 GPT 复核。
 
 ## 结果等级
 

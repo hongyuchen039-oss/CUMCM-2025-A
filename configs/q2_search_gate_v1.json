@@ -1,9 +1,9 @@
 {
   "schema_version": 2,
   "gate_id": "q2_search_gate_v1",
-  "task": "TASK_004_Q2_REAL_SEARCH_CORE_V1_P1_REMEDIATION",
+  "task": "TASK_004_Q2_REAL_SEARCH_CORE_V1_FINAL_REMAINING_P1_CLOSURE",
   "declaration": "PILOT / NOT A FORMAL Q2 RESULT",
-  "algorithm_version": "v1.1",
+  "algorithm_version": "v1.2",
   "sampling_method": "deterministic_uniform_pseudorandom",
   "evaluator_kind": "real",
   "evaluator_version": "v1",
@@ -18,7 +18,7 @@
     "delay_s":          {"min": 0.0, "max": null, "upper_bound_rule": "sqrt(2 * u0_z / g) (ground constraint)"}
   },
   "budget": {
-    "global_coarse_count": 96,
+    "global_coarse_count": 97,
     "coarse_top_k": 8,
     "medium_re_evaluate_count": 8,
     "local_per_top": 6,

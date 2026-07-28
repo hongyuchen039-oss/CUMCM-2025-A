@@ -625,62 +625,93 @@ C. Local candidates: 围绕 medium 阶段 top-k 候选生成局部扰动;
 - 等级仅 PILOT / NOT A FORMAL Q2 RESULT;
   必须通过后续轮次 (冷启动 / 多 seed / 收敛证明) 才能升 VERIFIED / FINAL
 
-### 9. P1 REMEDIATION 增量 (v1.1)
+### 9. P1 REMEDIATION 增量 (v1.1, 已废弃为历史; 当前为 v1.2)
 
-本轮在 v1 基础上补 7 个 P1 / 1 个 P2, 形成 v1.1. 算法版本号
-`ALGORITHM_VERSION = "v1.1"`.
+> 注: v1.1 段保留为历史; 当前生效版本是 v1.2 RP1 closure (§10).
+> 旧版的 final_best / run_identity_sha256 / lineage_manifest_sha256 数值
+> 已无效, 不得在新文档/PR/代码中继续引用. 待 clean-HEAD v1.2 pilot 完成后
+> 重新测量.
 
-P1-A  local domain clamp: `wrap_local_candidate` 必须使用 domain 与
-      release_time_max, 把 heading / speed / release / delay 都 clamp 到域内.
-      evaluator 不再静默 clamp 越界候选; Foundation invalid 语义保留.
+v1.1 旧版 (HISTORICAL — DO NOT REPRODUCE):
+  - 算法版本号 ALGORITHM_VERSION = "v1.1"
+  - P1-A  local domain clamp (wrap_local_candidate)
+  - P1-B  5 阶段 pipeline (medium-confirmed → fine-only best)
+  - P1-C  evaluation_id + physical_candidate_sha256
+  - P1-D  checkpoint v2 + verify_resume_identity
+  - P1-E  static_run_identity + lineage_manifest (双 SHA)
+  - P1-F  config schema v2
+  - P1-G  sampling 真实表述 (deterministic uniform pseudorandom)
+  - P2    formal mode disabled
 
-P1-B  medium-confirmed → fine-only best: 5 阶段 pipeline
-      (global_coarse → global_medium → local_coarse → local_medium → fine).
-      final best 仅取 fine_rows; 若 fine_rows 为空 → EMPTY_FINE_NO_RESULT
-      + CLI rc=2; 不得回退到 coarse best; 同物理候选不得重复占据
-      finalist 名额 (final candidate dedup).
+### 10. FINAL REMAINING-P1 CLOSURE (v1.2, 当前生效)
 
-P1-C  evaluation identity: 每行包含 `evaluation_id` (sha256 over
-      source_stage + index + vec), `source_stage`, `source_candidate_index`,
-      `physical_candidate_sha256`. resume key 使用 evaluation_id;
-      checkpoint 不得只用 candidate_index 判定完成.
+v1.2 在 v1.1 基础上闭合 Remaining-P1 + P2 uniq output schema. 算法版本号
+`ALGORITHM_VERSION = "v1.2"`. v1.1 段已废, 不得回退.
 
-P1-D  checkpoint 真正接入 pipeline: 5 阶段完成后原子写入
-      `checkpoint_v2.json`; CLI `--resume-from <path>`;
-      verify_resume_identity 校验 9 项 (含 algorithm_version);
-      resume 等价于 uninterrupted run (实测 resumed output 与原一致).
+RP1-1  evaluation-safe interrupted checkpoint: 每完成一个 evaluation
+       即原子写入 checkpoint, `--stop-after-evaluations N` (pilot-only)
+       → 输出 CONTROLLED_INTERRUPTION 标记 + rc=3. checkpoint 含
+       `status: 'controlled_interruption' | 'running' | 'complete'` +
+       `completed_count` + `stage_counts` 5 字段.
 
-P1-E  完整 run manifest: 区分两层
-      - `static_run_identity_sha256`: 锁定 algorithm_version /
-        code_revision / evaluator_kind / evaluator_version / seed /
-        domain / budget / sampling_method / stage_plan.
-      - `lineage_manifest_sha256`: 锁定 global_coarse / global_medium /
-        local_parent_lineage / local_candidate_vectors / local_medium /
-        medium_confirmed_pool / fine_finalists / final_selection_policy /
-        evaluation_ids / candidate_counts.
-      manifest_record 同时返回 `domain` (结构化), 不再仅藏在 text 字符串里.
+RP1-2  resume identity 推导自 current stage_plan: `verify_resume_identity`
+       不再以 checkpoint.stage/sample_level/scan_step 自证, 而是从当前
+       effective config 的 stage_plan 推导 (P1 resume 阶段期望).
+       RP1-2 同时把 config_sha256 / code_identity_sha256 纳入校验链.
 
-P1-F  config truth alignment: `configs/q2_search_gate_v1.json` 升级为
-      `schema_version=2`. CLI 真实加载 (--config); 不含旧 fake skeleton
-      schema1 / magic bounds (release_max=66 / delay_max=30).
+RP1-3  effective config 单一入口: `resolve_effective_config(...)` 是
+       唯一入口, 覆盖 budget / scan_steps / stage_plan / local_delta /
+       sampling_method / workers / formal_enabled / checkpoint_schema.
+       pipeline 仅消费 effective config, 不允许 silent fallback.
+       production pilot 总评估数固定 == 163
+       (97 + 8 + 48 + 8 + 2 = global_coarse + global_medium +
+        local_coarse + local_medium + fine); CLI override 仅允许
+       测试场景, 不得静默扩缩 production budget.
 
-P1-G  sampling 真实表述: 文档 / docstring / PR 一致声明
-      **deterministic uniform pseudorandom**; 本轮未实现 LHS / stratified;
-      不得主张超出实际实现的采样方法.
+RP1-4  structured code identity: 至少含 5 字段
+       `git_head_sha / worktree_dirty / q2_search_sha256 /
+        config_sha256 / algorithm_version`. `run_identity_sha256`
+       覆盖这些字段, 不可仅用 `git rev-parse HEAD` 代替.
 
-P2    formal mode disabled: `--mode formal` 立即返回退出码 2,
-      不得静默运行 pilot; CLI 不得把 pilot 输出伪装为 formal.
+RP1-5  dirty worktree 拒绝: `require_clean_worktree=True` (CLI 默认)
+       → worktree 有未提交/未跟踪变更时 raise ValueError → rc=2.
+       `--allow-dirty-worktree` 仅供本地 dry-run.
 
-### 10. Run identity 与 lineage manifest 示例 (pilot, seed=2025)
+RP1-6  clean Patch HEAD pilot+checkpoint 必须重新验证: 本轮 commit
+       必须先于 pilot 执行; clean HEAD 上 pilot + interrupted + resume
+       三轮验证齐全才能升 v1.2.
 
-- run_identity_sha256: `9963731da9e498919b5a34e586408e4736ac370a472fd4776635e062a82e37cf`
-- lineage_manifest_sha256: `b27b09747e2fa1daf0fcd7ecfd750f815a25a21df7edb8171a086d40515bbb01`
-- status_counts (fine 阶段后): ok=155, invalid=0, pruned_zero=8,
-  zero_window=0, system_error=0
-- stage_counts: global_coarse=97, global_medium=8, local_coarse=48,
-  local_medium=8, fine=2
-- final_best: stage=fine, sample_level=fine, scan_step=0.01,
-  total_duration_s=2.482759
-  (heading≈3.1218 rad, speed≈115.43 m/s, release≈1.7673 s, delay≈3.8892 s)
-- 等级: PILOT / NOT A FORMAL Q2 RESULT / BEST-KNOWN CANDIDATE /
-  NOT A PROVEN GLOBAL OPTIMUM
+RP1-7  two fine finalists 完整 lineage: 每个 finalist 含
+       `finalist_rank / physical_candidate / fine_evaluation_id /
+        fine_total_duration_s / parent_medium_source /
+        parent_evaluation_id / parent_total_duration_s`.
+       medium_confirmed lineage 与 finalist lineage 必须可追溯.
+
+P2     uniq output constructor (RP1 P2): uninterrupted path 与
+       resumed-from-checkpoint path 必须通过同一 `build_pilot_output(...)`
+       产出, schema 完全一致; 含 19 个 canonical 字段 + 4 个统一 flag
+       (`resumed_from_checkpoint / resumed_n_completed / resumed_status /
+        dirty_worktree_at_start`) + `canonical_result_sha256` (sort_keys
+       确定性 SHA-256, 仅覆盖 math/lineage 字段, 不含 wall-clock/路径).
+
+CLI 退出码 (v1.2):
+  0  = OK (无 system_error 且 fine 有 best)
+  1  = system_error
+  2  = arg / invalid config / empty fine / formal rejected /
+       dirty worktree rejected
+  3  = controlled_interruption (RP1-1; pilot-only)
+
+### 11. v1.2 pilot 实测 (待 clean-HEAD 执行后填)
+
+> 本节在 clean-HEAD pilot 完成后填入; 当前未测量, 不得预先声明数值.
+
+待测量字段:
+- run_identity_sha256 (v1.2, structured code identity)
+- lineage_manifest_sha256 (v1.2, 含 fine_finalists_lineage)
+- canonical_result_sha256 (uninterrupted)
+- canonical_result_sha256 (interrupted + resume) — 应 == uninterrupted
+- status_counts / stage_counts / completed_count
+- controlled_interruption 阶段 final stage 与 completed_count
+
+等级: PILOT / NOT A FORMAL Q2 RESULT / BEST-KNOWN CANDIDATE /
+      NOT A PROVEN GLOBAL OPTIMUM
