@@ -221,13 +221,15 @@ def _git(
     the verifier fails closed (rc=3, dependency_unavailable=true)
     rather than letting a traceback escape main().
 
-    We force `encoding="utf-8"` and `errors="replace"` so that Git's
+    We force `encoding="utf-8", errors="strict"` so that Git's
     UTF-8 output (the documented encoding for porcelain and field
-    output) decodes deterministically across platforms / code pages,
-    instead of relying on the locale-derived encoding that
-    subprocess.run defaults to with text=True.  We still
-    defensively catch UnicodeDecodeError for the rare case where the
-    forced encoding still fails.
+    output) is decoded STRICTLY: invalid byte sequences raise
+    UnicodeDecodeError instead of being silently substituted with
+    U+FFFD replacement characters.  Silently replacing invalid bytes
+    could let a path containing lossy-decoded garbage still match
+    an allowlist entry and produce a false CONTEXT_VALID_AUTHORIZED_DIRTY
+    verdict.  We therefore use strict decoding and convert any
+    UnicodeDecodeError into the dependency-unavailable channel.
     """
     try:
         r = subprocess.run(
@@ -236,7 +238,7 @@ def _git(
             capture_output=True,
             text=True,
             encoding="utf-8",
-            errors="replace",
+            errors="strict",
             timeout=timeout,
         )
     except FileNotFoundError as exc:

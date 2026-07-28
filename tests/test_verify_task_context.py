@@ -1382,5 +1382,142 @@ class FinalMicroPatchTests(unittest.TestCase):
             _cleanup_tmp_repo(tmp)
 
 
+# ============================================================================
+# Category G — Strict-decode final closure
+#   errors="replace" removed; encoding="utf-8", errors="strict" pinned.
+# ============================================================================
+class StrictDecodeTests(unittest.TestCase):
+
+    # ---- G-1: subprocess.run kwargs are encoding=utf-8 and errors=strict ----
+    def test_g01_git_subprocess_kwargs_are_strict_utf8(self):
+        captured = {}
+
+        real_run = subprocess.run
+
+        def fake_run(args, **kwargs):
+            captured["args"] = args
+            captured["kwargs"] = dict(kwargs)
+            return real_run(args, **kwargs)
+
+        with mock.patch("verify_task_context.subprocess.run",
+                        side_effect=fake_run):
+            vtc._git("status", "--porcelain", cwd=".")
+        kwargs = captured["kwargs"]
+        # STRICT-DECODE: must use utf-8 + strict, never replace.
+        self.assertEqual(kwargs.get("encoding"), "utf-8")
+        self.assertEqual(kwargs.get("errors"), "strict")
+        # Regression guard: errors must NOT be "replace".
+        self.assertNotEqual(kwargs.get("errors"), "replace")
+
+    # ---- G-2: _git() converts UnicodeDecodeError to _GitUnavailable ----
+    def test_g02_git_unicode_decode_error_to_unavailable(self):
+        def fake_run(args, **kwargs):
+            raise UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1,
+                                     "invalid start byte")
+        with mock.patch("verify_task_context.subprocess.run",
+                        side_effect=fake_run):
+            with self.assertRaises(vtc._GitUnavailable) as cm:
+                vtc._git("status", cwd=".")
+            self.assertIn("decode", str(cm.exception).lower())
+
+    # ---- G-3: run_checks returns INVALID + dep_unavailable=True, NOT VALID ----
+    def test_g03_run_checks_status_query_decode_failure(self):
+        tmp, head = _init_tmp_repo()
+        try:
+            ctx = _base_context(tmp, head)
+            real_run = subprocess.run
+
+            def fake_run(args, **kwargs):
+                # confirm strict kwargs are present on the failing call
+                self.assertEqual(kwargs.get("encoding"), "utf-8")
+                self.assertEqual(kwargs.get("errors"), "strict")
+                self.assertNotEqual(kwargs.get("errors"), "replace")
+                if (isinstance(args, (list, tuple)) and len(args) >= 2
+                        and args[0] == "git" and args[1] == "status"):
+                    raise UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1,
+                                             "invalid start byte")
+                return real_run(args, **kwargs)
+
+            with mock.patch("verify_task_context.subprocess.run",
+                            side_effect=fake_run):
+                s = vtc.run_checks(ctx, cwd=tmp)
+            self.assertEqual(s["status"], vtc.STATUS_INVALID, s)
+            self.assertTrue(s["dependency_unavailable"], s)
+            # MUST NOT silently return a clean / authorized-dirty verdict.
+            self.assertNotEqual(s["status"], vtc.STATUS_VALID_CLEAN)
+            self.assertNotEqual(s["status"], vtc.STATUS_VALID_AUTHORIZED_DIRTY)
+        finally:
+            _cleanup_tmp_repo(tmp)
+
+    # ---- G-4: normal mode — last line = CONTEXT_INVALID, rc=3 ----
+    def test_g04_normal_mode_last_line_invalid_rc3(self):
+        tmp, head = _init_tmp_repo()
+        ctx_dir = tempfile.mkdtemp(prefix="vtc_g04_ctx_")
+        try:
+            ctx = _base_context(tmp, head)
+            ctx_path = os.path.join(ctx_dir, "task_context.json")
+            with open(ctx_path, "w") as f:
+                json.dump(ctx, f)
+            real_run = subprocess.run
+
+            def fake_run(args, **kwargs):
+                if (isinstance(args, (list, tuple)) and len(args) >= 2
+                        and args[0] == "git" and args[1] == "status"):
+                    raise UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1,
+                                             "invalid start byte")
+                return real_run(args, **kwargs)
+
+            with mock.patch("verify_task_context.subprocess.run",
+                            side_effect=fake_run):
+                import io
+                from contextlib import redirect_stdout
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    rc = vtc.main(["--context", ctx_path, "--cwd", tmp])
+            self.assertEqual(rc, vtc.RC_UNAVAILABLE)
+            out = buf.getvalue()
+            lines = [l for l in out.splitlines() if l.strip()]
+            self.assertTrue(lines, "no stdout")
+            self.assertEqual(lines[-1], vtc.STATUS_INVALID)
+        finally:
+            shutil.rmtree(ctx_dir, ignore_errors=True)
+            _cleanup_tmp_repo(tmp)
+
+    # ---- G-5: --json mode — single JSON, status=INVALID, dep_unavailable=true, rc=3 ----
+    def test_g05_json_mode_single_json_invalid_rc3(self):
+        tmp, head = _init_tmp_repo()
+        ctx_dir = tempfile.mkdtemp(prefix="vtc_g05_ctx_")
+        try:
+            ctx = _base_context(tmp, head)
+            ctx_path = os.path.join(ctx_dir, "task_context.json")
+            with open(ctx_path, "w") as f:
+                json.dump(ctx, f)
+            real_run = subprocess.run
+
+            def fake_run(args, **kwargs):
+                if (isinstance(args, (list, tuple)) and len(args) >= 2
+                        and args[0] == "git" and args[1] == "status"):
+                    raise UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1,
+                                             "invalid start byte")
+                return real_run(args, **kwargs)
+
+            with mock.patch("verify_task_context.subprocess.run",
+                            side_effect=fake_run):
+                import io
+                from contextlib import redirect_stdout
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    rc = vtc.main(["--context", ctx_path, "--cwd", tmp,
+                                   "--json"])
+            self.assertEqual(rc, vtc.RC_UNAVAILABLE)
+            out = buf.getvalue()
+            obj = json.loads(out)
+            self.assertEqual(obj["status"], vtc.STATUS_INVALID)
+            self.assertTrue(obj["dependency_unavailable"])
+        finally:
+            shutil.rmtree(ctx_dir, ignore_errors=True)
+            _cleanup_tmp_repo(tmp)
+
+
 if __name__ == "__main__":
     unittest.main()
