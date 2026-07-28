@@ -1,25 +1,34 @@
 # 项目驾驶舱
 
 ## 当前阶段
-**TASK_004 SEARCH PROTOTYPE AUDIT AND SALVAGE** — 远程未审核 Search prototype 的审计与抢救阶段。
+**TASK_004 Q2 REAL SEARCH CORE V1** — Q2 Real Search Core v1 部分抢救施工.
 
-Foundation 已通过 PR #5 合并到 main (commit 8cfe770); 主线 PR #6 (governance skill) 也已合并。
-当前任务是对远程一个未审核 Search prototype commit (6f728d45b3bb776c19bbe8a857b26570eb79dc68) 进行只读审计,
-Audit CC 只读形成审核建议,
-Hermes 只读核验仓库事实,
-由 MAIN 作最终处置决定。
+Foundation 已通过 PR #5 合并到 main (commit 8cfe770); PR #6 (governance) 已合并;
+PR #8 (post-Foundation status 同步) 已合并. 当前 main = bed2d9e.
+
+本轮对 Search prototype commit (6f728d45b3bb776c19bbe8a857b26570eb79dc68) 进行
+**部分抢救 (PARTIAL SALVAGE)**: 已通过普通 merge (--no-ff) 把 main 同步到
+task/TASK_004-search (merge commit 453c098); prototype 仍为 ancestor.
+
+实评估器已接入: `evaluate_with_real_evaluator` 调用
+`src.q2_single_bomb.evaluate_single_bomb_strategy`. 串行 pipeline
+(coarse → medium → local → fine) 已实现; pilot 跑通.
 
 本轮**不等待 CI**; CI 不作为合并硬门槛; CI timeout 不代表数学失败。
-正式 Search 尚未运行; result*.xlsx 尚未生成。
+正式 Search 仍为 PILOT / NOT A FORMAL Q2 RESULT; best-known 仍为
+NOT A PROVEN GLOBAL OPTIMUM. result*.xlsx 尚未生成.
 
 ## 主线状态 (合并后)
 
 - Foundation PR #5 → main (merge commit 8cfe770)
 - Governance PR #6 → main (merge commit 72c7523)
-- 当前 main = 72c7523 (含 Foundation + governance skill)
+- Status Sync PR #8 → main (merge commit bed2d9e)
+- 当前 main = bed2d9e (含 Foundation + governance + role-boundary 修正)
 - Q2 Foundation 88/88 本地通过; Q1 baseline 42/42 + Q1 cylinder 75/75 = 117/117; 全量 205/205 本地通过
+- Q2 Search 54/54 本地通过 (本轮新增)
 - profile-measure 退出码合同: 0 正常 / 1 任一程序异常 / 2 参数错误
 - 默认 smoke 退出码: 0 无 system_error / 1 有 system_error / 2 参数错误
+- Search CLI 退出码: 0 无 system_error / 1 有 system_error / 2 参数错误 / 拒绝 fake + workers>1
 
 ## 本轮交付物 (TASK_004 Foundation, 已合并)
 - `src/q2_single_bomb.py` — Q2 单弹评估器主程序 (Python 标准库, 复用 q1_baseline 与 q1_cylinder)

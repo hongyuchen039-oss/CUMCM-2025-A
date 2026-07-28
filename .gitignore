@@ -49,5 +49,7 @@ desktop.ini
 # 缓存
 .cache/
 
-# TASK_004 Search skeleton 临时工作目录 (含 benchmark 工件)
+# TASK_004 Search 临时工作目录 (含 benchmark / pilot 工件)
 work/q2_search/
+work/q2_search_pilot/
+work/_test_run.log

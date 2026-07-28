@@ -497,10 +497,130 @@ warm-up 异常与 formal repeat 异常在 CLI 退出码上**严格同权**:
 - 单元测试: `python -m unittest tests.test_q2_single_bomb -v`
 - 全部测试: `python -m unittest discover -s tests -p "test_*.py" -v`
 - Foundation 状态: **已通过 PR #5 合并到 main** (merge commit 8cfe770); 仍为 NOT AN OPTIMIZATION RESULT
-- 下一阶段: **TASK_004 SEARCH PROTOTYPE AUDIT AND SALVAGE**
-  - 远程存在未审核 Search prototype commit (`6f728d45b3bb776c19bbe8a857b26570eb79dc68`)
-  - 等待 Audit CC 对真实 artifact 做只读审核,
-    由 Hermes 核验 branch / SHA / changed files / PR 状态,
-    最后由 MAIN 决定整体采用 / 局部抢救 / 不采用并重写
-  - 决策路径: 接受 / 抢救 / 丢弃
-- 不得在审计前预先接受 prototype; 不得在 prototype 决策前启动 TASK_004 Search 正式施工
+- 下一阶段: **TASK_004 Q2 REAL SEARCH CORE V1** (PARTIAL SALVAGE 已授权)
+  - 原 prototype commit (`6f728d45b3bb776c19bbe8a857b26570eb79dc68`) 保留为 ancestor
+  - 通过普通 merge (--no-ff) 把 main 同步到 task/TASK_004-search
+  - 实评估器接入: `evaluate_with_real_evaluator` 调用
+    `src.q2_single_bomb.evaluate_single_bomb_strategy`
+  - 串行 pipeline: coarse → medium → local → fine
+  - 五类 status 严格分离: invalid / pruned_zero / zero_window / ok / system_error
+  - 程序异常 (system_error) 不静默转为 0; CLI rc=1
+  - pilot 仍为 NOT A FORMAL Q2 RESULT; best-known 仍为 NOT A PROVEN GLOBAL OPTIMUM
+  - 不得在 pilot 基础上声称 Q2 全局最优; 不得写入 RESULTS.md / result*.xlsx
+
+---
+
+## Q2 Real Search Core v1 (TASK_004 / PILOT / NOT A FORMAL Q2 RESULT)
+
+> 已在 `src/q2_search.py` 实现, 通过 `tests/test_q2_search.py` 单元测试 (单测覆盖 + 真实 evaluator 集成) 验证.
+> 本节固定 Q2 Real Search Core v1 的算法合同.
+> 等级: **PILOT / NOT A FORMAL Q2 RESULT** /
+> **BEST-KNOWN CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM**, 不得冒充 Q2 VERIFIED / FINAL.
+
+### 1. 算法角色
+
+- 候选生成: deterministic (seed 锁定); 不依赖真实 evaluator 的随机性
+- 真实 evaluator: `evaluate_with_real_evaluator` 调用
+  `src.q2_single_bomb.evaluate_single_bomb_strategy`;
+  不得伪造 / 复制完整圆柱几何; 不得使用 fake / 合成公式冒充 Q2 结论
+- FakeEvaluator: 仅用于测试 / dry-run / 调度开销 benchmark; 任何正式 Search
+  都必须 `--evaluator real`
+- 串行 pipeline: workers=1 强制; real 模式 workers > 1 拒绝
+  (EXPERIMENTAL / DISABLED FOR FORMAL SEARCH)
+- Parallel real-evaluator: 暂未启用; 待后续轮次充分验证
+
+### 2. 决策空间 (无魔法上界)
+
+| 变元 | min | max | 来源 |
+|---|---|---|---|
+| heading_rad | 0.0 | 2π | 周期变量 (FACTS §1) |
+| speed_mps | 70.0 | 140.0 | FACTS §9 |
+| release_time_s | 0.0 | t_arrival - 1 | 搜索域剪枝 (避免 t_d > t_arrival) |
+| delay_s | 0.0 | sqrt(2·u0_z / g) | 从 u0_z / g 推导 (Foundation 物理合同) |
+
+域 = **物理合法 ∩ 搜索域无损剪枝**;
+evaluator 仍必须做最终合法性判断.
+
+显式删除: `release_time <= 66` / `delay <= 30` 这类未经说明的硬上界.
+
+### 3. 候选生成 (三段)
+
+A. Anchor: Q1 固定策略 (heading=π, speed=120, release=1.5, delay=3.6)
+   用于确认 Search 调用的真实 evaluator 能复现已知非零策略.
+
+B. Global exploration: `random.Random(seed)` 生成的 stratified 样本; 不依赖
+   第三方库; 同一 (seed, domain, count) 必须产生完全一致候选.
+
+C. Local candidates: 围绕 medium 阶段 top-k 候选生成局部扰动;
+   扰动幅度 (heading ~0.10 rad, speed ~5 m/s, release ~0.5 s, delay ~0.3 s)
+   作为可调参数 (后续轮次可微调).
+
+同一 (seed, domain, algorithm_version, budget) 必须产生完全一致的 manifest.
+
+### 4. Pipeline (coarse → medium → local → fine)
+
+```
+[1] coarse global exploration  (96 candidates)
+[2] coarse Top-K               (8)
+[3] medium re-evaluation       (8)
+[4] medium 重新排序后的 Top    (8)
+[5] 围绕 medium Top 生成 local candidates (≤ 48)
+[6] local coarse 评估
+[7] 合并并去重
+[8] 取 combined 阶段 top-2 进入 fine
+[9] 输出 best-known candidate 与完整证据
+```
+
+禁止:
+- coarse 后直接将大量候选送入 fine
+- 仅看 coarse 数值就声称最佳
+- 将 FakeEvaluator benchmark 当成真实性能
+- 将一次 seed 的结果称为全局最优
+
+### 5. SearchEvaluationRow (统一结构)
+
+字段:
+- candidate_index, stage, seed
+- heading_rad, speed_mps, release_time_s, delay_s
+- valid, status (5 类), total_duration_s, intervals
+- release_point, detonation_time_s, detonation_point
+- sample_level, scan_step_s, evaluator_kind
+- wall_clock_s, error_type, error_message
+
+五类状态严格分离:
+- invalid: 物理 / 合同非法 (valid=False, 不进入 top-k)
+- pruned_zero: 物理合法, t_d > t_arrival (valid=True, 0 目标)
+- zero_window: 物理合法, 评估窗口为空 (valid=True, 0 目标)
+- ok: 物理合法并完成评估 (valid=True, 排
+名)
+- system_error: 程序异常 (valid=False, 不进入排名, CLI rc=1)
+
+### 6. Checkpoint v2 (resume identity 校验)
+
+- schema_version = 2
+- 字段: algorithm_version, seed, domain_hash, manifest_sha256,
+  evaluator_kind, code_revision, stage, sample_level, scan_step_s,
+  completed_indexes, rows, best_index, best_total, status_counts,
+  system_errors
+- 校验: schema / seed / domain_hash / manifest_sha256 / evaluator_kind /
+  stage / sample_level / scan_step_s / code_revision 任一 mismatch
+  即拒绝 resume
+- 原子写入: 临时文件 + rename, 不留残留
+
+### 7. CLI 与退出码
+
+- 默认: `python -m src.q2_search` 仅打印 banner; 不执行 Search
+- 正式 Search: 必须 `--run-search --evaluator real`
+- `--run-search --evaluator fake` 拒绝 (返回 2)
+- real 模式 `--workers > 1` 拒绝 (返回 2)
+- 退出码: 0 表示无 system_error; 1 表示有 system_error; 2 表示参数错误
+
+### 8. 局限 (本轮 PILOT, 不得隐去)
+
+- 仅实现单 seed / 固定预算的 pilot; **未**实现自适应 / 全局最优证明
+- 局部扰动幅度 (heading=0.10 rad, speed=5 m/s, release=0.5 s, delay=0.3 s)
+  来自工程经验, **未**做收敛性证明
+- parallel real-evaluator 暂未启用; 串行路径为唯一正式路径
+- 不声称 Q2 全局最优; 不写入 RESULTS.md; 不生成 result1.xlsx
+- 等级仅 PILOT / NOT A FORMAL Q2 RESULT;
+  必须通过后续轮次 (冷启动 / 多 seed / 收敛证明) 才能升 VERIFIED / FINAL

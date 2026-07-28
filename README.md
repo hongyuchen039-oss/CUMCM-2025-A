@@ -31,5 +31,16 @@ CI：GitHub Actions 自动运行 Python 编译、单元测试与 Q1 smoke test�
   - margin_max (0.001 s 局部网格估计) = **5.282478 m** @ t = 9.418317 s (非解析极值)
   - ρ_max = 1.000; ρ=1 平台 (0.01 s 诊断网格) 约 (8.06, 9.44) s, 跨度 1.380 s
   - 时间/空间收敛均 PASS (端点 max \|f\| = 1.03e-6)
-- 单元测试计数: 205 个全过 (42 Q1 baseline + 75 Q1 cylinder + 88 Q2 foundation)
+- 单元测试计数: 259 个全过 (42 Q1 baseline + 75 Q1 cylinder + 88 Q2 foundation + 54 Q2 search, 本轮新增)
 - CI 仅作为**轻量辅助**; CI PASS 不再是合并硬门槛; CI timeout 不代表数学失败
+
+## Q2 Search 当前状态 (TASK_004, 本轮)
+
+- 远程未审核 Search prototype commit `6f728d45b3bb776c19bbe8a857b26570eb79dc68` 已通过普通 merge (`--no-ff`) 把 main 同步到 `task/TASK_004-search`, prototype 仍为 ancestor
+- Real evaluator 已接入: `evaluate_with_real_evaluator` 调用 `src.q2_single_bomb.evaluate_single_bomb_strategy`
+- 串行 pipeline (`coarse → medium → local → fine`) 已实现; `workers=1` 强制
+- Checkpoint v2 (schema_version=2) 已实现, 含 resume identity 校验
+- 54 个 search 单元测试本地全过
+- Pilot best-known candidate: **PILOT / NOT A FORMAL Q2 RESULT** /
+  **BEST-KNOWN CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM**
+- 本轮不生成 result1.xlsx / 不修改 RESULTS.md / 不启动 Q3
