@@ -454,25 +454,27 @@ find_strict_intervals(samples, scan_step=0.01)
 | `zero_window` | True | 物理合法, 评估窗口为空 |
 | `ok` | True | 物理合法, 已完成评估, intervals 可空可非空 |
 
-程序错误 (空可见集 / 类型错误 / 几何合同错误) 分两类记录:
-- `warm_up_error`: warm-up 阶段异常 (不计入 n_system_error, 写入该字段)
-- `n_system_error` / `system_errors`: formal repeat 阶段异常 (计入 n_system_error)
+地面边界: `EPS_GROUND = 1e-9 m` (1e-10 量级浮点舍入吸收, 不允许物理地下起爆);
+3 区分类: z < -EPS → invalid, -EPS ≤ z < 0 → 归一化为 0, z ≥ 0 → 合法.
 
-两类错误**均**使 `main --profile-measure` 返回非成功:
+### Profile Measurement 程序错误行为
+
+`main --profile-measure` 退出码合同 (保留, 不属于任何债务表):
 
 | 条件 | CLI rc |
 |---|---|
 | 全部 row `warm_up_error is None` 且 `n_system_error == 0` | 0 |
-| 任何 row 存在 `warm_up_error` (warm-up 异常) | 1 |
-| 任何 row `n_system_error > 0` (repeat 异常) | 1 |
+| 任何 row 存在 `warm_up_error` (warm-up 程序异常) | 1 |
+| 任何 row `n_system_error > 0` (formal repeat 程序异常) | 1 |
 | 参数错误 (--bogus / 类型错 / 范围外 / 互斥) | 2 |
-| 正常 smoke 退出码: 0 = 无 system_error, 1 = ≥1 个 system_error, 2 = 参数错误 (不变) | |
 
-**DEBT-Q2-PROFILE-EXIT-001 已关闭** (本轮 Final Close): warm-up 异常与
-formal repeat 异常在 CLI 退出码上**严格同权**, 任一发生均返回 rc=1.
+warm-up 异常与 formal repeat 异常在 CLI 退出码上**严格同权**:
+任一发生均返回 rc=1. 字段语义保持分离:
+- `warm_up_error` (warm-up 异常) 不计入 `n_system_error`
+- `n_system_error` / `system_errors` (repeat 异常) 各自独立保留
 
-地面边界: `EPS_GROUND = 1e-9 m` (1e-10 量级浮点舍入吸收, 不允许物理地下起爆);
-3 区分类: z < -EPS → invalid, -EPS ≤ z < 0 → 归一化为 0, z ≥ 0 → 合法.
+默认 smoke CLI 退出码: 0 无 system_error, 1 有 system_error, 2 参数错误
+(不因本轮修复而变化).
 
 性能校准 (3 候选 × 3 profile, warm-up=1, repeat=3, samples 复用):
 - Q1 锚点:  coarse 0.196 s / medium 1.85 s / fine 15.05 s

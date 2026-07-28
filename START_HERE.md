@@ -1,18 +1,17 @@
 # 项目驾驶舱
 
 ## 当前阶段
-**TASK_004 FOUNDATION (Q2 单弹评估器基础, NOT AN OPTIMIZATION RESULT)** —
-Q2 单弹策略四变量合同、合法性判断、单候选完整圆柱评估器与 100 候选
-本地 smoke 已实现. 已通过 **FIX 加固** (7 个 P1 修复组 + 本轮 3 个 P1 返工:
-u0 与地面合法性统一、profile-measure 暴露 system_error、真实非零邻域候选),
-85 个 Q2 单元测试 + 117 个 Q1 回归测试 = 202/202 全过.
-正式 Q2 搜索尚未启动. PR #3 / PR #4 均已合并; CI 已进入 main.
+**TASK_004 FOUNDATION FINAL REVIEW** — 建模主线文档同步阶段.
+Foundation 代码实现与本地验证已完成; PR #5 等待一次只读审核与合并.
+本轮**不等待 CI**; CI 不作为合并硬门槛; CI timeout 不代表数学失败.
+正式 Search 尚未运行; 远程存在尚未审核的 Search prototype.
+仍未生成 result*.xlsx.
 
 ## 本轮交付物 (TASK_004 Foundation)
 - `src/q2_single_bomb.py` — Q2 单弹评估器主程序 (Python 标准库, 复用 q1_baseline 与 q1_cylinder)
-- `tests/test_q2_single_bomb.py` — 单元测试 (85 测, 22 组 A-Q + U2/R2/S2 返工加固类, 全过)
-- `MODEL.md` — 增加"Q2 单弹策略评估合同"章节 + 本轮 FIX 7 P1 变更表
-- `NEXT_TASK.md` — 更新为 TASK_004 Foundation + 下一阶段 TASK_004 Search
+- `tests/test_q2_single_bomb.py` — 单元测试 (88 测, 22 组 A-Q + U2/R2/S2 返工加固类, 全过)
+- `MODEL.md` — 增加"Q2 单弹策略评估合同"章节 + 本轮 FIX 7 P1 + Final Close 行为合同
+- `NEXT_TASK.md` — TASK_004 FOUNDATION FINAL REVIEW AND MERGE
 - `README.md` — 同步当前阶段
 
 ## 本轮交付物 (历史: TASK_003, 等待 TASK_004 Search 接续)
@@ -85,30 +84,25 @@ u0 与地面合法性统一、profile-measure 暴露 system_error、真实非零
 - 仍标记为 FULL-CYLINDER CANDIDATE / EXPERIMENTAL, 不得冒充 VERIFIED / FINAL.
 
 ## 需要陈虹宇决定
-- (TASK_003 已合并) PR #3 完整圆柱 1.392384 s (EXPERIMENTAL) — 已合并不再需要决定
-- (TASK_004 Foundation Final Close) 是否合并 PR #5 进入 main?
-  - DEBT-Q2-PROFILE-EXIT-001 已关闭 (warm-up error → CLI rc=1)
-  - CI 已拆为 3 个并行 unittest job (q1-baseline / q1-cylinder / q2-foundation) + q1-cylinder-smoke
-  - 仍为 NOT AN OPTIMIZATION RESULT; 未启动 Search; 未生成 result*.xlsx
+- 是否在监管 CC 与 Hermes 核验后合并 PR #5?
 
 ## 下一任务 (本轮已唯一固定)
 
-**TASK_004 Foundation Final Close** — 等 PR #5 最终审核与 CI 全部 PASS.
+**TASK_004 FOUNDATION FINAL REVIEW** — 等只读监管审核与 Hermes 核验.
 
 任务目的:
-- 关闭 DEBT-Q2-PROFILE-EXIT-001 与 CI 25-min timeout 债务
-- 现有 Q1 几何冻结保持不变 (42 + 75 = 117 个回归测试全过)
+- Foundation 代码与本地验证已就绪 (88 Q2 + 117 Q1 = 205/205 本地通过)
+- 文档同步: NEXT_TASK / START_HERE / MODEL 一致, 真实反映 Foundation Final Review 状态
+- 本轮不等待 CI; CI 不作为合并硬门槛
 
-下一阶段: **TASK_004 Search** (尚未启动), 进入条件:
-- Foundation PR 审核并合并
-- CI 持续 PASS
-- 本地 Foundation smoke 性能已记入下一阶段预算
-- 搜索算法 / 收敛标准 / 性能预算重新冻结
-- 仍需外部授权才能启动 Search
+下一阶段: **TASK_004 SEARCH PROTOTYPE AUDIT AND SALVAGE** (尚未启动)
+- 远程已存在未审核 Search prototype commit
+- 必须在 Foundation 合并后由监管 CC / Hermes 审核
+- 仍需外部授权才能接受 Search prototype
 
 不得在本轮启动 TASK_004 Search.
 不得提前切换任何分支或 PR.
 
 ## 下一步只做一件事
-本轮完成 → 等 Foundation PR 审核 → 等待授权后再进入 TASK_004 Search.
+本轮完成 → 等 Foundation PR #5 只读审核 → 等待授权后再进入 Search prototype 审核.
 不得提前切换任何分支或 PR.
