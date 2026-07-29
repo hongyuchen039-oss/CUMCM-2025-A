@@ -15,6 +15,8 @@
 
 建模顺序：Q1（基线）→ Q2（单弹最优）→ Q3（单架多弹串接）
 → Q4（多机协同，单目标）→ Q5（多机协同，多目标）。
+Q2 决策变量已明确固定为 (heading / speed / release_time / delay)
+四个变量；Q3–Q5 尚未进入施工阶段。
 每完成一问需在 `RESULTS.md` 记录数值与单位，并按"PLAN/WORKING/VERIFIED/REVIEW/FIX"
 流程更新同一任务的 Draft PR。
 
@@ -35,8 +37,8 @@
    - 受领任务后立即按选定航向 / 速度直线匀速（z 不变）；
    - 70 ≤ |v| ≤ 140 m/s。
 3. 烟幕弹：
-   - 投放瞬间相对无人机共速（**[假设]**，待 Q1 显式声明）；
-   - 投放后做抛体运动，重力 g = 9.8 m/s² 沿 −z（**[假设]**）；
+   - 投放瞬间相对无人机共速（**[假设] FACTS.md §15**）；
+   - 投放后做抛体运动，重力 g = 9.8 m/s² 沿 −z（**[假设] FACTS.md §15**）；
    - 起爆瞬间形成球状云团中心；
    - 起爆后云团中心以 3 m/s 沿 −z 匀速下沉；
    - 视为半径 10 m 的球体；
@@ -830,7 +832,7 @@ formal execution path = `src.q2_search.run_formal_pipeline(seed, config, output_
 - 每个合法扰动以 fine / scan_step=0.005 评估.
 - 任一扰动改善 winner (Δ > 1e-9) → `local_not_yet_converged=True`
   → 阻止 winner 冻结, 触发有界局部 refinement.
-- 全部 16 个合法扰动均未改善 → `local_perturbation_passed=True`.
+- 全部 16 个合法扰动均未改善（[HISTORICAL RULE 仅说明定义；当前旧 formal-search candidate 实测 5/16 改善，因此触发 bounded refinement 并降级为 HISTORICAL FORMAL-SEARCH CANDIDATE]）。
 
 ### 7. 物理合法性 (P1-2 + P1-4)
 
@@ -860,12 +862,18 @@ formal execution path = `src.q2_search.run_formal_pipeline(seed, config, output_
 - formal search 是 deterministic uniform pseudorandom + 5-stage pipeline,
   **不是**全局最优证明, **不是**解析极值, **不是**官方答案.
 - 未做约束优化 / Pareto frontier / 多弹搜索 / LHS / 贝叶斯优化.
-- 跨 seed + 16 项扰动均未发现更优候选, 但综合搜索空间未穷尽.
+- 旧 formal-search candidate 的 16 项 one-variable perturbation 中
+  有 5 项改善（旧候选不是 16 项邻域局部极值），因此触发
+  bounded refinement；综合搜索空间未穷尽。
 - pilot best-known 注入依赖一次确定性 fixed-163 clean pilot (worktree
   必须 clean; 否则 fallback 链失败 → BLOCKED).
-- 等级: **FORMAL BEST-KNOWN Q2 CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM**.
-  不得在 formal winner 基础上声称 Q2 全局最优 / VERIFIED / FINAL /
-  官方答案, 除非独立审查签字并立项 TASK_006.
+- 等级: **FORMAL BEST-KNOWN Q2 CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM**
+  → 现已被审计 + doc-only P2 闭合后的更优候选替代为
+  `FORMAL BUDGET-LIMITED BEST-KNOWN Q2 CANDIDATE /
+   LOCAL CONVERGENCE NOT ESTABLISHED / NOT A PROVEN GLOBAL OPTIMUM`。
+  旧 2.48275905609131 s 候选降级为 `HISTORICAL FORMAL-SEARCH CANDIDATE`。
+  不得在 canonical 候选基础上声称 Q2 全局最优 / VERIFIED / FINAL /
+  官方答案, 除非独立审查签字并立项 TASK_006。
 
 ## TASK_005 LOCAL REFINEMENT — BOUNDED RUNTIME AMENDMENT (本轮生效)
 
@@ -956,3 +964,69 @@ elapsed_s / remaining_budget / eta_s.
 1. refined candidate stability 复评 (0.02 / 0.01 / 0.005 三档)
 2. 最终 16 项 one-variable perturbations (4 vars × 2 signs × 2 scales)
 3. 仅当 16 项中任一合法候选改善 > 1e-6 → 阻断冻结, 不得再自动启动第二轮
+
+---
+
+## 当前 Q2 result status (TASK_005 DOC-ONLY P2 CLOSED)
+
+> 独立 Audit 结论 B 已生效: passed with doc-only P2；canonical Q2
+> result 由 bounded refinement 4.260970878601073 s 候选晋升；旧
+> formal-search 2.48275905609131 s 候选降级。
+
+### Historical formal-search candidate (SUPERSEDED)
+
+| 字段 | 值 |
+|---|---|
+| heading_rad | 3.121767217560497 |
+| speed_mps | 115.43351397802584 |
+| release_time_s | 1.7672692031529031 |
+| delay_s | 3.889202402720746 |
+| total_duration_s | 2.48275905609131 |
+| status | HISTORICAL FORMAL-SEARCH CANDIDATE |
+
+### Canonical budget-limited best-known (CURRENT)
+
+| 字段 | 值 |
+|---|---|
+| heading_rad | 3.126767217560497 |
+| speed_mps | 116.43351397802584 |
+| release_time_s | 1.2672692031529031 |
+| delay_s | 3.789202402720746 |
+| total_duration_s | 4.260970878601073 |
+| interval (s) | (5.089825368500298, 9.350796247101371) |
+| status | FORMAL BUDGET-LIMITED BEST-KNOWN Q2 CANDIDATE |
+| qualifiers | LOCAL CONVERGENCE NOT ESTABLISHED |
+|           | NOT A PROVEN GLOBAL OPTIMUM |
+
+改善幅度（相对 historical）：
+- duration 改善 = 4.260970878601073 − 2.48275905609131 ≈ 1.778211822509763 s
+- 相对改善 ≈ 71.6%
+
+### Verified（独立 Audit 通过维度）
+
+- execution identity (worktree-clean + HEAD sha + script sha256 + q2_search code identity + refinement_config_sha256 + parent candidate identity + checkpoint_source_head_sha 全通过)
+- scan stability (0.02 / 0.010 / 0.005 三档 duration 完全一致)
+- physical validity (speed ∈ [70, 140], release ≥ 0, delay 在落地约束内, heading ∈ [0, 2π))
+- independent audit evaluator recomputation 6/6 exact match
+
+### Not established（明确不冒充）
+
+- local convergence: 未建立（新候选未在 clean HEAD 上重跑完整 16 项扰动，按 Audit 结论 B 不需要重跑）
+- global optimum: 未证明（bounded refinement 预算 32/32 耗尽；budget exhausted ≠ code failed）
+- official answer: 不冒充
+
+### Evidence lineage（保留分层，不混淆）
+
+```
+formal multi-seed exploration (3 seeds × 1000, 16 项扰动)
+    ↓ old candidate 5/16 改善, 不构成局部极值
+bounded refinement (32 evaluations, 3 levels, ≤2100 s)
+    ↓ refined candidate dur=4.260970878601073 s
+clean-head verification identity closure (5 evaluator calls)
+    ↓ identity / stability / physical validity 全过
+independent Audit (6 evaluator calls, exact match)
+    ↓ conclusion B (passed with doc-only P2)
+DOC-ONLY P2 CLOSED → canonical promotion
+```
+
+不得把 Audit PASS 解释为 local optimum 或 global optimum。
