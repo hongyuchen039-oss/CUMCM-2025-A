@@ -1,8 +1,9 @@
 # 当前唯一任务
 
 ## 任务编号
-TASK_005 VERIFICATION-ONLY CLOSURE (per MAIN 授权) — BUDGET-LIMITED BEST-KNOWN
-Q2 CANDIDATE / LOCAL CONVERGENCE NOT ESTABLISHED / NOT A PROVEN GLOBAL OPTIMUM.
+TASK_005 CLEAN-HEAD VERIFICATION IDENTITY CLOSURE (per MAIN §7
+修订) — BUDGET-LIMITED BEST-KNOWN Q2 CANDIDATE / LOCAL CONVERGENCE
+NOT ESTABLISHED / NOT A PROVEN GLOBAL OPTIMUM.
 
 ## 最终声明
 
@@ -14,25 +15,56 @@ declaration = "FORMAL BUDGET-LIMITED BEST-KNOWN Q2 CANDIDATE / "
 
 ## 唯一目标
 不修改本任务分支；不进入 Q3；不写 result*.xlsx；不声明全局最优；
-不扩大 refinement 预算。Verification 仅补跑 level_3 漏掉的 2 次
-delay_s ±0.025 + 3 档 stability + 物理合法性。
+不扩大 refinement 预算。
+
+把之前 4ca43eb 上的 verification-only closure 升级为
+CLEAN-HEAD IDENTITY-BOUND CLOSURE:
+- 删除 "deliberately do NOT raise on HEAD mismatch" fail-open 行为；
+- 把 verification runner 改为显式 identity 验证
+  (worktree clean + HEAD identity + refinement config sha256 +
+   parent candidate identity + q2_search code identity +
+   checkpoint source head_sha + evaluator_call_count = 5)；
+- 在 verification summary 中明确记录 verification_head_sha,
+  verification_script_sha256, q2_search_code_identity,
+  checkpoint_source_head_sha, checkpoint_identity_validation=true,
+  evaluator_call_count=5；
+- 仅在干净 committed HEAD 上重跑 5 次 evaluation (2 delay ±0.025
+  + 3 stability)，硬墙钟 300s。
 
 ## 为什么值得做
-bounded refinement 在 eval 32 (release_time_s -1) 触发 budget gate,
-level_3 sweep=1 漏跑 delay_s ±0.025 (2 evaluations), 未运行最终 stability
-+ 16 one-var verification. MAIN 授权只补这 4 次 evaluation, 不再启动新轮
-搜索.
+原 verification runner (4ca43eb) 在 HEAD 不匹配时静默跳过
+"deliberately do NOT raise on HEAD mismatch"，属于 fail-open 行为，
+与 MAIN 的 verification-only closure 目标（必须能独立验证
+checkpoint 身份）相冲突。升级后：
+1. 验证运行前 tracked worktree 必须 clean;
+2. 显式记录 verification_head_sha / script sha256 / q2_search
+   code identity / checkpoint_source_head_sha；
+3. 显式验证 refinement_config_sha256 / parent_candidate /
+   evaluations_completed=32 全部匹配；
+4. evaluator_call_count 必须正好等于 5。
 
-## Verification 结果 (clean HEAD, 仅 4 evaluations)
-- delay_s +0.025: candidate=(3.126767, 116.4335, 1.267269, 3.814202),
+## Verification 结果 (clean HEAD, 5 evaluator calls)
+
+```
+checkpoint_source_head_sha = ac97a38c7564c9d7f2c0793c935eeb27bbd1fa90
+checkpoint_identity_validation = True
+refinement_config_sha256 = 6f9cb503397996b788d0edfc6491b5a4425dd6e4a784f7ad82f8616acfd65a3d
+parent_candidate = (3.121767217560497, 115.43351397802584, 1.7672692031529031, 3.889202402720746)
+current_best_candidate = (3.126767217560497, 116.43351397802584, 1.2672692031529031, 3.789202402720746)
+current_best_duration = 4.260970878601073
+evaluations_completed = 32 (baseline before verify)
+
+delay_s +0.025: candidate=(3.126767, 116.4335, 1.267269, 3.814202),
   physical_ok=True, dur=4.258950, improves_best=False
-- delay_s -0.025: candidate=(3.126767, 116.4335, 1.267269, 3.764202),
+delay_s -0.025: candidate=(3.126767, 116.4335, 1.267269, 3.764202),
   physical_ok=True, dur=4.140284, improves_best=False
-- stability (scan_steps=0.02/0.01/0.005): 三档 duration=4.260970 完全一致,
+stability (scan_steps=0.02/0.01/0.005): 三档 duration=4.260971 完全一致,
   evaluation_id 三档同 (8557adb752828fef76ac21d48684cd15),
   stability_ok=True, delta_0p01_vs_0p005_s=0.000000
-- physical_validity: ok=True, reason=""
-- elapsed_seconds_verify: 79.28s
+physical_validity: ok=True, reason=""
+evaluator_call_count = 5/5
+elapsed_seconds_verify < 300s
+```
 
 ## Best-known candidate (NOT frozen)
 ```
@@ -41,28 +73,33 @@ s=116.43351397802584
 r=1.2672692031529031
 d=3.789202402720746
 total_duration_s=4.260970878601073  (scan_step=0.005 re-eval)
-interval=[from sweep_top1, TBD in real interval extraction; not computed]
 ```
 
 ## 严格不冒充
 - 不得冒充 VERIFIED / FINAL / 全局最优 / 官方答案.
 - 不得冒充 local_perturbation_passed (本轮未跑完整 16 项 one-var).
 - 不得冒充 local convergence established (声明 = NOT ESTABLISHED).
-- 不得替换 335a1f4d REVIEW 上的 FORMAL BEST-KNOWN Q2 CANDIDATE 冻结结论.
+- 不得替换 335a1f4d REVIEW 上的 FORMAL BEST-KNOWN Q2 CANDIDATE
+  冻结结论.
 
 ## Inputs
-- work/q2_formal_refinement/checkpoint.json (原子已更新, status=verify_done)
-- outputs/q2/q2_verify_summary.json (新 tracked, q2_verify_summary_v1 schema)
+- work/q2_formal_refinement/checkpoint.json
+  (gitignored, 已 restore 到 ac97a38 32-eval post-run state)
+- outputs/q2/q2_verify_summary.json (新 tracked, identity-bound)
 - work/q2_formal_verification.log (gitignored, tee output)
-- scripts/run_q2_formal_verify.py (新, 唯一 orchestrator for verification)
+- scripts/run_q2_formal_verify.py (新, identity-bound orchestrator)
 
 ## 允许修改
-本轮 (verification-only closure, 已完成):
-- outputs/q2/q2_verify_summary.json (tracked)
-- scripts/run_q2_formal_verify.py (新 tracked)
+本轮 (clean-head identity closure):
+- scripts/run_q2_formal_verify.py (rewrite with identity binding)
+- outputs/q2/q2_verify_summary.json (tracked, identity fields)
+- work/q2_formal_refinement/checkpoint.json
+  (gitignored, restore + atomic verify-done update)
+- work/q2_formal_verification.log (gitignored, tee output)
 - START_HERE.md / NEXT_TASK.md / RESULTS.md / MODEL.md / README.md
-- work/task_context.json (allowed_modified_paths 加 q2_verify_summary.json)
-- 1 个 VERIFY 风格 commit + push
+- work/task_context.json (expected_head 推齐新 FIX/REVIEW commit)
+- 1 个 FIX commit (verification runner with identity binding)
+  + 1 个 REVIEW commit (refresh clean-head verification evidence)
 
 ## 禁止修改
 - configs/q2_search_gate_v1.json (pilot 不动)
@@ -72,126 +109,58 @@ interval=[from sweep_top1, TBD in real interval extraction; not computed]
 - problem/ / outputs/submission/ / result*.xlsx
 - .github/ / CLAUDE.md / .claude/
 - main / Git 历史
-- 旧 pilot identity / 旧 PRE-FIX canonical / 旧 4-方向扰动描述
 - 335a1f4d 上的 FORMAL BEST-KNOWN Q2 CANDIDATE 冻结结论
 
-禁止: 自动合并 / 转 Ready / 写 result*.xlsx / 启动 Q3 / 扩大 refinement
-预算 / 跳过 verification / 改写正式历史.
+禁止: 自动合并 / 转 Ready / 写 result*.xlsx / 启动 Q3 / 扩大
+refinement 预算 / 跳过 identity 验证 / 改写正式历史.
 
 ## 必须执行
-1. 1 个 VERIFY commit (verification script + summary + docs);
+1. 1 个 FIX commit (verification runner with identity binding);
 2. push 到 task/TASK_005-q2-formal-search + 更新 PR #11 描述;
-3. 报告 final declaration 与 verification 结果;
-4. 立即停止 (不自动合并 / 不进入 Q3 / 不启动 Audit CC / Hermes / TASK_GOV_002).
+3. clean HEAD 上 5-evaluator-call verification 重跑
+   (≤300s wall-clock);
+4. 1 个 REVIEW commit (refresh clean-head verification evidence);
+5. push + 更新 PR #11 描述;
+6. 报告 final declaration 与 verification 结果;
+7. 立即停止 (不自动合并 / 不进入 Q3 / 不启动 Audit CC / Hermes /
+   TASK_GOV_002).
 
 ## 必须产出
-- 1 个 VERIFY commit (push 到现有分支和 PR #11);
-- outputs/q2/q2_verify_summary.json (tracked);
-- work/q2_formal_verification.log (gitignored);
-- 收口报告 (final declaration + verification evals + stability + 物理合法性
-  + 不冒充承诺).
+- 1 个 FIX commit + 1 个 REVIEW commit (均推到现有分支和 PR #11);
+- outputs/q2/q2_verify_summary.json
+  (含 verification_head_sha, verification_script_sha256,
+   q2_search_code_identity, checkpoint_source_head_sha,
+   checkpoint_identity_validation=true, evaluator_call_count=5);
+- work/q2_formal_refification.log (gitignored);
+- work/q2_formal_refinement/checkpoint.json (gitignored, identity
+  -bound verify-done state);
+- 收口报告 (final declaration + identity binding + 5 eval calls +
+  stability + 物理合法性 + 不冒充承诺).
 
 ## 验收标准
 1. outputs/q2/q2_verify_summary.json 已写入, declaration 严格匹配
    "FORMAL BUDGET-LIMITED BEST-KNOWN Q2 CANDIDATE / LOCAL CONVERGENCE
    NOT ESTABLISHED / NOT A PROVEN GLOBAL OPTIMUM";
-2. delay_s ±0.025 两项 evaluation 完成, 不改善 best-known;
-3. stability 三档 (0.02/0.01/0.005) duration 完全一致, stability_ok=True;
-4. physical_validity ok=True;
-5. PR #11 是 Open / Draft;
-6. 不写入 result*.xlsx, 不启动 Q3, 不声明全局最优.
+2. checkpoint_identity_validation=true, checkpoint_source_head_sha
+   =ac97a38...;
+3. evaluator_call_count=5, evaluation_id 与 strict 5-call signature
+   一致;
+4. delay_s ±0.025 两项 evaluation 完成, 不改善 best-known;
+5. stability 三档 (0.02/0.01/0.005) duration 完全一致,
+   stability_ok=True;
+6. physical_validity ok=True;
+7. elapsed_seconds_verify < 300s;
+8. PR #11 是 Open / Draft;
+9. 不写入 result*.xlsx, 不启动 Q3, 不声明全局最优.
 
 ## 停止条件
-VERIFY commit + push + PR #11 描述更新后立即停止, 不自动合并,
-不进入 Q3 / TASK_006, 不启动 Audit CC / Hermes / TASK_GOV_002.
-
-## 唯一目标
-不重跑 3 seeds / 不重跑 17 候选完整复评 / 不重跑 473 项全量回归.
-只在 clean HEAD 上做最多 32 次 refinement evaluation 的 deterministic
-coordinate search (3 levels × 单 sweep), 仅复评 2 个 parent (formal winner
-+ pert_09 best). 硬时间上限 2100s. 真实 winner duration 较大者作为
-refinement 起点 (不信任文档中 3.312s 的舍入).
-
-## 为什么值得做
-P1 证据门已闭环 (HEAD 335a1f4d):
-- canonical_result_sha256 = 2efcc91486d4ce9d22bfdedc0a4d57c36857d506126bca40c1a31695a96d1b3a
-- formal winner = (h=3.121767217560497, s=115.43351397802584,
-  r=1.7672692031529031, d=3.889202402720746, dur=2.48275905609131 s)
-- 16 项 one-var 扰动 5/16 改善 → local_perturbation_passed=False
-- 3 seeds × 1000 evals 全部 OK_FINE_RESULT, system_error=0
-
-pert_09 (release_time_s -0.5) 在 16 项扰动中持续改善 →
-值得在 ±0.2 / ±0.5 邻域做 local refinement.
-
-## 输入 (本轮, 不重跑)
-- src/q2_search.py (本轮追加 refinement 模块, 原 formal block 不动)
-- scripts/run_q2_formal.py (本轮加 --refine-only 分支)
-- tests/test_q2_search.py (本轮加 20 个 RefinementGateTests)
-- configs/q2_search_formal_v1.json (本轮不动)
-- outputs/q2/q2_formal_summary.json + per_seed_summary.json (本轮不动)
-- work/q2_formal/seed_* (gitignored, 本轮不动)
-
-## 允许修改
-本轮:
-- src/q2_search.py (追加 run_formal_refinement + RefinementGateTests 配合)
-- scripts/run_q2_formal.py (追加 --refine-only 入口)
-- tests/test_q2_search.py (追加 RefinementGateTests 类, 20 个新测试)
-- START_HERE.md / NEXT_TASK.md / RESULTS.md / MODEL.md / README.md
-- work/q2_formal_refinement/checkpoint.json (gitignored, runtime artifact)
-- work/q2_formal_refinement.log (gitignored, tee output)
-- outputs/q2/q2_refine_summary.json (refinement summary, tracked)
-- work/task_context.json (expected_head 推齐新 FIX commit)
-- 1 个 FIX commit + 1 个 REVIEW commit
-
-## 禁止修改
-- configs/q2_search_gate_v1.json (pilot 不动)
-- src/q1_baseline.py / src/q1_cylinder.py / src/q2_single_bomb.py
-- tests/test_q1_baseline.py / tests/test_q1_cylinder.py / tests/test_q2_single_bomb.py
-- scripts/verify_task_context.py / tests/test_verify_task_context.py
-- problem/ / outputs/submission/ / result1/2/3.xlsx
-- .github/ / CLAUDE.md / .claude/
-- main / Git 历史
-- 旧 pilot identity / 旧 PRE-FIX canonical / 旧 4-方向扰动描述
-
-禁止: 自动合并 / 转 Ready / 写 result*.xlsx / 启动 Q3 / 扩大 refinement
-预算到 33+ / 跳过 wall-clock gate / 跳过 budget gate / 改写正式历史.
-
-## 必须执行
-1. 1 个 FIX commit (refinement 代码 + 20 个新测试);
-2. 推 task_context.json expected_head 推齐新 FIX commit;
-3. 启动 refinement:
-   `set -o pipefail; python -u scripts/run_q2_formal.py --refine-only
-    2>&1 | tee work/q2_formal_refinement.log; rc=${PIPESTATUS[0]}; exit "$rc"`
-4. refine 结束后跑稳定性 (3 档) + 最终 16 项 one-var 扰动;
-5. 1 个 REVIEW commit (refresh 文档 + refinement summary);
-6. push 到 task/TASK_005-q2-formal-search + PR #11 描述更新;
-7. 报告 (per MAIN §十 格式).
-
-## 必须产出
-- 1 个 FIX commit + 1 个 REVIEW commit (均推到现有分支和 PR #11);
-- outputs/q2/q2_refine_summary.json (tracked, 含 refined candidate +
-  16 项最终扰动结果);
-- work/q2_formal_refinement/checkpoint.json (gitignored);
-- work/q2_formal_refinement.log (gitignored);
-- 210 项 tests.test_q2_search PASS (148 pilot + 22 formal + 20 P1 + 20 RefinementGate);
-- 收口报告.
-
-## 验收标准
-1. 210 项 tests.test_q2_search 全 PASS (本轮唯一一次 test_q2_search 全跑);
-2. PR #11 是 Open / Draft;
-3. refinement summary 写到 outputs/q2/q2_refine_summary.json;
-4. refinement 总 evaluations_completed ≤ 32;
-5. refinement 总 elapsed ≤ 2100s;
-6. 不写入 result*.xlsx, 不启动 Q3, 不声明全局最优;
-7. final 16 项 one-var 全部无改善 (≥ 1e-6 容差) → local_perturbation_passed=true
-   才能冻结; 否则 → TASK_005 LOCAL REFINEMENT P1 REMAINS — BLOCKED.
-
-## 停止条件
-refinement summary 写入 + 1 个 REVIEW commit + push + PR #11 描述更新
-后立即停止, 不自动合并, 不进入 Q3 / TASK_006, 不启动
-Audit CC / Hermes / TASK_GOV_002.
+FIX commit + REVIEW commit + push + PR #11 描述更新后立即停止,
+不自动合并, 不进入 Q3 / TASK_006, 不启动 Audit CC / Hermes /
+TASK_GOV_002.
 
 ## 失败模式 (fail-closed)
-- TASK_005 LOCAL REFINEMENT BUDGET EXHAUSTED — RESULT REVIEW BLOCKED
-- TASK_005 LOCAL REFINEMENT WALL-CLOCK GATE HIT — RESULT REVIEW BLOCKED
-- TASK_005 LOCAL REFINEMENT P1 REMAINS — MATH/RESULT REVIEW BLOCKED
+- TASK_005 CLEAN-HEAD VERIFICATION IDENTITY BINDING FAILED
+- TASK_005 CLEAN-HEAD VERIFICATION WALL-CLOCK GATE HIT
+- TASK_005 CLEAN-HEAD VERIFICATION EVALUATOR COUNT MISMATCH
+- TASK_005 CLEAN-HEAD VERIFICATION CHECKPOINT IDENTITY MISMATCH
+- TASK_005 CLEAN-HEAD VERIFICATION WORKTREE DIRTY AT START

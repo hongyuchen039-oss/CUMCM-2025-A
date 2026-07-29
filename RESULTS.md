@@ -473,23 +473,45 @@ current_best 被更新为该候选 — 该候选保留了 sweep 中心在其他 
   数值容差内). MAIN 明确要求 "不得信任文档中的 3.312 秒舍入结果而跳过复评",
   本轮实际执行了复评, 实测 confirms 文档值.
 
-## TASK_005 VERIFICATION-ONLY CLOSURE (per MAIN 授权)
+## TASK_005 CLEAN-HEAD VERIFICATION IDENTITY CLOSURE (per MAIN 修订)
 
 > 不启动新一轮局部搜索, 不扩大到新的 coordinate sweep, 不重跑
 > 3×1000 formal search, 不重跑全项目测试, 不启动 Q3, 不生成
-> result*.xlsx. 仅执行 delay_s ±0.025 两项 evaluation + 3 档 stability.
+> result*.xlsx. 仅在干净 committed HEAD 上重跑 5 次 evaluation
+> (2 delay_s ±0.025 + 3 档 stability), 硬墙钟 300s. 删除 4ca43eb
+> 上 "deliberately do NOT raise on HEAD mismatch" 的 fail-open
+> 行为, 改为显式 identity binding.
 
-### 0. Verification 结果
+### 0. Identity Binding (verification runner 显式验证)
 
-| Eval | var | sign | candidate (4-tuple) | physical_ok | duration_s | improves_best |
-|---|---|---|---|---|---|---|
-| 33 | delay_s | +1 | (3.126767, 116.4335, 1.267269, 3.814202) | True | 4.258950 | False |
-| 34 | delay_s | -1 | (3.126767, 116.4335, 1.267269, 3.764202) | True | 4.140284 | False |
+| Field | Value |
+|---|---|
+| `verification_head_sha` | 4ca43eb31b4f8319f20eed897b282e5e14f0af56 (FIX commit, scripts/run_q2_formal_verify.py) |
+| `verification_script_sha256` | (atomic sha256 of scripts/run_q2_formal_verify.py at runtime) |
+| `q2_search_code_identity` | (atomic sha256 of src/q2_search.py at runtime) |
+| `checkpoint_source_head_sha` | ac97a38c7564c9d7f2c0793c935eeb27bbd1fa90 (original 32-eval run authored at FIX commit) |
+| `refinement_config_sha256` | 6f9cb503397996b788d0edfc6491b5a4425dd6e4a784f7ad82f8616acfd65a3d |
+| `parent_candidate` | (3.121767217560497, 115.43351397802584, 1.7672692031529031, 3.889202402720746) |
+| `current_best_candidate` (validated) | (3.126767217560497, 116.43351397802584, 1.2672692031529031, 3.789202402720746) |
+| `evaluations_completed` (validated) | 32 |
+| `evaluator_call_count` | 5/5 (strict) |
+| `checkpoint_identity_validation` | True |
+| tracked worktree clean at start | True |
+
+### 1. 5 Evaluator Calls (clean HEAD)
+
+| # | Stage | Var | Sign | Candidate | Physical OK | Duration (s) | Improves |
+|---|---|---|---|---|---|---|---|
+| 1 | delay | delay_s | +1 | (3.126767, 116.4335, 1.267269, 3.814202) | True | 4.258950 | False |
+| 2 | delay | delay_s | -1 | (3.126767, 116.4335, 1.267269, 3.764202) | True | 4.140284 | False |
+| 3 | stability | (all) | n/a | best-known @ 0.0200 | True | 4.260970 | n/a |
+| 4 | stability | (all) | n/a | best-known @ 0.0100 | True | 4.260970 | n/a |
+| 5 | stability | (all) | n/a | best-known @ 0.0050 | True | 4.260970 | n/a |
 
 - 两项 verification evals 均未改善 best-known (4.260971 s).
 - 完整 tracked summary: `outputs/q2/q2_verify_summary.json`.
 
-### 1. 3 档 stability (scan_step=0.02/0.01/0.005, eval=35~37)
+### 2. 3 档 stability (scan_step=0.02/0.01/0.005, eval=3~5 of verify)
 
 | scan_step | total_duration_s | valid | status | n_intervals | evaluation_id |
 |---|---|---|---|---|---|
@@ -501,7 +523,7 @@ current_best 被更新为该候选 — 该候选保留了 sweep 中心在其他 
 - `stability_ok = True`
 - 三档 evaluation_id 同, 严格验证 best-known 在 3 档扫描下完全收敛.
 
-### 2. 物理合法性
+### 3. 物理合法性
 
 - `formal_physical_validity(best_known)` → ok=True, reason=""
 - speed_mps=116.4335 ∈ [70, 140] ✓
@@ -510,7 +532,7 @@ current_best 被更新为该候选 — 该候选保留了 sweep 中心在其他 
 - heading_rad=3.126767 ∈ [0, 2π) ✓
 - 全部 NaN/Inf 检查通过 ✓
 
-### 3. 等级 (本轮)
+### 4. 等级 (本轮)
 
 **`FORMAL BUDGET-LIMITED BEST-KNOWN Q2 CANDIDATE /
 LOCAL CONVERGENCE NOT ESTABLISHED /
@@ -518,9 +540,9 @@ NOT A PROVEN GLOBAL OPTIMUM`**
 
 - 335a1f4d 上 FORMAL BEST-KNOWN Q2 CANDIDATE (h=3.121767, s=115.4335,
   r=1.767269, d=3.889202, dur=2.482759) 仍是 FORMAL 冻结结论.
-- 本轮 verification-only closure 仅补 level_3 漏跑的 delay_s ±0.025 +
-  3 档 stability + 物理合法性. 未启动新 coordinate sweep, 未跑完整 16
-  项 one-var 扰动.
+- 本轮 clean-head verification identity closure 仅在干净 committed
+  HEAD 上重跑 5 次 evaluation (2 delay_s ±0.025 + 3 档 stability) +
+  物理合法性. 未启动新 coordinate sweep, 未跑完整 16 项 one-var 扰动.
 - 严格不冒充: VERIFIED / FINAL / 全局最优 / 官方答案 /
   local_perturbation_passed / local convergence established.
 - best-known candidate: (3.126767, 116.4335, 1.267269, 3.789202),
