@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "task_id": "TASK_GOV_002",
+  "repository_full_name": "hongyuchen039-oss/CUMCM-2025-A",
+  "worktree_path": "<ABSOLUTE_EXPECTED_WORKTREE>",
+  "branch": "task/TASK_GOV_002-harness-lite",
+  "expected_head": "<EXPECTED_SHA>",
+  "base_branch": "main",
+  "base_sha": "664a203da7b027157eded94e82d359f898b79ef6",
+  "pr_number": null,
+  "pr_head_branch": "task/TASK_GOV_002-harness-lite",
+  "allowed_modified_paths": [],
+  "allowed_untracked_paths": ["work/"],
+  "forbidden_paths": [
+    "src/q1_baseline.py",
+    "src/q1_cylinder.py",
+    "src/q2_single_bomb.py",
+    "src/q2_search.py",
+    "RESULTS.md",
+    "outputs/",
+    "problem/"
+  ]
+}
