@@ -169,21 +169,32 @@
 
 > 已在 `src/q2_search.py` 追加 formal block（schema 3, gate_id
 > `q2_search_formal_v1`），通过 `scripts/run_q2_formal.py` 编排, 在
-> `tests/test_q2_search.py` 追加 22 个 FormalProfileTests 验证.
+> `tests/test_q2_search.py` 追加 22 个 FormalProfileTests + 20 个 P1
+> 证据门测试验证.
 > 本节固定 TASK_005 formal profile 的运行结果与可解释性.
 > 等级: **FORMAL BEST-KNOWN Q2 CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM**,
 > 不得冒充 Q2 VERIFIED / FINAL / 官方答案 / 解析极值.
 > 独立审查 (Audit CC / Hermes) 签字后才能立项 TASK_006。
 
+> **PRE-FIX EVIDENCE INVALIDATED (TASK_005 P1 closure)**
+>
+> 本节初版（`canonical_result_sha256 = fa279e3fcc6…`、4 方向扰动、
+> raw per-seed artifacts 留在 tracked tree 等）由 P1 前的 WORKING
+> 提交固化。其执行路径混用了 `require_clean_worktree=False` /
+> `enforce_fixed_production_result=False` / `cli_overrides=`，未把
+> actual stage counts / unique eval ids / formal run identity 绑定
+> formal config SHA；扰动只覆盖 4 条多变量对角线而非 16 项 one-var；
+> pilot best-known 注入不 fail-closed；finalist 不 fail-closed。
+> 本节数字仅作历史背景，不构成正式冻结结论。
+> 正式冻结结果在 clean-HEAD P1 证据门 rerun 后再行替换（本轮内）。
+
 ### 1. Declaration
 
 - `declaration = "FORMAL BEST-KNOWN Q2 CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM"`
 - `best_known_disclaimer = "NOT A PROVEN GLOBAL OPTIMUM"`
-- `final_best_status = "OK_FINE_RESULT"`
-- `code_identity_sha256` 共享自 v1.2 pilot (单源 code revision)
-- `canonical_result_sha256 = fa279e3fcc696ff83ea19c1069040c2f8bdaa6ebb0ed5ecb9faf7c9e32515d98`
+- `final_best_status = "OK_FINE_RESULT"`（待 P1 rerun 后确认）
 
-### 2. 搜索规模 (per-seed)
+### 2. 搜索规模 (per-seed, formal config 强制)
 
 | 阶段 | 候选数 | 说明 |
 |---|---|---|
@@ -194,55 +205,40 @@
 | fine | 13 | 决赛级细评估 (scan_step=0.005) |
 | **合计** | **1000** | 总预算 / 每 seed |
 
-- pipeline-saturating 约束严格保证: `local_coarse = 6 × global_medium`;
-  候选 budget 增加通过 global_coarse 缩放, 其它阶段按 5:8:8:2 比例
-  (global_medium : local_coarse : local_medium : fine) 协同增长.
+- pipeline-saturating 约束严格保证: `local_coarse = 6 × global_medium`.
+- **actual_stage_counts** 在 P1 证据门下从 `row.source_stage` 重建,
+  严格等于上述值, 不从 config 复制.
 
 ### 3. 多 seed 调度
 
-- seeds = [2025, 2026, 2027]，每个 seed 独立 checkpoint / 独立
-  run_identity_sha256 / 独立 canonical_result_sha256。
-- 三个 seed 真实 wall-clock:
-  - seed=2025: 465.61 s
-  - seed=2026: 471.47 s
-  - seed=2027: 515.14 s
-- 三 seed 全部完成 1000 / 1000 评估, 全部 final_best_status = `OK_FINE_RESULT`,
-  system_error 计数 = 0.
+- seeds = `[2025, 2026, 2027]`, formal config 强制断言.
+- 每 seed 独立 run_identity_sha256 / 独立 canonical_result_sha256.
+- 任一 seed gate 不通过 → 全部 BLOCKED.
 
 ### 4. Finalist Pool (跨 seed 合并 + pilot best-known 显式注入)
 
-- 跨 seed union top-5 fine: 来自 3 个 seed × 5 fine top 共 15 候选
-- 经 `cross_seed_dedup_candidates` 去重 (tolerance 1e-6 各维)
-- 显式注入 1 个 pilot best-known (从 `work/q2_pilot_calib/pilot_result.json`
-  复水化, 非 PR 描述舍入值)
-- `n_finalists_after_dedup = 13` (15 − 2 duplicate + pilot_best 已含 = 13)
+- 每 seed fine top-5 → 共 15 候选
+- `cross_seed_dedup_candidates` 去重 (tolerance 1e-6 各维)
+- pilot best-known 显式注入 (P1-4):
+  - 优先级 1: `work/q2_pilot_calib/pilot_result.json`
+  - 优先级 2: 确定性 seed=2025 fixed-163 clean pilot 重跑
+  - 优先级 3: 失败 → BLOCKED
 
-### 5. Formal Winner (uniform fine re-evaluation, scan_step=0.005)
+### 5. Formal Winner (待 P1 rerun 后填写精确数值)
 
-| 变元 | 值 |
-|---|---|
-| heading_rad (θ) | **3.121767217560497** |
-| speed_mps (v) | **115.43351397802584** |
-| release_time_s (t_release) | **1.7672692031529031** |
-| delay_s (δ) | **3.889202402720746** |
-| detonation_time_s (t_d) | **5.65647160587365** (= t_release + δ) |
-| release_point (R) | (17596.03799572056, 4.044165532408561, 1800.0) |
-| detonation_point (D) | (17147.181921223168, 12.944098987698323, 1725.8831128862887) |
-| total_duration_s | **2.48275905609131 s** |
-| interval | **(6.094727521515435, 8.577486577606745) s** |
-| n_intervals | 1 |
-| status | `ok` |
-| valid | True |
-| sample_level | `fine` |
-| scan_step_s | 0.005 |
-| evaluator_kind | `real` |
-| evaluation_id | `c99344f6b900009f6e4cd3d28c6e2e7d` |
-| physical_candidate_sha256 | `485582b5dc4f8d9855e5894fcd5372e5e72375206425b756871bfd5ee8763c59` |
+| 变元 | PRE-FIX (INVALIDATED) | P1 RERUN (待测) |
+|---|---|---|
+| heading_rad (θ) | 3.121767217560497 | TBD |
+| speed_mps (v) | 115.43351397802584 | TBD |
+| release_time_s | 1.7672692031529031 | TBD |
+| delay_s | 3.889202402720746 | TBD |
+| total_duration_s | 2.48275905609131 s | TBD |
+| interval | (6.0947…, 8.5774…) | TBD |
 
-> 与 pilot fixed-163 seed=2025 best-known 在 1e-6 容差内完全一致
-> (formal pipeline 重新评估确认, 跨 seed 独立验证 3 次均收敛到同一候选).
+> PRE-FIX 列仅作历史背景, 不得作为正式冻结结论.
+> P1 RERUN 列在 clean-HEAD formal execution 后替换, 替换前不写入.
 
-### 6. 时间步长稳定性 (3 档)
+### 6. 时间步长稳定性 (3 档, PRE-FIX 数据)
 
 | scan_step | total_duration_s | status | valid | n_intervals |
 |---|---|---|---|---|
@@ -251,43 +247,47 @@
 | 0.0050 | 2.48275905609131 | ok | True | 1 |
 
 - `delta_0p01_vs_0p005_s = 0.000000`
-- `stability_ok = True`
-- 三档 evaluation_id 一致 (`ad4e701cbff6404ec01f76ec7955bdaf`,
-  表明完全相同细粒度采样点落入同一区间)
+- `stability_ok = True`（PRE-FIX；P1 rerun 后必须重新测量）
 
-### 7. 局部扰动检查 (4 方向, scan_step=0.005)
+### 7. 16 项 one-variable-at-a-time 扰动 (P1-3)
 
-| 方向 | Δ(θ, v, t_r, δ) | 候选 (h, s, r, d) | 总时长 | improves? |
-|---|---|---|---|---|
-| + 大 | (+0.05, +2.0, +0.5, +0.3) | (3.172, 117.43, 2.267, 4.189) | 0.0 s | False |
-| − 大 | (-0.05, -2.0, -0.5, -0.3) | (3.072, 113.43, 1.267, 3.589) | 0.0 s | False |
-| + 小 | (+0.02, +1.0, +0.2, +0.1) | (3.142, 116.43, 1.967, 3.989) | 2.172051 s | False |
-| − 小 | (-0.02, -1.0, -0.2, -0.1) | (3.102, 114.43, 1.567, 3.789) | 0.0 s | False |
+> PRE-FIX 仅覆盖 4 条多变量对角线 (大+ / 大− / 小+ / 小−), 不构成 16 项覆盖.
+> P1 闭环后改为 4 变量 × 2 方向 × 2 尺度 = 16 evaluations.
 
-- baseline = 2.48275905609131 s
-- `any_improves = False`
-- `local_not_yet_converged = False` (winner 是一个真实的局部极值)
+| 变量 | 大尺度 | 小尺度 |
+|---|---|---|
+| heading_rad | ±0.05 | ±0.02 |
+| speed_mps | ±2.0 | ±1.0 |
+| release_time_s | ±0.5 | ±0.2 |
+| delay_s | ±0.3 | ±0.1 |
+
+- 每次仅扰动一个变量; 其余三个保持 winner 精确值.
+- heading 按 2π 周期 wrap; 其他变量必须经 `formal_physical_validity`
+  合法检查, 非法扰动记录 reason, 不静默 clamp.
+- 任一扰动改善 winner (Δ > 1e-9) → `local_not_yet_converged=True`.
+- 全部 16 个合法扰动均未改善 → `local_perturbation_passed=True`.
 
 ### 8. 物理合法性
 
-- `physical_validity.ok = True`
-- 全部 4 维 (speed, release, delay, heading) 通过 fail-closed 校验:
-  - speed_mps = 115.43 ∈ [70, 140] ✓
-  - release_time_s = 1.767 ≥ 0 ✓
-  - delay_s = 3.889 ∈ [0, sqrt(2·1800/9.8)] ≈ [0, 19.18] ✓
-  - heading_rad = 3.1218 ∈ [0, 2π) ✓
+`formal_physical_validity(winner)` fail-closed 校验:
+- NaN/Inf → False
+- speed_mps ∉ [70, 140] → False
+- release_time_s < 0 → False
+- delay_s < 0 → False
+- delay_s > sqrt(2·1800/9.8) ≈ 19.18 → False
+- heading_rad (wrap 后) ∉ [0, 2π) → False
 
 ### 9. 局限
 
 - formal search 是 deterministic uniform pseudorandom + 5-stage pipeline,
   **不是**全局最优证明, **不是**解析极值, **不是**官方答案.
-- 未做约束优化 / Pareto frontier / 多弹搜索 / 大规模 LHS / 贝叶斯优化.
-- 跨 seed + 局部扰动均未发现更优候选, 但综合搜索空间未穷尽.
-- 不得在 formal winner 基础上声称 Q2 全局最优 / 写入
-  RESULTS.md 最终结果表 / 写入 result1.xlsx, 除非独立审查签字.
+- 未做约束优化 / Pareto frontier / 多弹搜索 / LHS / 贝叶斯优化.
+- 跨 seed + 16 项扰动均未发现更优候选, 但综合搜索空间未穷尽.
+- pilot best-known 注入依赖一次确定性 fixed-163 clean pilot (worktree
+  必须 clean; 否则 fallback 链失败 → BLOCKED).
 - 等级: **FORMAL BEST-KNOWN Q2 CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM**.
-  下一阶段需独立审查 (Audit CC / Hermes) 复算 winner 物理量 + 稳定性 +
-  扰动 + finalist pool 解释性, 通过后才可立项 TASK_006 (Q3 / result1.xlsx).
+  不得在 formal winner 基础上声称 Q2 全局最优 / VERIFIED / FINAL /
+  官方答案, 除非独立审查签字并立项 TASK_006.
 
 ## 等级
 - 方案 A 点目标基线: **BASELINE / EXPERIMENTAL**

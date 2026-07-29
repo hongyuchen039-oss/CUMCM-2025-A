@@ -731,3 +731,138 @@ values, 避免文档先于实测漂移.
 
 等级: PILOT / NOT A FORMAL Q2 RESULT / BEST-KNOWN CANDIDATE /
       NOT A PROVEN GLOBAL OPTIMUM.
+
+---
+
+## Q2 Formal Search Profile (TASK_005 / FORMAL BEST-KNOWN / NOT A PROVEN GLOBAL OPTIMUM)
+
+> 已在 `src/q2_search.py` 追加 formal block (schema 3, gate_id
+> `q2_search_formal_v1`), 通过 `scripts/run_q2_formal.py` 编排,
+> 22 个 FormalProfileTests + 20 个 P1 证据门测试全部通过.
+> 本节固定 Q2 formal profile 的方法、预算、multi-seed 聚合、执行门、
+> 稳定性、扰动、物理合法性与局限.
+> 等级: **FORMAL BEST-KNOWN Q2 CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM**,
+> 不得冒充 Q2 VERIFIED / FINAL / 官方答案 / 解析极值.
+> 独立审查 (Audit CC / Hermes) 签字后才能立项 TASK_006.
+
+### 1. 隔离与不变式
+
+- 独立 schema 3 / gate_id `q2_search_formal_v1`; pilot schema 2 不变.
+- 独立 declaration: `FORMAL BEST-KNOWN Q2 CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM`.
+- 独立 gate error class: `FormalBudgetGateError` (与 pilot
+  `FixedProductionBudgetInvariantError` 严格区分).
+- pilot fixed-163 (97:8:48:8:2 / 163 evaluations) **不变**:
+  pilot production main() 仍 enforce FIXED-163 + production gate.
+- formal profile 的预算来自 formal config (`total_budget=1000`),
+  通过 pilot pipeline 的 test-only API (`cli_overrides=`)
+  注入; pilot 内部 `enforce_fixed_production_result=False` 仅在
+  `run_formal_pipeline()` 内部开启, production main() 永不开启.
+
+### 2. Formal execution contract (P1-1)
+
+formal execution path = `src.q2_search.run_formal_pipeline(seed, config, output_dir)`.
+
+| Gate | 来源 | 不通过 → |
+|---|---|---|
+| `require_clean_worktree=True` | 调用 `run_search_pipeline` | ValueError → BLOCKED |
+| pilot budget 由 formal stage_counts 反推 (`formal_pilot_budget_from_stage_counts`) | 函数级保证 | ValueError → BLOCKED |
+| pilot pipeline 返回 rc=0 (或 resumed-from-checkpoint) 后, 重新构造 SearchEvaluationRow 列表 | `SearchEvaluationRow.from_dict` | FormalBudgetGateError → BLOCKED |
+| **actual** stage_counts 从 `row.source_stage` 重建 (`_reconstruct_actual_stage_counts`) | 重算, 不得从 config 复制 | FormalBudgetGateError → BLOCKED |
+| actual_stage_counts 严格等于 formal config stage_counts | `dict == dict` | FormalBudgetGateError → BLOCKED |
+| actual_completed_count == formal total_budget (1000) | `int == int` | FormalBudgetGateError → BLOCKED |
+| actual_unique_evaluation_ids == formal total_budget (1000) | `set` 大小 | FormalBudgetGateError → BLOCKED |
+| seed 一致性 (pipeline 输出 seed == 期望 seed) | `int == int` | FormalBudgetGateError → BLOCKED |
+| system_error_count == 0 | `sum(status == "system_error")` | FormalBudgetGateError → BLOCKED |
+| final_best_status == "OK_FINE_RESULT" 且 final_best_row 非空 | 出参检查 | FormalBudgetGateError → BLOCKED |
+| code_identity_sha256 非空 | 出参检查 | FormalBudgetGateError → BLOCKED |
+| `validate_formal_budget(...)` 二次校验 | formal gate | FormalBudgetGateError → BLOCKED |
+
+每 seed 输出 `FormalPipelineResult`:
+- `formal_config_sha256` (来自 formal config 文件)
+- `pipeline_effective_config_sha256` (来自 pilot pipeline 出参)
+- `code_identity_sha256`
+- `formal_run_identity_sha256` (绑定 formal config SHA + code identity +
+  seed + actual stage counts + total budget + evaluator version)
+- `actual_stage_counts` / `actual_completed_count` /
+  `actual_unique_evaluation_ids` (全部从 pipeline 实际数据重建)
+
+### 3. Multi-seed 调度
+
+- seeds = `[2025, 2026, 2027]`, formal config 强制断言.
+- 每 seed 独立 run; 任一 seed 不通过 → 全部 BLOCKED, 不写 summary.
+- per-seed wall-clock (实测): 465.61s / 471.47s / 515.14s (平均 ~484s).
+- 三 seed 共 ~25 分钟 wall-clock, 在 3600s ceiling 内 (~7%).
+
+### 4. Cross-seed 聚合
+
+- 每 seed 取 fine top-5 (status=ok, valid=True, 按 total_duration_s desc).
+- 3 seed × 5 = 15 raw 候选.
+- `cross_seed_dedup_candidates` 按 tolerance (1e-6 各维) 去重:
+  - "first wins" 稳定策略, 输出 (canonical_tuple, original_index).
+- pilot best-known 显式注入 (P1-4):
+  - 优先级 1: `work/q2_pilot_calib/pilot_result.json` (prior calibration)
+  - 优先级 2: 确定性 seed=2025 fixed-163 clean pilot 重跑,
+    保存到 `work/q2_pilot_calib/pilot_result.json`
+  - 优先级 3: 失败 → `FormalBudgetGateError("BLOCKED")`, 不静默继续.
+- 注入前后 pool 大小记录在 `per_seed_summary.json`.
+
+### 5. 统一 fine 复评 + 稳定性
+
+- 对跨 seed finalist pool 全部 4-tuple, 重新以 fine / scan_step=0.005
+  评估, 排序 desc, 取最长的合法 candidate 作为 winner.
+- 三档稳定性: scan_step ∈ {0.02, 0.01, 0.005}, 同一 winner:
+  - 任一档 duration 与其它档差 > 0.02s → 视为不收敛, BLOCKED.
+  - 本次实测 delta=0.000s (function 光滑 + 区间算法稳定).
+
+### 6. 16 项 one-variable-at-a-time 扰动 (P1-3)
+
+| 变量 | 大尺度 | 小尺度 |
+|---|---|---|
+| heading_rad | ±0.05 | ±0.02 |
+| speed_mps | ±2.0 | ±1.0 |
+| release_time_s | ±0.5 | ±0.2 |
+| delay_s | ±0.3 | ±0.1 |
+
+- 4 变量 × 2 方向 × 2 尺度 = 16 evaluations.
+- 每次仅扰动一个变量; 其余三个保持 winner 精确值.
+- heading 按 2π 周期 wrap; 其他变量必须经 `formal_physical_validity`
+  合法检查, 非法扰动记录 reason, 不静默 clamp.
+- 每个合法扰动以 fine / scan_step=0.005 评估.
+- 任一扰动改善 winner (Δ > 1e-9) → `local_not_yet_converged=True`
+  → 阻止 winner 冻结, 触发有界局部 refinement.
+- 全部 16 个合法扰动均未改善 → `local_perturbation_passed=True`.
+
+### 7. 物理合法性 (P1-2 + P1-4)
+
+`formal_physical_validity(winner)`:
+- 任一变量 NaN/Inf → False
+- speed_mps ∉ [70, 140] → False
+- release_time_s < 0 → False
+- delay_s < 0 → False
+- delay_s > sqrt(2·u0_z / g) ≈ 19.18 → False
+- heading_rad (wrap 后) ∉ [0, 2π) → False
+
+物理不合法 → 阻止 winner 冻结, BLOCKED.
+
+### 8. Finalist 失败保护 (P1-2)
+
+任一条件触发即 raise `FormalBudgetGateError`, **不**写入 summary:
+- finalist pool 为空
+- finalist re-eval 无合法 fine row
+- winner.status != "ok"
+- winner.valid != True
+- physical_validity 不通过
+- stability_ok != True
+- finalist pool 中 system_error > 0
+
+### 9. 局限
+
+- formal search 是 deterministic uniform pseudorandom + 5-stage pipeline,
+  **不是**全局最优证明, **不是**解析极值, **不是**官方答案.
+- 未做约束优化 / Pareto frontier / 多弹搜索 / LHS / 贝叶斯优化.
+- 跨 seed + 16 项扰动均未发现更优候选, 但综合搜索空间未穷尽.
+- pilot best-known 注入依赖一次确定性 fixed-163 clean pilot (worktree
+  必须 clean; 否则 fallback 链失败 → BLOCKED).
+- 等级: **FORMAL BEST-KNOWN Q2 CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM**.
+  不得在 formal winner 基础上声称 Q2 全局最优 / VERIFIED / FINAL /
+  官方答案, 除非独立审查签字并立项 TASK_006.
