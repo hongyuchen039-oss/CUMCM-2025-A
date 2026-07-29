@@ -7,11 +7,12 @@
 Q2 单架 FY1 投放一枚烟幕弹的最优策略。
 
 ## 当前阶段
-TASK_005 LOCAL REFINEMENT — BOUNDED RUNTIME AMENDMENT (MAIN 补充修订).
+TASK_005 LOCAL REFINEMENT — BUDGET EXHAUSTED (RESULT REVIEW BLOCKED).
 P1 证据门闭环已完成 (REVIEW 335a1f4d, canonical_result_sha256=2efcc91486d4…);
-本轮做最多 32 次 refinement evaluation 的 deterministic coordinate search,
-仅复评 2 个 parent (formal winner + pert_09 best), 不重跑 3 seeds,
-不重跑 17 候选完整复评, 不重跑 473 全量回归.
+local refinement 32/32 evals 用完, level_3 sweep=1 中 release_time_s -1
+之后 budget gate 触发, 未能运行最终 stability + 16 项 one-var 验证.
+Refined candidate (sweep scan_step=0.01): h=3.126767, s=116.4335,
+r=1.267269, d=3.789202, dur=4.260971 s. 仍为 best-known, 不构成冻结.
 
 ## 最后可信成果
 - Q1 点目标基线、完整圆柱严格遮蔽候选已冻结（不在本任务修改）；

@@ -1,7 +1,7 @@
 # 当前唯一任务
 
 ## 任务编号
-TASK_005 LOCAL REFINEMENT — BOUNDED RUNTIME AMENDMENT (MAIN 补充修订).
+TASK_005 LOCAL REFINEMENT — BUDGET EXHAUSTED (RESULT REVIEW BLOCKED).
 
 ## 唯一目标
 不重跑 3 seeds / 不重跑 17 候选完整复评 / 不重跑 473 项全量回归.

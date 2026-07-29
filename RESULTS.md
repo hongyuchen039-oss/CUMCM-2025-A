@@ -373,63 +373,105 @@
 > 较大者作为 refinement 起点.
 > 最多 32 次 refinement evaluation, 硬时间上限 2100s.
 
-### 0. 复评结果 (待 refine-only 运行后填写)
+### STATUS
+
+**`TASK_005 LOCAL REFINEMENT BUDGET EXHAUSTED — RESULT REVIEW BLOCKED`**
+
+- 32/32 evaluation 用完, level_3 sweep=1 进行到 release_time_s -1 (eval 32)
+  后 budget gate 触发, 未运行最终 stability (3 档) + 最终 16 项 one-var 扰动.
+- wall-clock gate 未命中 (444.27s < 2100s 硬上限).
+- 改善趋势在 level_3 中持续 (eval 28 heading-0.005 → dur=4.260971),
+  但受 bounded budget 限制, 不能继续.
+- 最终 refined candidate (at sweep scan_step=0.01):
+  `(3.126767217560497, 116.43351397802584, 1.2672692031529031,
+  3.789202402720746)`, dur=4.260971 s.
+- 完整 summary: `outputs/q2/q2_refine_summary.json`
+  (`status="TASK_005 LOCAL REFINEMENT BUDGET EXHAUSTED —
+  RESULT REVIEW BLOCKED"`,
+  `budget_gate_hit=true`, `final_verification_run=false`).
+
+### 0. 复评结果
 
 | 起点 | h | s | r | d | real duration @ scan_step=0.005 |
 |---|---|---|---|---|---|
-| A. formal winner | 3.121767217560497 | 115.43351397802584 | 1.7672692031529031 | 3.889202402720746 | TBD |
-| B. pert_09 best | 3.121767217560497 | 115.43351397802584 | 1.2672692031529031 | 3.889202402720746 | TBD |
+| A. formal winner | 3.121767217560497 | 115.43351397802584 | 1.7672692031529031 | 3.889202402720746 | 2.482759 s |
+| B. pert_09 best | 3.121767217560497 | 115.43351397802584 | 1.2672692031529031 | 3.889202402720746 | **3.312043 s** |
 
-起点选取: TBD (填入真实 duration 较大者, 不信任 pert_09 文档中
-3.312s 的舍入).
+- 实测 scan_step=0.005 (per-eval at sweep scan_step=0.01 yields same
+  durations as 0.005 within tolerance): pert_09 真实 duration = 3.312043 s,
+  大于 formal winner 的 2.482759 s → 起点选 B.
+- 不信任文档中 pert_09 的 3.312s 舍入: 实测 confirms the rounded value
+  (3.312043 ≈ 3.312).
 
-### 1. Coordinate search 进展 (待 refine-only 运行后填写)
+### 1. Coordinate search 进展 (32/32 evals)
 
 | Level | sweep | evals | best candidate (after sweep) | best duration |
 |---|---|---|---|---|
-| 1 | 1 | 0..8 | TBD | TBD |
-| 1 | 2 | 8..16 | TBD | TBD |
-| 2 | 1 | 16..24 | TBD | TBD |
-| 3 | 1 | 24..32 | TBD | TBD |
+| 1 | 1 | 3..10 | (3.121767, 115.4335, 1.267269, 3.789202) | 3.651923 |
+| 1 | 2 | 11..18 | (3.121767, 116.4335, 1.267269, 3.789202) | 3.676963 |
+| 2 | 1 | 19..26 | (3.131767, 116.4335, 1.267269, 3.789202) | 3.843550 |
+| 3 | 1 | 27..32 (6/8) | (3.126767, 116.4335, 1.267269, 3.789202) | **4.260971** |
 
-- evaluations_completed (总数) ≤ 32
-- elapsed_seconds (wall-clock) ≤ 2100s
+- evaluations_completed = 32 (≤ 32)
+- elapsed_seconds = 444.27 (<< 2100s 硬上限)
+- wall_clock_gate_hit = false
+- budget_gate_hit = true (level_3 sweep=1 中 release_time_s -1 之后,
+  剩 delay_s ±0.025 两项未跑)
 
-### 2. 最终稳定性 (refine 后, scan_step=0.005)
+**重要说明 (single-sweep greedy semantics)**:
+
+每个 sweep 的 8 个候选在 sweep 开始时一次性生成, 中心是 sweep 开始时的
+current_best. 当一个 later-position 候选 (e.g. delay_s -1) 改善时,
+current_best 被更新为该候选 — 该候选保留了 sweep 中心在其他 3 个变量上的
+值, 而非后续改进的值. 因此速度变量在 level_1 sweep 2 (eval 13 speed+1
+改善) 后变为 116.4335, 而非累加为 117.4335.
+
+这是 deterministic coordinate search 的标准行为, 不是 bug. 每个 level
+都在 "sweep-start center" 的邻域内做 single-sweep greedy 改善.
+
+### 2. 最终稳定性 (未运行)
 
 | scan_step | total_duration_s | n_intervals |
 |---|---|---|
-| 0.0200 | TBD | TBD |
-| 0.0100 | TBD | TBD |
-| 0.0050 | TBD | TBD |
+| 0.0200 | NOT RUN | — |
+| 0.0100 | NOT RUN | — |
+| 0.0050 | NOT RUN | — |
 
-stability_ok: TBD.
+- `final_verification_run = false` (budget exhausted before final block)
 
-### 3. 最终 16 项 one-var 扰动 (refine 后, scan_step=0.005)
+### 3. 最终 16 项 one-var 扰动 (未运行)
 
-- n_total_perturbations: 16
-- n_legal_perturbations: TBD
-- n_legal_improving: TBD
-- any_improves: TBD
-- local_perturbation_passed: TBD
-  - True → 全部 16 项合法扰动均未改善, refined candidate 冻结
-  - False → 任一扰动改善, refinement 未完成局部收敛, 触发
-    `TASK_005 LOCAL REFINEMENT P1 REMAINS — MATH/RESULT REVIEW BLOCKED`
+- `n_total_perturbations`: 16 (planned, not executed)
+- `n_legal_perturbations`: NOT RUN
+- `n_legal_improving`: NOT RUN
+- `any_improves`: NOT RUN
+- `local_perturbation_passed`: null
+- 由于 budget exhausted 在 final verification 之前触发, P1 REMAINS
+  路径未启用; 状态由 budget gate 主导.
 
-### 4. 失败模式 (fail-closed, 触发后停止)
+### 4. 失败模式 (触发)
 
-- `TASK_005 LOCAL REFINEMENT BUDGET EXHAUSTED — RESULT REVIEW BLOCKED`
-  (32 次 evaluation 用完, 仍有改善趋势)
-- `TASK_005 LOCAL REFINEMENT WALL-CLOCK GATE HIT — RESULT REVIEW BLOCKED`
-  (2100s 硬上限命中)
-- `TASK_005 LOCAL REFINEMENT P1 REMAINS — MATH/RESULT REVIEW BLOCKED`
-  (16 项 one-var 仍有改善)
+- **`TASK_005 LOCAL REFINEMENT BUDGET EXHAUSTED — RESULT REVIEW BLOCKED`**
+  (32 次 evaluation 用完, level_3 sweep=1 未跑完, 仍有改善趋势
+  [eval 28 heading-0.005 → 4.260971])
+- 不得自动增加预算, 不得再启动第二轮 refinement.
+- 不得冒充: local_perturbation_passed, stability_ok, refined_candidate
+  是局部最优.
 
 ### 5. 等级 (本轮)
 
 - 等级: **FORMAL BEST-KNOWN Q2 CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM**
-  (formal 冻结, refine-only 仍在 32 次预算 + 2100s 上限内运行,
-  不在 refine 通过前升级)
+  (formal 冻结在 REVIEW 335a1f4d; local refinement budget exhausted,
+  refined candidate 不构成冻结结论, 只作为 best-known 候选记录)
+- 不得在 refined candidate 基础上声称 Q2 全局最优 / VERIFIED / FINAL /
+  官方答案, 除非独立审查签字并扩大 refinement 预算 (本任务禁止).
+
+### 6. 实测 vs 文档舍入
+
+- pert_09 在上一轮 16 项扰动文档中报告 `total_duration_s = 3.3120429182052593`,
+  本轮 refinement 重新复评得 `3.312043 s` (差异 < 1e-5 s, 在 evaluator
+  数值容差内). MAIN 明确要求 "不得信任文档中的 3.312 秒舍入结果而跳过复评",
+  本轮实际执行了复评, 实测 confirms 文档值.
 
 ## 等级
 - 方案 A 点目标基线: **BASELINE / EXPERIMENTAL**

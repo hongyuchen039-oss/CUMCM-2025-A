@@ -1,0 +1,113 @@
+{
+  "schema": "q2_refine_summary_v1",
+  "task": "TASK_005 LOCAL REFINEMENT",
+  "status": "TASK_005 LOCAL REFINEMENT BUDGET EXHAUSTED — RESULT REVIEW BLOCKED",
+  "failure_mode": "budget_exhausted",
+  "declaration": "FORMAL BEST-KNOWN Q2 CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM",
+  "head_sha": "ac97a38c7564c9d7f2c0793c935eeb27bbd1fa90",
+  "refinement_config_sha256": "6f9cb503397996b788d0edfc6491b5a4425dd6e4a784f7ad82f8616acfd65a3d",
+  "parent_a": {
+    "physical_candidate": [
+      3.121767217560497,
+      115.43351397802584,
+      1.7672692031529031,
+      3.889202402720746
+    ],
+    "real_duration_s_at_scan_0p01": 2.48275905609131,
+    "evaluation_id": "38080206eefaf86f580003c15cea45b7"
+  },
+  "parent_b": {
+    "physical_candidate": [
+      3.121767217560497,
+      115.43351397802584,
+      1.2672692031529031,
+      3.889202402720746
+    ],
+    "real_duration_s_at_scan_0p01": 3.3120429182052593,
+    "evaluation_id": "c4bb8b6208a014bb40d1e1afffe8ff6d"
+  },
+  "starting_candidate": "B",
+  "starting_real_duration_s_at_scan_0p01": 3.3120429182052593,
+  "per_level_progress": [
+    {
+      "level": "level_1",
+      "sweep": 1,
+      "evals_in_sweep": 8,
+      "improvements": [
+        {"eval": 5, "var": "speed_mps", "sign": 1,
+         "candidate": [3.121767217560497, 116.43351397802584,
+                       1.2672692031529031, 3.889202402720746],
+         "duration_s": 3.357059955596924},
+        {"eval": 10, "var": "delay_s", "sign": -1,
+         "candidate": [3.121767217560497, 115.43351397802584,
+                       1.2672692031529031, 3.789202402720746],
+         "duration_s": 3.651923418045044}
+      ]
+    },
+    {
+      "level": "level_1",
+      "sweep": 2,
+      "evals_in_sweep": 8,
+      "improvements": [
+        {"eval": 13, "var": "speed_mps", "sign": 1,
+         "candidate": [3.121767217560497, 116.43351397802584,
+                       1.2672692031529031, 3.789202402720746],
+         "duration_s": 3.676962614059448}
+      ]
+    },
+    {
+      "level": "level_2",
+      "sweep": 1,
+      "evals_in_sweep": 8,
+      "improvements": [
+        {"eval": 19, "var": "heading_rad", "sign": 1,
+         "candidate": [3.131767217560497, 116.43351397802584,
+                       1.2672692031529031, 3.789202402720746],
+         "duration_s": 3.843549728393555}
+      ]
+    },
+    {
+      "level": "level_3",
+      "sweep": 1,
+      "evals_in_sweep": 6,
+      "evals_completed_in_level": 6,
+      "evals_budget_remaining_in_level": 2,
+      "improvements": [
+        {"eval": 28, "var": "heading_rad", "sign": -1,
+         "candidate": [3.126767217560497, 116.43351397802584,
+                       1.2672692031529031, 3.789202402720746],
+         "duration_s": 4.260970878601073}
+      ],
+      "budget_exhausted_after_eval": 32,
+      "remaining_evals_skipped": ["delay_s +0.025", "delay_s -0.025"]
+    }
+  ],
+  "evaluations_completed": 32,
+  "evaluations_budget": 32,
+  "elapsed_seconds": 444.27,
+  "hard_deadline_seconds": 2100.0,
+  "wall_clock_gate_hit": false,
+  "budget_gate_hit": true,
+  "refined_candidate": [
+    3.126767217560497,
+    116.43351397802584,
+    1.2672692031529031,
+    3.789202402720746
+  ],
+  "refined_candidate_sweep_duration_s_at_scan_0p01": 4.260970878601073,
+  "final_verification_run": false,
+  "final_verification_reason": "budget exhausted before final stability + final 16 one-var perturbation",
+  "local_perturbation_passed": null,
+  "next_step_blocked": true,
+  "raw_checkpoint_path": "work/q2_formal_refinement/checkpoint.json",
+  "raw_log_path": "work/q2_formal_refinement.log",
+  "constraints": {
+    "no_three_seed_rerun": true,
+    "no_17_candidate_full_reeval": true,
+    "no_473_full_regression": true,
+    "no_q3_launch": true,
+    "no_result_xlsx_generated": true,
+    "no_global_optimum_claimed": true,
+    "budget_exhausted_blocked": true
+  }
+}
