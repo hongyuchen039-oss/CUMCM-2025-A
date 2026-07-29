@@ -473,6 +473,61 @@ current_best 被更新为该候选 — 该候选保留了 sweep 中心在其他 
   数值容差内). MAIN 明确要求 "不得信任文档中的 3.312 秒舍入结果而跳过复评",
   本轮实际执行了复评, 实测 confirms 文档值.
 
+## TASK_005 VERIFICATION-ONLY CLOSURE (per MAIN 授权)
+
+> 不启动新一轮局部搜索, 不扩大到新的 coordinate sweep, 不重跑
+> 3×1000 formal search, 不重跑全项目测试, 不启动 Q3, 不生成
+> result*.xlsx. 仅执行 delay_s ±0.025 两项 evaluation + 3 档 stability.
+
+### 0. Verification 结果
+
+| Eval | var | sign | candidate (4-tuple) | physical_ok | duration_s | improves_best |
+|---|---|---|---|---|---|---|
+| 33 | delay_s | +1 | (3.126767, 116.4335, 1.267269, 3.814202) | True | 4.258950 | False |
+| 34 | delay_s | -1 | (3.126767, 116.4335, 1.267269, 3.764202) | True | 4.140284 | False |
+
+- 两项 verification evals 均未改善 best-known (4.260971 s).
+- 完整 tracked summary: `outputs/q2/q2_verify_summary.json`.
+
+### 1. 3 档 stability (scan_step=0.02/0.01/0.005, eval=35~37)
+
+| scan_step | total_duration_s | valid | status | n_intervals | evaluation_id |
+|---|---|---|---|---|---|
+| 0.0200 | 4.260970878601073 | True | ok | 1 | 8557adb752828fef76ac21d48684cd15 |
+| 0.0100 | 4.260970878601073 | True | ok | 1 | 8557adb752828fef76ac21d48684cd15 |
+| 0.0050 | 4.260970878601073 | True | ok | 1 | 8557adb752828fef76ac21d48684cd15 |
+
+- `delta_0p01_vs_0p005_s = 0.000000`
+- `stability_ok = True`
+- 三档 evaluation_id 同, 严格验证 best-known 在 3 档扫描下完全收敛.
+
+### 2. 物理合法性
+
+- `formal_physical_validity(best_known)` → ok=True, reason=""
+- speed_mps=116.4335 ∈ [70, 140] ✓
+- release_time_s=1.267269 ≥ 0 ✓
+- delay_s=3.789202 ∈ [0, sqrt(2·1800/9.8)≈19.18] ✓
+- heading_rad=3.126767 ∈ [0, 2π) ✓
+- 全部 NaN/Inf 检查通过 ✓
+
+### 3. 等级 (本轮)
+
+**`FORMAL BUDGET-LIMITED BEST-KNOWN Q2 CANDIDATE /
+LOCAL CONVERGENCE NOT ESTABLISHED /
+NOT A PROVEN GLOBAL OPTIMUM`**
+
+- 335a1f4d 上 FORMAL BEST-KNOWN Q2 CANDIDATE (h=3.121767, s=115.4335,
+  r=1.767269, d=3.889202, dur=2.482759) 仍是 FORMAL 冻结结论.
+- 本轮 verification-only closure 仅补 level_3 漏跑的 delay_s ±0.025 +
+  3 档 stability + 物理合法性. 未启动新 coordinate sweep, 未跑完整 16
+  项 one-var 扰动.
+- 严格不冒充: VERIFIED / FINAL / 全局最优 / 官方答案 /
+  local_perturbation_passed / local convergence established.
+- best-known candidate: (3.126767, 116.4335, 1.267269, 3.789202),
+  dur=4.260971 s (sweep scan_step=0.01), stability 三档完全一致.
+- 独立审查 (Audit CC / Hermes) 签字后才能替换 335a1f4d 上的 FORMAL
+  冻结或立项 TASK_006 (Q3 三弹串接 / result1.xlsx).
+
 ## 等级
 - 方案 A 点目标基线: **BASELINE / EXPERIMENTAL**
 - 方案 B 完整圆柱: **FULL-CYLINDER CANDIDATE / EXPERIMENTAL**

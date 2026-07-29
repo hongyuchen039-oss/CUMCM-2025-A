@@ -1,7 +1,109 @@
 # 当前唯一任务
 
 ## 任务编号
-TASK_005 LOCAL REFINEMENT — BUDGET EXHAUSTED (RESULT REVIEW BLOCKED).
+TASK_005 VERIFICATION-ONLY CLOSURE (per MAIN 授权) — BUDGET-LIMITED BEST-KNOWN
+Q2 CANDIDATE / LOCAL CONVERGENCE NOT ESTABLISHED / NOT A PROVEN GLOBAL OPTIMUM.
+
+## 最终声明
+
+```
+declaration = "FORMAL BUDGET-LIMITED BEST-KNOWN Q2 CANDIDATE / "
+              "LOCAL CONVERGENCE NOT ESTABLISHED / "
+              "NOT A PROVEN GLOBAL OPTIMUM"
+```
+
+## 唯一目标
+不修改本任务分支；不进入 Q3；不写 result*.xlsx；不声明全局最优；
+不扩大 refinement 预算。Verification 仅补跑 level_3 漏掉的 2 次
+delay_s ±0.025 + 3 档 stability + 物理合法性。
+
+## 为什么值得做
+bounded refinement 在 eval 32 (release_time_s -1) 触发 budget gate,
+level_3 sweep=1 漏跑 delay_s ±0.025 (2 evaluations), 未运行最终 stability
++ 16 one-var verification. MAIN 授权只补这 4 次 evaluation, 不再启动新轮
+搜索.
+
+## Verification 结果 (clean HEAD, 仅 4 evaluations)
+- delay_s +0.025: candidate=(3.126767, 116.4335, 1.267269, 3.814202),
+  physical_ok=True, dur=4.258950, improves_best=False
+- delay_s -0.025: candidate=(3.126767, 116.4335, 1.267269, 3.764202),
+  physical_ok=True, dur=4.140284, improves_best=False
+- stability (scan_steps=0.02/0.01/0.005): 三档 duration=4.260970 完全一致,
+  evaluation_id 三档同 (8557adb752828fef76ac21d48684cd15),
+  stability_ok=True, delta_0p01_vs_0p005_s=0.000000
+- physical_validity: ok=True, reason=""
+- elapsed_seconds_verify: 79.28s
+
+## Best-known candidate (NOT frozen)
+```
+h=3.126767217560497
+s=116.43351397802584
+r=1.2672692031529031
+d=3.789202402720746
+total_duration_s=4.260970878601073  (scan_step=0.005 re-eval)
+interval=[from sweep_top1, TBD in real interval extraction; not computed]
+```
+
+## 严格不冒充
+- 不得冒充 VERIFIED / FINAL / 全局最优 / 官方答案.
+- 不得冒充 local_perturbation_passed (本轮未跑完整 16 项 one-var).
+- 不得冒充 local convergence established (声明 = NOT ESTABLISHED).
+- 不得替换 335a1f4d REVIEW 上的 FORMAL BEST-KNOWN Q2 CANDIDATE 冻结结论.
+
+## Inputs
+- work/q2_formal_refinement/checkpoint.json (原子已更新, status=verify_done)
+- outputs/q2/q2_verify_summary.json (新 tracked, q2_verify_summary_v1 schema)
+- work/q2_formal_verification.log (gitignored, tee output)
+- scripts/run_q2_formal_verify.py (新, 唯一 orchestrator for verification)
+
+## 允许修改
+本轮 (verification-only closure, 已完成):
+- outputs/q2/q2_verify_summary.json (tracked)
+- scripts/run_q2_formal_verify.py (新 tracked)
+- START_HERE.md / NEXT_TASK.md / RESULTS.md / MODEL.md / README.md
+- work/task_context.json (allowed_modified_paths 加 q2_verify_summary.json)
+- 1 个 VERIFY 风格 commit + push
+
+## 禁止修改
+- configs/q2_search_gate_v1.json (pilot 不动)
+- src/q1_baseline.py / src/q1_cylinder.py / src/q2_single_bomb.py
+- tests/test_q1_baseline.py / tests/test_q1_cylinder.py / tests/test_q2_single_bomb.py
+- scripts/verify_task_context.py / tests/test_verify_task_context.py
+- problem/ / outputs/submission/ / result*.xlsx
+- .github/ / CLAUDE.md / .claude/
+- main / Git 历史
+- 旧 pilot identity / 旧 PRE-FIX canonical / 旧 4-方向扰动描述
+- 335a1f4d 上的 FORMAL BEST-KNOWN Q2 CANDIDATE 冻结结论
+
+禁止: 自动合并 / 转 Ready / 写 result*.xlsx / 启动 Q3 / 扩大 refinement
+预算 / 跳过 verification / 改写正式历史.
+
+## 必须执行
+1. 1 个 VERIFY commit (verification script + summary + docs);
+2. push 到 task/TASK_005-q2-formal-search + 更新 PR #11 描述;
+3. 报告 final declaration 与 verification 结果;
+4. 立即停止 (不自动合并 / 不进入 Q3 / 不启动 Audit CC / Hermes / TASK_GOV_002).
+
+## 必须产出
+- 1 个 VERIFY commit (push 到现有分支和 PR #11);
+- outputs/q2/q2_verify_summary.json (tracked);
+- work/q2_formal_verification.log (gitignored);
+- 收口报告 (final declaration + verification evals + stability + 物理合法性
+  + 不冒充承诺).
+
+## 验收标准
+1. outputs/q2/q2_verify_summary.json 已写入, declaration 严格匹配
+   "FORMAL BUDGET-LIMITED BEST-KNOWN Q2 CANDIDATE / LOCAL CONVERGENCE
+   NOT ESTABLISHED / NOT A PROVEN GLOBAL OPTIMUM";
+2. delay_s ±0.025 两项 evaluation 完成, 不改善 best-known;
+3. stability 三档 (0.02/0.01/0.005) duration 完全一致, stability_ok=True;
+4. physical_validity ok=True;
+5. PR #11 是 Open / Draft;
+6. 不写入 result*.xlsx, 不启动 Q3, 不声明全局最优.
+
+## 停止条件
+VERIFY commit + push + PR #11 描述更新后立即停止, 不自动合并,
+不进入 Q3 / TASK_006, 不启动 Audit CC / Hermes / TASK_GOV_002.
 
 ## 唯一目标
 不重跑 3 seeds / 不重跑 17 候选完整复评 / 不重跑 473 项全量回归.
