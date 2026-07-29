@@ -1,0 +1,128 @@
+{
+  "schema_version": 3,
+  "gate_id": "q2_search_formal_v1",
+  "declaration": "FORMAL BEST-KNOWN Q2 CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM",
+  "task": "TASK_005_Q2_FORMAL_SEARCH_AND_RESULT_FREEZE",
+  "algorithm_version": "v1.2",
+  "sampling_method": "deterministic_uniform_pseudorandom",
+  "evaluator_kind": "real",
+  "evaluator_version": "v1",
+  "workers": 1,
+  "checkpoint_schema": 2,
+  "formal_enabled": true,
+  "seeds": [2025, 2026, 2027],
+  "selected_budget": 1000,
+  "budget_candidates": {
+    "500":  {"stage_counts": {"global_coarse": 298, "global_medium": 25, "local_coarse": 147, "local_medium": 24, "fine": 6}},
+    "1000": {"stage_counts": {"global_coarse": 595, "global_medium": 49, "local_coarse": 295, "local_medium": 49, "fine": 12}},
+    "2000": {"stage_counts": {"global_coarse": 1190, "global_medium": 98, "local_coarse": 589, "local_medium": 98, "fine": 25}}
+  },
+  "total_budget": 1000,
+  "stage_counts": {
+    "global_coarse": 595,
+    "global_medium": 49,
+    "local_coarse": 295,
+    "local_medium": 49,
+    "fine": 12
+  },
+  "search_domain": {
+    "heading_rad":    {"min": 0.0, "max": 6.283185307179586, "period": 6.283185307179586},
+    "speed_mps":      {"min": 70.0, "max": 140.0},
+    "release_time_s": {"min": 0.0, "max": null, "upper_bound_rule": "t_arrival - 1 (search contract)"},
+    "delay_s":        {"min": 0.0, "max": null, "upper_bound_rule": "sqrt(2 * u0_z / g) (ground constraint)"}
+  },
+  "scan_steps": {
+    "coarse": 0.05,
+    "medium": 0.02,
+    "fine":   0.01
+  },
+  "stability_scan_steps": [0.02, 0.01, 0.005],
+  "pipeline_stages": [
+    "global_coarse",
+    "global_medium",
+    "local_coarse",
+    "local_medium",
+    "fine"
+  ],
+  "stage_plan": [
+    {"stage": "global_coarse", "sample_level": "coarse", "scan_step": 0.05, "source": "global"},
+    {"stage": "global_medium", "sample_level": "medium", "scan_step": 0.02, "source": "global"},
+    {"stage": "local_coarse",  "sample_level": "coarse", "scan_step": 0.05, "source": "local"},
+    {"stage": "local_medium",  "sample_level": "medium", "scan_step": 0.02, "source": "local"},
+    {"stage": "fine",          "sample_level": "fine",   "scan_step": 0.01, "source": "final"}
+  ],
+  "budget_keys_per_seed": {
+    "global_coarse_count": 594,
+    "coarse_top_k": 49,
+    "medium_re_evaluate_count": 49,
+    "local_per_top": 6,
+    "local_max_count": 295,
+    "local_medium_count": 49,
+    "fine_final_count": 12,
+    "local_delta": [0.10, 5.0, 0.5, 0.3]
+  },
+  "dedupe_tolerance": {
+    "heading_rad": 1.0e-6,
+    "speed_mps": 1.0e-6,
+    "release_time_s": 1.0e-6,
+    "delay_s": 1.0e-6
+  },
+  "perturbation_deltas": [
+    [0.05, 2.0, 0.5, 0.3],
+    [-0.05, -2.0, -0.5, -0.3],
+    [0.02, 1.0, 0.2, 0.1],
+    [-0.02, -1.0, -0.2, -0.1]
+  ],
+  "anchor_candidate": {
+    "heading_rad": 3.141592653589793,
+    "speed_mps": 120.0,
+    "release_time_s": 1.5,
+    "delay_s": 3.6,
+    "source": "Q1 fixed-strategy anchor"
+  },
+  "constraints": {
+    "no_results_xlsx": true,
+    "no_q3": true,
+    "no_global_optimum_claim": true,
+    "no_force_push": true,
+    "no_rebase": true,
+    "no_amend_pushed_history": true,
+    "forbidden_paths_modify": [
+      "configs/q2_search_gate_v1.json",
+      "src/q1_baseline.py",
+      "src/q1_cylinder.py",
+      "src/q2_single_bomb.py",
+      "tests/test_q1_baseline.py",
+      "tests/test_q1_cylinder.py",
+      "tests/test_q2_single_bomb.py",
+      "scripts/verify_task_context.py",
+      "tests/test_verify_task_context.py",
+      "CLAUDE.md",
+      ".claude/",
+      "problem/",
+      "outputs/submission/",
+      ".github/"
+    ]
+  },
+  "no_result_xlsx": true,
+  "no_q3": true,
+  "no_global_optimum_claim": true,
+  "not_a_proven_global_optimum": true,
+  "calibration_evidence": {
+    "pilot_seed": 2025,
+    "pilot_budget_total_evaluations": 163,
+    "pilot_wall_clock_seconds": 76.9,
+    "per_stage_wall_seconds": {
+      "global_coarse": 13.446,
+      "global_medium": 12.752,
+      "local_coarse":  7.974,
+      "local_medium": 14.071,
+      "fine":         28.657
+    },
+    "budget_choice": "1000",
+    "predicted_total_seconds_1000": 2225,
+    "predicted_total_seconds_2000": 4031,
+    "wall_clock_ceiling_s": 3600,
+    "predicted_to_ceiling_ratio_1000": 0.618
+  }
+}

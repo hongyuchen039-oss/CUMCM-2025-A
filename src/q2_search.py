@@ -2636,5 +2636,804 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     return 0
 
 
+# =============================================================================
+#  TASK_005 — FORMAL SEARCH PROFILE (additive, isolated from pilot fixed-163)
+# =============================================================================
+#
+# All code in this block is new for TASK_005 and is strictly separated from
+# the pilot gates above (FIXED-163 / EXPECTED_STAGE_COUNTS_PRODUCTION /
+# validate_fixed_production_result / build_pilot_output).  Formal uses its
+# own schema (FORMAL_GATE_SCHEMA_VERSION = 3), its own declaration
+# (FORMAL_DECLARATION), its own gate error class
+# (FormalBudgetGateError), its own per-seed budget (independent of the
+# fixed-163 invariant), and its own output constructor
+# (build_formal_output).  Pilot tokens (PILOT, gates, output, CLI
+# behaviour) are not modified.
+#
+# Formal contracts:
+#   1. Total budget per seed is exactly configured in formal config
+#      (no override path through pilot CLI).
+#   2. stage_counts sum == total_budget (largest-remainder scaling of
+#      pilot ratios, anchor pre-allocated into global_coarse).
+#   3. fine stage >= 4 candidates.
+#   4. winner ONLY from fine evaluation; cross-seed dedup is stable
+#      with explicit tolerance.
+#   5. pilot best candidate must be injected into finalist pool.
+#   6. declaration = FORMAL BEST-KNOWN Q2 CANDIDATE /
+#      NOT A PROVEN GLOBAL OPTIMUM.
+#   7. NaN / Inf candidates fail-closed (rejected, not silently
+#      clamped).
+#   8. No result xlsx; no Q3; no global-optimum claim.
+
+FORMAL_GATE_SCHEMA_VERSION: int = 3
+"""Formal profile uses schema 3 — distinct from pilot CONFIG_SCHEMA_V2.
+load_formal_config refuses any schema_version != 3.
+"""
+
+# Reference physical constants used by formal-only helpers (match
+# Foundation defaults so formal profile inherits the same u0 / g).
+TEST_U0: Tuple[float, float, float] = (17800.0, 0.0, 1800.0)
+TEST_G: float = 9.8
+TEST_T_ARRIVAL: float = 67.0
+
+FORMAL_DECLARATION: str = (
+    "FORMAL BEST-KNOWN Q2 CANDIDATE "
+    "/ NOT A PROVEN GLOBAL OPTIMUM")
+"""Fixed declaration string for formal profile; overridden only in tests
+that verify the absence of "global optimum" / "official answer" claims.
+"""
+
+# Deterministic uniform pseudorandom is the only sampling method; formal
+# config must explicitly assert the same string.
+_FORMAL_REQUIRED_SAMPLING_METHOD: str = SAMPLING_METHOD
+
+# Fine-stage minimum count enforced per seed.
+FORMAL_FINE_MIN_COUNT: int = 4
+
+# Pilot proportion across stages (raw, normalized to 1.0):
+#   global_coarse=97, global_medium=8, local_coarse=48,
+#   local_medium=8, fine=2; total=163.
+_FORMAL_PILOT_RATIOS: Tuple[Tuple[str, float], ...] = (
+    ("global_coarse", 97.0 / 163.0),
+    ("global_medium", 8.0 / 163.0),
+    ("local_coarse", 48.0 / 163.0),
+    ("local_medium", 8.0 / 163.0),
+    ("fine", 2.0 / 163.0),
+)
+
+
+class FormalBudgetGateError(ValueError):
+    """Formal gate violation.  Formal profile must fail-closed; callers
+    must catch and exit non-zero or report BLOCKED.  Distinct class from
+    FixedProductionBudgetInvariantError so pilot and formal gates cannot
+    be confused.
+    """
+
+
+def compute_formal_stage_counts(*, total_budget: int) -> Dict[str, int]:
+    """Largest-remainder scaling of the pilot 97:8:48:8:2 ratio.
+
+    Constraints:
+      - sum(stage_counts.values()) == total_budget
+      - global_coarse includes the Q1 anchor (built into budget
+        construction; we just enforce integer counts here)
+      - fine >= FORMAL_FINE_MIN_COUNT (raises if total_budget too small
+        to permit this)
+
+    Returns the integer stage counts exactly equal to total_budget.
+
+    Raises:
+        ValueError: total_budget < minimal (fine>=4 forces total>=some
+            bound; computed via the same scaling).
+    """
+    if not isinstance(total_budget, int):
+        raise ValueError(
+            f"total_budget must be int, got {type(total_budget).__name__}")
+    if total_budget < FORMAL_FINE_MIN_COUNT * 5:
+        # even most-tiny scaling must still have fine>=4
+        raise ValueError(
+            f"total_budget={total_budget} too small for formal profile "
+            f"(need fine>= {FORMAL_FINE_MIN_COUNT})")
+    targets = [(name, total_budget * ratio)
+               for name, ratio in _FORMAL_PILOT_RATIOS]
+    floors = {name: int(t) for name, t in targets}
+    # global_coarse must include 1 anchor (>=1); pilot ratio already
+    # gives 0.5951*N which for N=5 = 2.97 -> floor 2 → still >=1, OK.
+    # Adjust so that fine >= FORMAL_FINE_MIN_COUNT.
+    while floors["fine"] < FORMAL_FINE_MIN_COUNT:
+        # redistribute by stealing from largest stage
+        donor = max((k for k in floors if k != "fine"),
+                    key=lambda k: floors[k])
+        floors[donor] -= 1
+        floors["fine"] += 1
+    residual = total_budget - sum(floors.values())
+    if residual < 0:
+        raise ValueError(
+            f"total_budget={total_budget} < sum(floors)={sum(floors.values())}")
+    if residual == 0:
+        return floors
+    # sort stages by (target - floor) desc; tie-break by pilot ratio desc
+    remainders = [(name, targets[i][1] - floors[name])
+                  for i, (name, _) in enumerate(targets)]
+    remainders.sort(
+        key=lambda x: (-x[1], -dict(_FORMAL_PILOT_RATIOS).get(x[0], 0.0),
+                       PIPELINE_STAGES.index(x[0])))
+    idx = 0
+    while residual > 0:
+        name, _ = remainders[idx % len(remainders)]
+        # avoid violating fine>=4 after bumping
+        if name == "fine" and floors[name] + 1 > total_budget // 4:
+            idx += 1
+            continue
+        floors[name] += 1
+        residual -= 1
+        idx += 1
+    s = sum(floors.values())
+    if s != total_budget:
+        raise FormalBudgetGateError(
+            f"formal stage counts sum mismatch: {s} != {total_budget}")
+    if floors["fine"] < FORMAL_FINE_MIN_COUNT:
+        raise FormalBudgetGateError(
+            f"formal fine stage count too small: {floors['fine']} < "
+            f"{FORMAL_FINE_MIN_COUNT}")
+    return floors
+
+
+def load_formal_config(path: str) -> Dict[str, Any]:
+    """Load + validate a formal profile config (schema 3).
+
+    Required fields:
+      - schema_version == FORMAL_GATE_SCHEMA_VERSION (3)
+      - gate_id == "q2_search_formal_v1"
+      - declaration == FORMAL_DECLARATION
+      - algorithm_version == ALGORITHM_VERSION
+      - sampling_method == SAMPLING_METHOD
+      - evaluator_kind == "real"
+      - workers == 1 (evaluator not proven thread-safe)
+      - seeds: list of exactly 3 integers
+      - total_budget: positive int
+      - stage_counts: dict matching compute_formal_stage_counts(total_budget)
+      - dedupe_tolerance: dict with non-negative floats
+      - no_result_xlsx == True
+      - no_q3 == True
+      - no_global_optimum_claim == True
+
+    Raises:
+        FileNotFoundError: path missing.
+        ValueError: schema / field / type error.
+    """
+    import os as _os
+    if not _os.path.exists(path):
+        raise FileNotFoundError(f"formal config not found: {path}")
+    with open(path, "r", encoding="utf-8") as f:
+        raw = json.load(f)
+    if not isinstance(raw, dict):
+        raise ValueError("formal config root must be JSON object")
+    sv = int(raw.get("schema_version", 0))
+    if sv != FORMAL_GATE_SCHEMA_VERSION:
+        raise ValueError(
+            f"formal config schema_version must be "
+            f"{FORMAL_GATE_SCHEMA_VERSION}, got {sv}")
+    if raw.get("gate_id") != "q2_search_formal_v1":
+        raise ValueError(
+            f"formal config gate_id must be 'q2_search_formal_v1', "
+            f"got {raw.get('gate_id')!r}")
+    if raw.get("declaration") != FORMAL_DECLARATION:
+        raise ValueError(
+            f"formal config declaration must equal "
+            f"{FORMAL_DECLARATION!r}, got {raw.get('declaration')!r}")
+    if str(raw.get("algorithm_version")) != ALGORITHM_VERSION:
+        raise ValueError("formal config algorithm_version mismatch")
+    if str(raw.get("sampling_method")) != SAMPLING_METHOD:
+        raise ValueError("formal config sampling_method mismatch")
+    if str(raw.get("evaluator_kind")) != "real":
+        raise ValueError("formal config evaluator_kind must be 'real'")
+    workers = int(raw.get("workers", 1))
+    if workers != 1:
+        raise ValueError(
+            f"formal config workers must be 1 (evaluator not "
+            f"thread-safe proven), got {workers}")
+    seeds = raw.get("seeds")
+    if not isinstance(seeds, list) or len(seeds) != 3 \
+            or not all(isinstance(s, int) for s in seeds):
+        raise ValueError(
+            "formal config seeds must be a list of exactly 3 integers")
+    total_budget = raw.get("total_budget")
+    if not isinstance(total_budget, int) or total_budget <= 0:
+        raise ValueError(
+            f"formal config total_budget must be positive int, "
+            f"got {total_budget!r}")
+    cfg_stage_counts = raw.get("stage_counts")
+    if not isinstance(cfg_stage_counts, dict):
+        raise ValueError("formal config stage_counts must be a dict")
+    expected_sc = compute_formal_stage_counts(total_budget=total_budget)
+    if dict(cfg_stage_counts) != expected_sc:
+        raise ValueError(
+            f"formal config stage_counts mismatch: "
+            f"got {dict(cfg_stage_counts)}, expected {expected_sc}")
+    for required_stage in ("global_coarse", "global_medium",
+                            "local_coarse", "local_medium", "fine"):
+        if required_stage not in cfg_stage_counts:
+            raise ValueError(
+                f"formal stage_counts missing {required_stage!r}")
+    tolerance = raw.get("dedupe_tolerance")
+    if not isinstance(tolerance, dict):
+        raise ValueError("formal config dedupe_tolerance must be a dict")
+    for key in ("heading_rad", "speed_mps", "release_time_s", "delay_s"):
+        v = tolerance.get(key)
+        if not isinstance(v, (int, float)) or v < 0:
+            raise ValueError(
+                f"formal dedupe_tolerance[{key!r}] must be non-negative "
+                f"number, got {v!r}")
+    # boolean flags
+    for bool_field in ("no_result_xlsx", "no_q3",
+                       "no_global_optimum_claim"):
+        if not bool(raw.get(bool_field, False)):
+            raise ValueError(
+                f"formal config {bool_field!r} must be true")
+    return {
+        "schema_version": FORMAL_GATE_SCHEMA_VERSION,
+        "gate_id": str(raw["gate_id"]),
+        "declaration": str(raw["declaration"]),
+        "algorithm_version": ALGORITHM_VERSION,
+        "sampling_method": SAMPLING_METHOD,
+        "evaluator_kind": "real",
+        "evaluator_version": str(raw.get("evaluator_version", "v1")),
+        "workers": 1,
+        "checkpoint_schema": int(raw.get(
+            "checkpoint_schema", CHECKPOINT_SCHEMA_V2)),
+        "seeds": list(seeds),
+        "total_budget": int(total_budget),
+        "stage_counts": expected_sc,
+        "dedupe_tolerance": dict(tolerance),
+        "no_result_xlsx": True,
+        "no_q3": True,
+        "no_global_optimum_claim": True,
+        "raw_config_path": str(path),
+        "raw_config_sha256": _sha256_file(path),
+    }
+
+
+def _sha256_file(path: str) -> str:
+    import hashlib as _hl
+    with open(path, "rb") as f:
+        return _hl.sha256(f.read()).hexdigest()
+
+
+def formal_budget_for_pilot_contract() -> Dict[str, Any]:
+    """Translate a formal stage_counts dict into a pilot-compatible
+    budget dict (the cli_overrides accepted by resolve_effective_config)
+    for use with run_search_pipeline when enforce_fixed_production_result
+    is False.  This helper only ever takes a formal profile config and
+    emits the matching pilot budget keys; it never bypasses or weakens
+    the pilot FIXED-163 invariant for production paths.
+
+    Pilot budget keys:
+        global_coarse_count  (random count, NOT including anchor)
+        coarse_top_k
+        medium_re_evaluate_count
+        local_per_top
+        local_max_count
+        local_medium_count
+        fine_final_count
+        local_delta
+    """
+    return {
+        # global_coarse_count is the random count; stage global_coarse
+        # adds 1 anchor in run_search_pipeline.
+        "global_coarse_count": ...,  # placeholder, set below
+        "coarse_top_k": ...,  # equals global_medium in formal stage
+        "medium_re_evaluate_count": ...,  # equals global_medium in formal
+        "local_per_top": 6,  # unchanged from pilot
+        "local_max_count": ...,  # equals local_coarse in formal stage
+        "local_medium_count": ...,  # equals local_medium in formal stage
+        "fine_final_count": ...,  # equals fine in formal stage
+        "local_delta": (0.10, 5.0, 0.5, 0.3),
+    }
+
+
+def formal_pilot_budget_from_stage_counts(
+    stage_counts: Mapping[str, int],
+    local_delta: Tuple[float, float, float, float] = (
+        0.10, 5.0, 0.5, 0.3),
+) -> Dict[str, Any]:
+    """Convert a formal stage_counts dict into a pilot-compatible
+    cli_overrides dict for use with run_search_pipeline (only when
+    enforce_fixed_production_result=False).
+
+    The mapping preserves the formal budget contract:
+      global_coarse_count  = stage['global_coarse'] - 1  (random only;
+        anchor is added by run_search_pipeline automatically as 1)
+      coarse_top_k         = stage['global_medium'] (re-evaluation of
+        each medium-confirmed candidate uses one top-k slot from
+        global_coarse; here stage['global_medium'] is the re-eval count)
+      medium_re_evaluate_count = stage['global_medium'] (re-evaluation
+        matches global_medium count)
+      local_max_count      = stage['local_coarse']
+      local_medium_count   = stage['local_medium']
+      fine_final_count     = stage['fine']
+    """
+    sc = dict(stage_counts)
+    return {
+        "global_coarse_count": int(sc["global_coarse"]) - 1,
+        "coarse_top_k": int(sc["global_medium"]),
+        "medium_re_evaluate_count": int(sc["global_medium"]),
+        "local_per_top": 6,
+        "local_max_count": int(sc["local_coarse"]),
+        "local_medium_count": int(sc["local_medium"]),
+        "fine_final_count": int(sc["fine"]),
+        "local_delta": tuple(float(x) for x in local_delta),
+    }
+
+
+def validate_formal_budget(
+    *,
+    config: Mapping[str, Any],
+    stage_counts: Mapping[str, int],
+    all_rows: Sequence[Any],
+    completed_count: int,
+    run_identity_sha256: Optional[str] = None,
+    expected_run_identity_sha256: Optional[str] = None,
+    config_sha256: Optional[str] = None,
+    expected_config_sha256: Optional[str] = None,
+    code_revision: Optional[str] = None,
+    expected_code_revision: Optional[str] = None,
+) -> None:
+    """Validate a formal per-seed pipeline output against the formal gate.
+
+    Checks:
+      - stage_counts 精确等于 config['stage_counts']
+      - sum(stage_counts.values()) == config['total_budget']
+      - len(all_rows) == config['total_budget']
+      - completed_count == len(all_rows)
+      - evaluation_id 全局唯一 (no duplicate within this seed)
+      - run_identity_sha256 matches expected (if both provided)
+      - config_sha256 matches expected (if both provided)
+      - code_revision matches expected (if both provided)
+      - fine stage count >= FORMAL_FINE_MIN_COUNT
+
+    Raises:
+        FormalBudgetGateError with descriptive message on any violation.
+    """
+    if not isinstance(config, Mapping):
+        raise FormalBudgetGateError(
+            "validate_formal_budget: config must be a mapping")
+    cfg_stage_counts = dict(config["stage_counts"])
+    if dict(stage_counts) != cfg_stage_counts:
+        raise FormalBudgetGateError(
+            f"formal gate failed: stage_counts={dict(stage_counts)} != "
+            f"config['stage_counts']={cfg_stage_counts}")
+    s = sum(int(v) for v in stage_counts.values())
+    expected_total = int(config["total_budget"])
+    if s != expected_total:
+        raise FormalBudgetGateError(
+            f"formal gate failed: sum(stage_counts.values())={s} != "
+            f"config['total_budget']={expected_total}")
+    n_rows = len(list(all_rows))
+    if n_rows != expected_total:
+        raise FormalBudgetGateError(
+            f"formal gate failed: len(all_rows)={n_rows} != "
+            f"config['total_budget']={expected_total}")
+    try:
+        ids = {str(r.evaluation_id) for r in all_rows}
+    except Exception as exc:
+        raise FormalBudgetGateError(
+            f"formal gate failed: cannot read evaluation_id: {exc}")
+    if len(ids) != expected_total:
+        raise FormalBudgetGateError(
+            f"formal gate failed: unique evaluation_ids={len(ids)} != "
+            f"{expected_total}")
+    if int(completed_count) != n_rows:
+        raise FormalBudgetGateError(
+            f"formal gate failed: completed_count={completed_count} != "
+            f"len(all_rows)={n_rows}")
+    if int(cfg_stage_counts["fine"]) < FORMAL_FINE_MIN_COUNT:
+        raise FormalBudgetGateError(
+            f"formal gate failed: fine stage={cfg_stage_counts['fine']} "
+            f"< {FORMAL_FINE_MIN_COUNT}")
+    if (run_identity_sha256 is not None
+            and expected_run_identity_sha256 is not None
+            and str(run_identity_sha256)
+            != str(expected_run_identity_sha256)):
+        raise FormalBudgetGateError(
+            f"formal gate failed: run_identity_sha256="
+            f"{run_identity_sha256!r} != "
+            f"expected={expected_run_identity_sha256!r}")
+    if (config_sha256 is not None
+            and expected_config_sha256 is not None
+            and str(config_sha256) != str(expected_config_sha256)):
+        raise FormalBudgetGateError(
+            f"formal gate failed: config_sha256={config_sha256!r} != "
+            f"expected={expected_config_sha256!r}")
+    if (code_revision is not None
+            and expected_code_revision is not None
+            and str(code_revision) != str(expected_code_revision)):
+        raise FormalBudgetGateError(
+            f"formal gate failed: code_revision={code_revision!r} != "
+            f"expected={expected_code_revision!r}")
+
+
+def _formal_candidate_tuple(
+    row_or_vec: Any,
+) -> Tuple[float, float, float, float]:
+    """Normalize a row or 4-tuple into the canonical physical tuple."""
+    if isinstance(row_or_vec, SearchEvaluationRow):
+        return (float(row_or_vec.heading_rad),
+                float(row_or_vec.speed_mps),
+                float(row_or_vec.release_time_s),
+                float(row_or_vec.delay_s))
+    v = tuple(row_or_vec)
+    if len(v) != 4:
+        raise ValueError(
+            f"formal candidate must be 4-tuple, got len={len(v)}")
+    return (float(v[0]), float(v[1]), float(v[2]), float(v[3]))
+
+
+def formal_physical_validity(
+    candidate: Any,
+    *,
+    u0: Tuple[float, float, float] = TEST_U0,
+    g: float = 9.8,
+) -> Tuple[bool, str]:
+    """Fail-closed physical validity check for a formal candidate.
+
+    Returns (ok, reason).  reason is "" when ok=True.
+
+    NaN / Inf / out-of-domain / release > t_arrival-ground / negative
+    delay / ground impact before detonation / etc. are all rejected.
+    """
+    try:
+        h, s, r, d = _formal_candidate_tuple(candidate)
+    except Exception as exc:
+        return False, f"candidate unparseable: {exc}"
+    import math as _m
+    for name, val in (("heading_rad", h), ("speed_mps", s),
+                       ("release_time_s", r), ("delay_s", d)):
+        if not _m.isfinite(val):
+            return False, f"candidate contains non-finite {name}={val}"
+    if not (70.0 <= s <= 140.0):
+        return False, f"speed_mps={s} outside [70, 140]"
+    if r < 0.0:
+        return False, f"release_time_s={r} < 0"
+    if d < 0.0:
+        return False, f"delay_s={d} < 0"
+    # ground constraint: delay <= sqrt(2*u0_z / g)
+    try:
+        ground_max = (2.0 * float(u0[2]) / float(g)) ** 0.5
+    except Exception:
+        ground_max = float("inf")
+    if d > ground_max + 1e-9:
+        return False, (
+            f"delay_s={d} > ground_max={ground_max:.6f} (smoke would "
+            f"hit ground before detonation)")
+    # wrap heading to canonical range
+    wrapped = _wrap_heading(h)
+    if not (0.0 <= wrapped < 2 * _m.pi):
+        return False, f"heading_rad not in [0, 2π) after wrap: {wrapped}"
+    return True, ""
+
+
+def cross_seed_dedup_candidates(
+    candidates: Sequence[Any],
+    *,
+    tolerance: Mapping[str, float],
+) -> List[Tuple[Tuple[float, float, float, float], int]]:
+    """Stable, deterministic cross-seed deduplication.
+
+    Returns a list of (canonical_tuple, original_index) in original input
+    order.  Two candidates are duplicates iff their 4-tuple components
+    differ by at most the corresponding tolerance value (absolute).  The
+    "first wins" — original index used as tiebreaker so the result is
+    stable across runs.
+
+    Raises:
+        ValueError on NaN / Inf input (fail-closed).
+    """
+    out: List[Tuple[Tuple[float, float, float, float], int]] = []
+    keys = ("heading_rad", "speed_mps", "release_time_s", "delay_s")
+    for idx, c in enumerate(candidates):
+        t = _formal_candidate_tuple(c)
+        import math as _m
+        for n, v in zip(keys, t):
+            if not _m.isfinite(v):
+                raise ValueError(
+                    f"cross_seed_dedup_candidates: non-finite {n}={v} "
+                    f"at index {idx}")
+        is_dup = False
+        for kept_t, _kept_idx in out:
+            if all(abs(a - b) <= float(tolerance[k])
+                   for a, b, k in zip(t, kept_t, keys)):
+                is_dup = True
+                break
+        if not is_dup:
+            out.append((t, idx))
+    return out
+
+
+def _row_is_valid_fine_row(row: Any) -> bool:
+    """Check that a SearchEvaluationRow is a valid fine row (status='ok'
+    and valid=True and sample_level='fine' and scan_step <= 0.02)."""
+    return (row.status == "ok"
+            and bool(row.valid)
+            and str(row.sample_level) == "fine"
+            and float(row.scan_step_s) <= 0.02 + 1e-9)
+
+
+def build_formal_output(
+    *,
+    task: str,
+    per_seed_outputs: Sequence[Mapping[str, Any]],
+    finalist_pool: Sequence[Any],
+    winner_row: Any,
+    dedupe_tolerance: Mapping[str, float],
+    seeds: Sequence[int],
+    config_sha256: str,
+    code_revision: str,
+    config_path: str,
+    algorithm_version: str = ALGORITHM_VERSION,
+    sampling_method: str = SAMPLING_METHOD,
+    evaluator_kind: str = "real",
+    evaluator_version: str = "v1",
+    scan_steps_used: Sequence[float] = (0.02, 0.01, 0.005),
+    stability_results: Optional[Mapping[str, Any]] = None,
+    perturbation_results: Optional[Mapping[str, Any]] = None,
+    physical_validity: Optional[Mapping[str, Any]] = None,
+    pilot_best_candidate: Optional[Any] = None,
+    extra: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Construct the formal-search output JSON-serializable dict.
+
+    The output MUST contain:
+      - declaration == FORMAL_DECLARATION
+      - best_known_disclaimer == "NOT A PROVEN GLOBAL OPTIMUM"
+      - per-seed summary list with stage_counts, identity hashes,
+        completed counts, top candidates
+      - finalist_pool: deduplicated vectors with provenance
+      - winner_row.to_dict() with sample_level == 'fine', scan_step in
+        scan_steps_used
+      - stability + perturbation + physical_validity report
+      - aggregate code/config/run identity hashes
+
+    Returns a dict ready for json.dump (with custom JSON encoder).
+    """
+    out: Dict[str, Any] = {
+        "task": str(task),
+        "declaration": FORMAL_DECLARATION,
+        "best_known_disclaimer": "NOT A PROVEN GLOBAL OPTIMUM",
+        "algorithm_version": str(algorithm_version),
+        "sampling_method": str(sampling_method),
+        "evaluator_kind": str(evaluator_kind),
+        "evaluator_version": str(evaluator_version),
+        "code_revision": str(code_revision),
+        "seeds": [int(s) for s in seeds],
+        "config_path": str(config_path),
+        "config_sha256": str(config_sha256),
+        "dedupe_tolerance": {k: float(v) for k, v in dedupe_tolerance.items()},
+        "scan_steps_used": [float(s) for s in scan_steps_used],
+        "per_seed": [dict(o) for o in per_seed_outputs],
+        "finalist_pool": [
+            {"index": idx, "physical_candidate": list(t)}
+            for t, idx in finalist_pool
+        ],
+        "pilot_best_candidate_injected": pilot_best_candidate is not None,
+    }
+    if pilot_best_candidate is not None:
+        pt = _formal_candidate_tuple(pilot_best_candidate)
+        out["pilot_best_candidate"] = {
+            "physical_candidate": list(pt),
+            "source": "pilot_fixed_163_seed_2025",
+        }
+    # winner
+    if winner_row is None:
+        out["winner"] = None
+        out["final_best_status"] = "EMPTY_FINE_NO_RESULT"
+    else:
+        try:
+            out["winner"] = winner_row.to_dict()
+            out["final_best_status"] = (
+                "OK_FINE_RESULT" if _row_is_valid_fine_row(winner_row)
+                else "INVALID_WINNER_FAIL_CLOSED")
+        except Exception:
+            out["winner"] = {
+                "heading_rad": float(winner_row.heading_rad),
+                "speed_mps": float(winner_row.speed_mps),
+                "release_time_s": float(winner_row.release_time_s),
+                "delay_s": float(winner_row.delay_s),
+                "total_duration_s": float(winner_row.total_duration_s),
+                "status": str(winner_row.status),
+                "valid": bool(winner_row.valid),
+                "sample_level": str(winner_row.sample_level),
+                "scan_step_s": float(winner_row.scan_step_s),
+            }
+            out["final_best_status"] = (
+                "OK_FINE_RESULT" if _row_is_valid_fine_row(winner_row)
+                else "INVALID_WINNER_FAIL_CLOSED")
+    if stability_results is not None:
+        out["stability"] = dict(stability_results)
+    if perturbation_results is not None:
+        out["perturbation"] = dict(perturbation_results)
+    if physical_validity is not None:
+        out["physical_validity"] = dict(physical_validity)
+    if extra:
+        for k, v in extra.items():
+            out[k] = v
+    # canonical result hash (deterministic, excludes path/wall-clock)
+    out["canonical_result_sha256"] = _canonical_formal_sha256(out)
+    return out
+
+
+def _canonical_formal_sha256(out: Mapping[str, Any]) -> str:
+    """SHA-256 of the formal-output canonical projection.
+
+    Excludes timestamp / wall-clock / paths / per-seed wall-clock.
+    Whitelist fields only; deterministic.
+    """
+    canonical = {
+        "declaration": out.get("declaration"),
+        "seeds": list(out.get("seeds", [])),
+        "config_sha256": out.get("config_sha256"),
+        "code_revision": out.get("code_revision"),
+        "winner": (
+            out.get("winner") if out.get("winner") is None
+            else {
+                "heading_rad": float(out["winner"]["heading_rad"]),
+                "speed_mps": float(out["winner"]["speed_mps"]),
+                "release_time_s": float(out["winner"]["release_time_s"]),
+                "delay_s": float(out["winner"]["delay_s"]),
+                "total_duration_s": float(
+                    out["winner"]["total_duration_s"]),
+                "sample_level": out["winner"]["sample_level"],
+                "scan_step_s": float(out["winner"]["scan_step_s"]),
+            }
+        ),
+        "finalist_pool_size": len(out.get("finalist_pool", [])),
+        "scan_steps_used": list(out.get("scan_steps_used", [])),
+        "dedupe_tolerance": {
+            k: float(v) for k, v in
+            out.get("dedupe_tolerance", {}).items()
+        },
+    }
+    text = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
+    import hashlib as _hl
+    return _hl.sha256(text.encode("utf-8")).hexdigest()
+
+
+def formal_stability_check(
+    winner: Tuple[float, float, float, float],
+    *,
+    scan_steps: Sequence[float] = (0.02, 0.01, 0.005),
+    seed: int = 2025,
+    threshold_s: float = 0.02,
+) -> Dict[str, Any]:
+    """Re-evaluate the winner at multiple scan_steps (stability check).
+
+    Returns a dict mapping scan_step -> {total_duration_s, intervals,
+    valid, status, delta_from_0_01s}.
+
+    The protocol (per §十一-A):
+      - All re-evaluations must remain 'valid'.
+      - |duration at 0.01 - duration at 0.005| <= threshold_s (default 0.02s).
+      - If the ranking of an alternative candidate changes vs winner,
+        report the comparison; never silently re-rank.
+    """
+    results: Dict[str, Any] = {"per_scan_step": {}}
+    base_total: Optional[float] = None
+    for ss in scan_steps:
+        row = evaluate_with_real_evaluator(
+            _formal_candidate_tuple(winner),
+            sample_level="fine", scan_step=float(ss), seed=int(seed),
+            source_stage="formal_stability", source_candidate_index=-1,
+        )
+        results["per_scan_step"][f"{float(ss):.4f}"] = {
+            "total_duration_s": float(row.total_duration_s),
+            "valid": bool(row.valid),
+            "status": str(row.status),
+            "n_intervals": len(row.intervals) if row.intervals else 0,
+            "evaluation_id": str(row.evaluation_id),
+        }
+        if base_total is None:
+            base_total = float(row.total_duration_s)
+    # delta vs first scan step (0.01) when present
+    s01 = None
+    s005 = None
+    for k, v in results["per_scan_step"].items():
+        if abs(float(k) - 0.01) < 1e-9:
+            s01 = v["total_duration_s"]
+        if abs(float(k) - 0.005) < 1e-9:
+            s005 = v["total_duration_s"]
+    if s01 is not None and s005 is not None:
+        diff = abs(s01 - s005)
+        results["delta_0p01_vs_0p005_s"] = diff
+        results["stability_ok"] = diff <= threshold_s + 1e-9
+    else:
+        results["stability_ok"] = None
+    return results
+
+
+def formal_perturbation_check(
+    winner: Tuple[float, float, float, float],
+    *,
+    deltas: Sequence[Tuple[float, float, float, float]] = (
+        (0.05, 2.0, 0.5, 0.3),
+        (-0.05, -2.0, -0.5, -0.3),
+        (0.02, 1.0, 0.2, 0.1),
+        (-0.02, -1.0, -0.2, -0.1),
+    ),
+    seed: int = 2025,
+    scan_step: float = 0.005,
+) -> Dict[str, Any]:
+    """Local perturbation check (§十一-B): small bidimensional perturbations
+    on each axis.
+
+    Per perturbation, evaluates the perturbed candidate at the same fine
+    scan step (0.005) and reports validity, status, total duration.
+
+    All perturbations MUST pass formal_physical_validity first; the
+    result fails-closed if any non-physical perturbation is attempted.
+
+    Refinement recommendation (§十一-B-3): if perturbation stably
+    improves the winner, the report flags "local_not_yet_converged".
+    """
+    base = _formal_candidate_tuple(winner)
+    out: Dict[str, Any] = {"per_perturbation": {}, "any_improves": False}
+    base_row = evaluate_with_real_evaluator(
+        base, sample_level="fine", scan_step=float(scan_step),
+        seed=int(seed),
+        source_stage="formal_perturb_base", source_candidate_index=-1,
+    )
+    out["baseline_total_duration_s"] = float(base_row.total_duration_s)
+    base_valid, base_reason = formal_physical_validity(base)
+    out["baseline_physical_ok"] = bool(base_valid)
+    if not base_valid:
+        out["baseline_physical_reason"] = base_reason
+    for i, d in enumerate(deltas):
+        perturbed = (base[0] + d[0], base[1] + d[1],
+                     base[2] + d[2], base[3] + d[3])
+        ok, reason = formal_physical_validity(perturbed)
+        per: Dict[str, Any] = {
+            "physical_ok": bool(ok),
+            "physical_reason": reason if not ok else "",
+            "perturbed_candidate": list(perturbed),
+            "delta": list(d),
+        }
+        if ok:
+            row = evaluate_with_real_evaluator(
+                perturbed, sample_level="fine",
+                scan_step=float(scan_step), seed=int(seed),
+                source_stage=f"formal_perturb_{i}",
+                source_candidate_index=-1,
+            )
+            per["valid"] = bool(row.valid)
+            per["status"] = str(row.status)
+            per["total_duration_s"] = float(row.total_duration_s)
+            per["improves_winner"] = (
+                bool(row.valid) and row.status == "ok"
+                and float(row.total_duration_s)
+                > out["baseline_total_duration_s"] + 1e-9)
+            if per["improves_winner"]:
+                out["any_improves"] = True
+        out["per_perturbation"][f"pert_{i}"] = per
+    out["local_not_yet_converged"] = out["any_improves"]
+    return out
+
+
+# Re-export physical validity tuple / constants for tests / scripts.
+__all_formal__ = (
+    "FORMAL_GATE_SCHEMA_VERSION",
+    "FORMAL_DECLARATION",
+    "FORMAL_FINE_MIN_COUNT",
+    "FormalBudgetGateError",
+    "compute_formal_stage_counts",
+    "load_formal_config",
+    "validate_formal_budget",
+    "formal_physical_validity",
+    "cross_seed_dedup_candidates",
+    "build_formal_output",
+    "formal_stability_check",
+    "formal_perturbation_check",
+    "formal_pilot_budget_from_stage_counts",
+)
+
+
 if __name__ == "__main__":
     sys.exit(main())

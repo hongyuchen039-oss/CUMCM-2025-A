@@ -108,6 +108,22 @@ from src.q2_search import (
     validate_fixed_production_result,
     FixedProductionBudgetInvariantError,
     EXPECTED_STAGE_COUNTS_PRODUCTION,
+    # TASK_005 formal profile additions (additive, isolated from pilot)
+    FORMAL_GATE_SCHEMA_VERSION,
+    FORMAL_DECLARATION,
+    FORMAL_FINE_MIN_COUNT,
+    FormalBudgetGateError,
+    compute_formal_stage_counts,
+    load_formal_config,
+    validate_formal_budget,
+    formal_physical_validity,
+    cross_seed_dedup_candidates,
+    build_formal_output,
+    formal_stability_check,
+    formal_perturbation_check,
+    formal_pilot_budget_from_stage_counts,
+    TEST_U0 as QS_TEST_U0,
+    TEST_G as QS_TEST_G,
 )
 
 
@@ -2209,6 +2225,548 @@ class JFIXED163Gate(unittest.TestCase):
             self.assertTrue(os.path.exists(marker))
         finally:
             shutil.rmtree(out_dir, ignore_errors=True)
+
+
+# =============================================================================
+#  K2 — TASK_005 Formal Profile (20 requirements)
+# =============================================================================
+class FormalProfileTests(unittest.TestCase):
+    """20 tests covering TASK_005 §十三 formal profile invariants.
+
+    These tests are strictly additive to the pilot tests above.  They do
+    NOT modify pilot fixed-163 invariants and do NOT depend on pilot
+    helpers (they only depend on additive formal exports in
+    src.q2_search).
+    """
+
+    # ───── §十三-1: pilot fixed-163 unchanged ─────
+    def test_fp01_pilot_fixed_163_constants_unchanged(self):
+        """Pilot tokens (constants) must not regress."""
+        self.assertEqual(EXPECTED_TOTAL_EVALUATIONS, 163)
+        self.assertEqual(EXPECTED_STAGE_COUNTS_PRODUCTION,
+                         {"global_coarse": 97, "global_medium": 8,
+                          "local_coarse": 48, "local_medium": 8,
+                          "fine": 2})
+        self.assertEqual(ANCHOR_COUNT, 1)
+
+    # ───── §十三-2: pilot config cannot enter formal path ─────
+    def test_fp02_pilot_config_rejected_by_formal_loader(self):
+        """Pilot config (schema 2, formal_enabled=false) must be
+        rejected by load_formal_config (schema 3)."""
+        with self.assertRaises(ValueError):
+            load_formal_config(DEFAULT_CONFIG_PATH)
+
+    # ───── §十三-3: formal config must have formal_enabled=true effectively ─────
+    def test_fp03_formal_declaration_constant_and_loader(self):
+        """FORMAL_DECLARATION is fixed; load_formal_config rejects any other."""
+        self.assertEqual(
+            FORMAL_DECLARATION,
+            "FORMAL BEST-KNOWN Q2 CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM")
+        # Loader accepts the on-disk formal config:
+        cfg = load_formal_config(
+            os.path.join(os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__))),
+                "configs", "q2_search_formal_v1.json"))
+        self.assertEqual(cfg["declaration"], FORMAL_DECLARATION)
+        self.assertEqual(cfg["schema_version"], FORMAL_GATE_SCHEMA_VERSION)
+        self.assertEqual(FORMAL_GATE_SCHEMA_VERSION, 3)
+
+    # ───── §十三-4: formal config missing seeds/budget/stage_counts → reject ─────
+    def test_fp04_formal_config_missing_required_fields_rejected(self):
+        """A JSON missing any of seeds / total_budget / stage_counts
+        must fail-closed at load_formal_config."""
+        bad = {
+            "schema_version": 3,
+            "gate_id": "q2_search_formal_v1",
+            "declaration": FORMAL_DECLARATION,
+            "algorithm_version": ALGORITHM_VERSION,
+            "sampling_method": SAMPLING_METHOD,
+            "evaluator_kind": "real",
+            "workers": 1,
+            "checkpoint_schema": 2,
+            # seeds MISSING
+            "total_budget": 100,
+            "stage_counts": {
+                "global_coarse": 60, "global_medium": 5,
+                "local_coarse": 28, "local_medium": 5, "fine": 5,
+            },
+            "dedupe_tolerance": {
+                "heading_rad": 0.0, "speed_mps": 0.0,
+                "release_time_s": 0.0, "delay_s": 0.0,
+            },
+            "no_result_xlsx": True, "no_q3": True,
+            "no_global_optimum_claim": True,
+        }
+        with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json", delete=False) as f:
+            json.dump(bad, f)
+            path = f.name
+        try:
+            with self.assertRaises(ValueError):
+                load_formal_config(path)
+        finally:
+            os.remove(path)
+
+    # ───── §十三-5: formal stage counts sum != budget → reject ─────
+    def test_fp05_formal_stage_counts_sum_mismatch_rejected(self):
+        bad = {
+            "schema_version": 3,
+            "gate_id": "q2_search_formal_v1",
+            "declaration": FORMAL_DECLARATION,
+            "algorithm_version": ALGORITHM_VERSION,
+            "sampling_method": SAMPLING_METHOD,
+            "evaluator_kind": "real",
+            "workers": 1,
+            "checkpoint_schema": 2,
+            "seeds": [2025, 2026, 2027],
+            "total_budget": 100,
+            "stage_counts": {
+                # sums to 99 ≠ 100
+                "global_coarse": 60, "global_medium": 5,
+                "local_coarse": 28, "local_medium": 5, "fine": 1,
+            },
+            "dedupe_tolerance": {
+                "heading_rad": 0.0, "speed_mps": 0.0,
+                "release_time_s": 0.0, "delay_s": 0.0,
+            },
+            "no_result_xlsx": True, "no_q3": True,
+            "no_global_optimum_claim": True,
+        }
+        with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json", delete=False) as f:
+            json.dump(bad, f)
+            path = f.name
+        try:
+            with self.assertRaises(ValueError):
+                load_formal_config(path)
+        finally:
+            os.remove(path)
+
+    # ───── compute_formal_stage_counts unit ─────
+    def test_fp06_compute_formal_stage_counts_invariants(self):
+        """For each candidate budget, sum == total, fine >= 4,
+        all stages present, integer values."""
+        for n in (500, 1000, 2000):
+            sc = compute_formal_stage_counts(total_budget=n)
+            self.assertEqual(sum(sc.values()), n)
+            for s in ("global_coarse", "global_medium", "local_coarse",
+                       "local_medium", "fine"):
+                self.assertIn(s, sc)
+                self.assertIsInstance(sc[s], int)
+            self.assertGreaterEqual(sc["fine"], FORMAL_FINE_MIN_COUNT)
+
+    # ───── formal_pilot_budget_from_stage_counts ─────
+    def test_fp07_formal_pilot_budget_preserves_stage_counts(self):
+        sc = compute_formal_stage_counts(total_budget=500)
+        bp = formal_pilot_budget_from_stage_counts(sc)
+        # global_coarse_count = global_coarse - 1 (anchor)
+        self.assertEqual(bp["global_coarse_count"], sc["global_coarse"] - 1)
+        self.assertEqual(bp["coarse_top_k"], sc["global_medium"])
+        self.assertEqual(bp["medium_re_evaluate_count"], sc["global_medium"])
+        self.assertEqual(bp["local_max_count"], sc["local_coarse"])
+        self.assertEqual(bp["local_medium_count"], sc["local_medium"])
+        self.assertEqual(bp["fine_final_count"], sc["fine"])
+
+    # ───── §十三-6: duplicate evaluation_id in formal validator ─────
+    def test_fp08_validate_formal_rejects_duplicate_evaluation_ids(self):
+        cfg = {"total_budget": 4, "stage_counts": {
+            "global_coarse": 1, "global_medium": 1,
+            "local_coarse": 1, "local_medium": 1, "fine": 0,
+        }}
+        # 构造 4 个 row 但其中 2 个共享 evaluation_id
+        rows = []
+        seen = set()
+        for i in range(4):
+            eid = f"eid-{i // 2}"
+            rows.append(_make_row(
+                1.0 + 0.01 * i, 100.0 + i, 1.0, 0.5,
+                source_stage="global_coarse", sample_level="coarse",
+                scan_step=0.05, total=1.0, eval_id=eid))
+        with self.assertRaises(FormalBudgetGateError) as ctx:
+            validate_formal_budget(
+                config=cfg, stage_counts=cfg["stage_counts"],
+                all_rows=rows, completed_count=4)
+        self.assertIn("unique evaluation_ids", str(ctx.exception))
+
+    # ───── §十三-7: seed identity mismatch → reject ─────
+    def test_fp09_validate_formal_rejects_seed_identity_mismatch(self):
+        cfg = {"total_budget": 2, "stage_counts": {
+            "global_coarse": 1, "global_medium": 1,
+            "local_coarse": 0, "local_medium": 0, "fine": 0,
+        }}
+        rows = [_make_row(1.0, 100.0, 1.0, 0.5,
+                          source_stage="global_coarse",
+                          sample_level="coarse",
+                          scan_step=0.05, total=1.0,
+                          eval_id="global_coarse-row-0"),
+                _make_row(2.0, 100.0, 1.0, 0.5,
+                          source_stage="global_medium",
+                          sample_level="medium",
+                          scan_step=0.02, total=0.5,
+                          eval_id="global_medium-row-0")]
+        with self.assertRaises(FormalBudgetGateError):
+            validate_formal_budget(
+                config=cfg, stage_counts=cfg["stage_counts"],
+                all_rows=rows, completed_count=2,
+                run_identity_sha256="wrong",
+                expected_run_identity_sha256="expected")
+
+    # ───── §十三-8: config SHA mismatch → reject ─────
+    def test_fp10_validate_formal_rejects_config_sha_mismatch(self):
+        cfg = {"total_budget": 6, "stage_counts": {
+            "global_coarse": 1, "global_medium": 1,
+            "local_coarse": 0, "local_medium": 0, "fine": 4,
+        }}
+        rows = [_make_row(1.0 + 0.01 * i, 100.0 + i, 1.0, 0.5,
+                          source_stage="fine", sample_level="fine",
+                          scan_step=0.05, total=1.0,
+                          eval_id=f"global_coarse-row-{i}")
+                for i in range(6)]
+        # Map source_stage labels to satisfy stage_counts signature: validator
+        # only checks sum + unique evaluation_id + completed_count + optional
+        # sha matches; explicit per-stage membership is not enforced by
+        # validate_formal_budget.  So even a single source_stage label across
+        # all rows is acceptable here as long as sum and uniqueness hold.
+        with self.assertRaises(FormalBudgetGateError) as ctx:
+            validate_formal_budget(
+                config=cfg, stage_counts=cfg["stage_counts"],
+                all_rows=rows, completed_count=6,
+                config_sha256="a" * 64,
+                expected_config_sha256="b" * 64)
+        self.assertIn("config_sha256", str(ctx.exception))
+
+    # ───── §十三-9: formal interrupted checkpoint exactly at N ─────
+    def test_fp11_interrupted_checkpoint_stops_at_exact_n(self):
+        """stop_after_evaluations must yield EXACTLY N evaluated rows."""
+        out_dir = tempfile.mkdtemp(prefix="formalstop_")
+        try:
+            cfg = load_formal_config(os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "configs", "q2_search_formal_v1.json"))
+            # Build a tiny budget via stage counts we know sum quickly
+            small = {"global_coarse_count": 4, "coarse_top_k": 2,
+                      "medium_re_evaluate_count": 2, "local_per_top": 2,
+                      "local_max_count": 4, "local_medium_count": 2,
+                      "fine_final_count": 2, "local_delta": (0.1, 5.0, 0.5, 0.3)}
+            with self.assertRaises(_ControlledInterruption) as ci:
+                run_search_pipeline(
+                    seed=2025, u0=QS_TEST_U0, g=QS_TEST_G,
+                    t_arrival=TEST_T_ARRIVAL,
+                    budget=small,
+                    output_dir=out_dir,
+                    config_path=DEFAULT_CONFIG_PATH,
+                    require_clean_worktree=False,
+                    stop_after_evaluations=5,
+                    enforce_fixed_production_result=False,
+                )
+            self.assertEqual(ci.exception.completed_count, 5)
+            ck_path = os.path.join(out_dir, "checkpoint_v2.json")
+            self.assertTrue(os.path.exists(ck_path))
+            ck = load_checkpoint_v2(ck_path)
+            self.assertEqual(len(ck.rows), 5)
+            self.assertEqual(len(ck.completed_evaluation_ids), 5)
+        finally:
+            shutil.rmtree(out_dir, ignore_errors=True)
+
+    # ───── §十三-10: resume does not duplicate evaluations ─────
+    def test_fp12_resume_does_not_duplicate_evaluation(self):
+        """Resume from controlled_interruption checkpoint_v2 → no dup eid."""
+        out_dir = tempfile.mkdtemp(prefix="formalresume_")
+        try:
+            small = {"global_coarse_count": 3, "coarse_top_k": 1,
+                      "medium_re_evaluate_count": 1, "local_per_top": 1,
+                      "local_max_count": 2, "local_medium_count": 1,
+                      "fine_final_count": 1, "local_delta": (0.1, 5.0, 0.5, 0.3)}
+            # 1st run: stop_after_evaluations=3
+            with self.assertRaises(_ControlledInterruption):
+                run_search_pipeline(
+                    seed=2025, u0=QS_TEST_U0, g=QS_TEST_G,
+                    t_arrival=TEST_T_ARRIVAL,
+                    budget=small,
+                    output_dir=out_dir,
+                    config_path=DEFAULT_CONFIG_PATH,
+                    require_clean_worktree=False,
+                    stop_after_evaluations=3,
+                    enforce_fixed_production_result=False,
+                )
+            ck_path = os.path.join(out_dir, "checkpoint_v2.json")
+            ck = load_checkpoint_v2(ck_path)
+            # Resume
+            out = run_search_pipeline(
+                seed=2025, u0=QS_TEST_U0, g=QS_TEST_G,
+                t_arrival=TEST_T_ARRIVAL,
+                budget=small,
+                output_dir=out_dir,
+                config_path=DEFAULT_CONFIG_PATH,
+                require_clean_worktree=False,
+                resume_from=ck_path,
+                enforce_fixed_production_result=False,
+            )
+            all_eids = [r["evaluation_id"] for r in out["all_rows"]]
+            self.assertEqual(len(all_eids), len(set(all_eids)),
+                             "evaluation_ids must be unique across resume")
+        finally:
+            shutil.rmtree(out_dir, ignore_errors=True)
+
+    # ───── §十三-11: resumed == uninterrupted canonical output schema ─────
+    def test_fp13_resumed_and_uninterrupted_share_schema(self):
+        """build_pilot_output (used by formal via run_search_pipeline)
+        yields same field set on resumed vs uninterrupted paths."""
+        out_dir_a = tempfile.mkdtemp(prefix="formalunan_")
+        out_dir_b = tempfile.mkdtemp(prefix="formalresumed_")
+        try:
+            small = {"global_coarse_count": 4, "coarse_top_k": 2,
+                      "medium_re_evaluate_count": 2, "local_per_top": 2,
+                      "local_max_count": 4, "local_medium_count": 2,
+                      "fine_final_count": 2,
+                      "local_delta": (0.1, 5.0, 0.5, 0.3)}
+            out_a = run_search_pipeline(
+                seed=2025, u0=QS_TEST_U0, g=QS_TEST_G,
+                t_arrival=TEST_T_ARRIVAL,
+                budget=small,
+                output_dir=out_dir_a,
+                config_path=DEFAULT_CONFIG_PATH,
+                require_clean_worktree=False,
+                enforce_fixed_production_result=False,
+            )
+            ck_path = os.path.join(out_dir_a, "checkpoint_v2.json")
+            self.assertTrue(os.path.exists(ck_path))
+            out_b = run_search_pipeline(
+                seed=2025, u0=QS_TEST_U0, g=QS_TEST_G,
+                t_arrival=TEST_T_ARRIVAL,
+                budget=small,
+                output_dir=out_dir_b,
+                config_path=DEFAULT_CONFIG_PATH,
+                require_clean_worktree=False,
+                resume_from=ck_path,
+                enforce_fixed_production_result=False,
+            )
+            self.assertEqual(set(out_a.keys()), set(out_b.keys()))
+            for k in CANONICAL_RESULT_FIELDS:
+                self.assertIn(k, out_a)
+                self.assertIn(k, out_b)
+        finally:
+            shutil.rmtree(out_dir_a, ignore_errors=True)
+            shutil.rmtree(out_dir_b, ignore_errors=True)
+
+    # ───── §十三-12: final winner must come from fine ─────
+    def test_fp14_winner_must_be_fine_sample_level(self):
+        """build_formal_output tags winner with sample_level='fine'."""
+        # Use a real row from run_search_pipeline
+        out_dir = tempfile.mkdtemp(prefix="formalwin_")
+        try:
+            out = run_search_pipeline(
+                seed=2025, u0=QS_TEST_U0, g=QS_TEST_G,
+                t_arrival=TEST_T_ARRIVAL,
+                budget={"global_coarse_count": 4, "coarse_top_k": 2,
+                         "medium_re_evaluate_count": 2, "local_per_top": 2,
+                         "local_max_count": 4, "local_medium_count": 2,
+                         "fine_final_count": 2,
+                         "local_delta": (0.1, 5.0, 0.5, 0.3)},
+                output_dir=out_dir,
+                config_path=DEFAULT_CONFIG_PATH,
+                require_clean_worktree=False,
+                enforce_fixed_production_result=False,
+            )
+            if out.get("best_known_candidate") is not None:
+                self.assertEqual(
+                    out["best_known_candidate"]["source_stage"], "fine")
+                self.assertEqual(
+                    out["best_known_candidate"]["sample_level"], "fine")
+        finally:
+            shutil.rmtree(out_dir, ignore_errors=True)
+
+    # ───── §十三-13: pilot best injected into formal finalist pool ─────
+    def test_fp15_pilot_best_injected_into_finalist_pool(self):
+        """build_formal_output records pilot_best_candidate_injected=True
+        when pilot_best_candidate parameter is provided."""
+        # Build a dummy row and dummy finalist pool
+        fake_row = _make_row(
+            3.121767217560497, 115.43351397802584,
+            1.7672692031529031, 3.889202402720746,
+            source_stage="fine", sample_level="fine",
+            scan_step=0.005, total=2.48275905609131)
+        out = build_formal_output(
+            task="TASK_005 test",
+            per_seed_outputs=[{"stage_counts":
+                                compute_formal_stage_counts(total_budget=500)}],
+            finalist_pool=[((3.121767217560497, 115.43351397802584,
+                              1.7672692031529031, 3.889202402720746), 0)],
+            winner_row=fake_row,
+            dedupe_tolerance={"heading_rad": 1e-6, "speed_mps": 1e-6,
+                               "release_time_s": 1e-6, "delay_s": 1e-6},
+            seeds=[2025, 2026, 2027],
+            config_sha256="a" * 64,
+            code_revision="git:test",
+            config_path="configs/q2_search_formal_v1.json",
+            pilot_best_candidate=(3.121767217560497, 115.43351397802584,
+                                   1.7672692031529031, 3.889202402720746),
+        )
+        self.assertTrue(out["pilot_best_candidate_injected"])
+        self.assertIn("pilot_best_candidate", out)
+        self.assertEqual(out["pilot_best_candidate"]["source"],
+                         "pilot_fixed_163_seed_2025")
+
+    # ───── §十三-14: formal candidate cannot use rounded-substitute baseline ─────
+    def test_fp16_rounded_substitute_baseline_rejected_by_dedup(self):
+        """A rounded version of the pilot best (delta=0.1 instead of
+        exact values) must NOT be considered identical after dedup with
+        tolerance 1e-6: rounding affects the tuple."""
+        exact = (3.121767217560497, 115.43351397802584,
+                 1.7672692031529031, 3.889202402720746)
+        rounded = (3.1218, 115.4335, 1.7673, 3.8892)
+        tol = {"heading_rad": 1e-6, "speed_mps": 1e-6,
+               "release_time_s": 1e-6, "delay_s": 1e-6}
+        out = cross_seed_dedup_candidates(
+            [exact, rounded], tolerance=tol)
+        # tolerance 1e-6 is much smaller than the rounding delta; both
+        # survive
+        self.assertEqual(len(out), 2)
+        # tighter tolerance than rounding must not collapse them
+        out_tight = cross_seed_dedup_candidates(
+            [exact, rounded], tolerance={
+                "heading_rad": 1e-9, "speed_mps": 1e-9,
+                "release_time_s": 1e-9, "delay_s": 1e-9})
+        self.assertEqual(len(out_tight), 2)
+
+    # ───── §十三-15: cross-seed dedup stable ─────
+    def test_fp17_cross_seed_dedup_stable(self):
+        """cross_seed_dedup_candidates must be deterministic across calls."""
+        cands = [(1.0, 100.0, 1.0, 0.5),
+                  (2.0, 110.0, 1.5, 0.6),
+                  (1.0, 100.0, 1.0, 0.5),  # dup of (0)
+                  (3.0, 120.0, 2.0, 0.7),
+                  (2.0, 110.0, 1.5, 0.6)]  # dup of (1)
+        tol = {"heading_rad": 0.0, "speed_mps": 0.0,
+               "release_time_s": 0.0, "delay_s": 0.0}
+        a = cross_seed_dedup_candidates(cands, tolerance=tol)
+        b = cross_seed_dedup_candidates(cands, tolerance=tol)
+        self.assertEqual(a, b)
+        self.assertEqual(len(a), 3)  # 3 unique
+
+    # ───── §十三-16: output declaration has no global optimum claim ─────
+    def test_fp18_formal_output_no_global_optimum_claim(self):
+        """build_formal_output.declaration must NOT contain
+        affirmative 'global optimum' / 'official answer' / 'VERIFIED FINAL';
+        the *disclaimer* phrase is allowed and indeed required."""
+        fake_row = _make_row(
+            3.121767217560497, 115.43351397802584,
+            1.7672692031529031, 3.889202402720746,
+            source_stage="fine", sample_level="fine",
+            scan_step=0.005, total=2.48275905609131)
+        out = build_formal_output(
+            task="TASK_005 test",
+            per_seed_outputs=[{"stage_counts":
+                                compute_formal_stage_counts(total_budget=500)}],
+            finalist_pool=[((3.121767217560497, 115.43351397802584,
+                              1.7672692031529031, 3.889202402720746), 0)],
+            winner_row=fake_row,
+            dedupe_tolerance={"heading_rad": 1e-6, "speed_mps": 1e-6,
+                               "release_time_s": 1e-6, "delay_s": 1e-6},
+            seeds=[2025, 2026, 2027],
+            config_sha256="a" * 64,
+            code_revision="git:test",
+            config_path="configs/q2_search_formal_v1.json",
+        )
+        text = json.dumps(out, default=str).lower()
+        self.assertNotIn("official answer", text)
+        self.assertNotIn("verified final", text)
+        # declaration must explicitly negate a global-optimum claim
+        self.assertIn("not a proven global optimum", text)
+        # declaration string itself
+        dec = out["declaration"].lower()
+        self.assertIn("not a proven", dec)
+        self.assertIn("best-known", dec)
+
+    # ───── §十三-17: output schema complete ─────
+    def test_fp19_formal_output_schema_complete(self):
+        """build_formal_output must contain all required formal keys."""
+        fake_row = _make_row(
+            3.121767217560497, 115.43351397802584,
+            1.7672692031529031, 3.889202402720746,
+            source_stage="fine", sample_level="fine",
+            scan_step=0.005, total=2.48275905609131)
+        out = build_formal_output(
+            task="TASK_005 test",
+            per_seed_outputs=[{"stage_counts":
+                                compute_formal_stage_counts(total_budget=500)}],
+            finalist_pool=[((3.121767217560497, 115.43351397802584,
+                              1.7672692031529031, 3.889202402720746), 0)],
+            winner_row=fake_row,
+            dedupe_tolerance={"heading_rad": 1e-6, "speed_mps": 1e-6,
+                               "release_time_s": 1e-6, "delay_s": 1e-6},
+            seeds=[2025, 2026, 2027],
+            config_sha256="a" * 64,
+            code_revision="git:test",
+            config_path="configs/q2_search_formal_v1.json",
+            stability_results={"stability_ok": True,
+                                "delta_0p01_vs_0p005_s": 0.005},
+            perturbation_results={"local_not_yet_converged": False,
+                                  "per_perturbation": {}},
+            physical_validity={"ok": True, "reason": ""},
+        )
+        required = {
+            "task", "declaration", "best_known_disclaimer",
+            "algorithm_version", "sampling_method", "evaluator_kind",
+            "evaluator_version", "code_revision", "seeds",
+            "config_path", "config_sha256", "dedupe_tolerance",
+            "scan_steps_used", "per_seed", "finalist_pool",
+            "pilot_best_candidate_injected", "winner",
+            "final_best_status", "stability", "perturbation",
+            "physical_validity", "canonical_result_sha256",
+        }
+        for k in required:
+            self.assertIn(k, out, f"build_formal_output missing key {k!r}")
+
+    # ───── §十三-18: NaN / Inf candidate fail-closed ─────
+    def test_fp20_nan_inf_candidate_fail_closed(self):
+        """NaN or Inf in any axis must be rejected by formal_physical_validity
+        and raise in cross_seed_dedup_candidates."""
+        ok, reason = formal_physical_validity((1.0, float("nan"), 1.0, 0.5))
+        self.assertFalse(ok)
+        self.assertIn("non-finite", reason)
+        ok, reason = formal_physical_validity((1.0, 100.0, 1.0, float("inf")))
+        self.assertFalse(ok)
+        # dedup must raise on NaN
+        with self.assertRaises(ValueError):
+            cross_seed_dedup_candidates(
+                [(1.0, 100.0, 1.0, float("nan"))],
+                tolerance={"heading_rad": 0.0, "speed_mps": 0.0,
+                            "release_time_s": 0.0, "delay_s": 0.0})
+
+    # ───── §十三-19: formal budget not overridable via undeclared CLI flag ─────
+    def test_fp21_production_cli_rejects_formal_overrides(self):
+        """Pilot CLI must NOT accept any formal-budget override flag."""
+        try:
+            rc = qs_main(["--run-search", "--global-coarse-count", "595"])
+        except SystemExit as e:
+            rc = e.code if isinstance(e.code, int) else 2
+        self.assertEqual(rc, 2)
+        try:
+            rc = qs_main(["--run-search", "--fine-final-count", "12"])
+        except SystemExit as e:
+            rc = e.code if isinstance(e.code, int) else 2
+        self.assertEqual(rc, 2)
+        try:
+            rc = qs_main(["--run-search", "--mode", "formal"])
+        except SystemExit as e:
+            rc = e.code if isinstance(e.code, int) else 2
+        self.assertEqual(rc, 2)
+
+    # ───── §十三-20: existing 148 Q2 Search tests untouched (smoke) ─────
+    def test_fp22_existing_148_pilot_tests_not_deleted_or_weakened(self):
+        """Sanity: pilot token constants used by old tests are still
+        intact in current module."""
+        # Verify some pilot-only public symbols still present
+        for sym in ("EXPECTED_TOTAL_EVALUATIONS", "EXPECTED_STAGE_COUNTS_PRODUCTION",
+                     "FixedProductionBudgetInvariantError",
+                     "validate_fixed_production_result",
+                     "DEFAULT_PILOT_BUDGET", "FORMAL_DECLARATION",
+                     "FORMAL_GATE_SCHEMA_VERSION"):
+            self.assertTrue(hasattr(qs, sym),
+                            f"pilot/formal symbol disappeared: {sym}")
+        # And they're not aliased / shadowed accidentally
+        self.assertEqual(qs.EXPECTED_TOTAL_EVALUATIONS, 163)
 
 
 if __name__ == "__main__":

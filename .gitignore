@@ -52,6 +52,8 @@ desktop.ini
 # TASK_004 Search 临时工作目录 (含 benchmark / pilot 工件)
 work/q2_search/
 work/q2_search_pilot/
+work/q2_pilot_calib/
+work/q2_formal/
 work/_test_run.log
 
 # TASK_GOV_002 本地 runtime task-context lock (本机真实路径, 不得提交)
