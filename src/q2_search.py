@@ -3736,13 +3736,20 @@ def run_formal_pipeline(
             f"fine pool empty")
 
     final_best_row: Optional[SearchEvaluationRow] = None
+    # Pilot output uses 'best_known_candidate' as the winner field name
+    # (build_pilot_output -> 'best_known_candidate'). Prefer that first,
+    # then fall back to 'final_best_row' for forward compatibility.
+    bk_raw = out.get("best_known_candidate")
     fbr_raw = out.get("final_best_row")
-    if isinstance(fbr_raw, Mapping):
+    if isinstance(bk_raw, Mapping):
+        final_best_row = SearchEvaluationRow.from_dict(bk_raw)
+    elif isinstance(fbr_raw, Mapping):
         final_best_row = SearchEvaluationRow.from_dict(fbr_raw)
     elif final_best_status == "OK_FINE_RESULT":
         raise FormalBudgetGateError(
             f"run_formal_pipeline seed={seed}: status=OK_FINE_RESULT but "
-            f"final_best_row is None")
+            f"neither best_known_candidate nor final_best_row is "
+            f"present in pipeline output")
 
     fine_rows = [r for r in actual_rows if r.source_stage == "fine"]
 
