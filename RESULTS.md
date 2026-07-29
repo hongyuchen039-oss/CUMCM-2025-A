@@ -186,13 +186,15 @@
 > formal config SHA；扰动只覆盖 4 条多变量对角线而非 16 项 one-var；
 > pilot best-known 注入不 fail-closed；finalist 不 fail-closed。
 > 本节数字仅作历史背景，不构成正式冻结结论。
-> 正式冻结结果在 clean-HEAD P1 证据门 rerun 后再行替换（本轮内）。
+> 正式冻结结果见 §5 P1 RERUN 列（canonical_result_sha256 =
+> 2efcc91486d4ce9d22bfdedc0a4d57c36857d506126bca40c1a31695a96d1b3a,
+> clean-HEAD 467314d, 16 项扰动完成, fail-closed 全部启用）。
 
 ### 1. Declaration
 
 - `declaration = "FORMAL BEST-KNOWN Q2 CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM"`
 - `best_known_disclaimer = "NOT A PROVEN GLOBAL OPTIMUM"`
-- `final_best_status = "OK_FINE_RESULT"`（待 P1 rerun 后确认）
+- `final_best_status = "OK_FINE_RESULT"`（P1 rerun 后确认, 3 seeds × 1000 evals 全部产出 valid OK_FINE_RESULT）
 
 ### 2. 搜索规模 (per-seed, formal config 强制)
 
@@ -224,30 +226,83 @@
   - 优先级 2: 确定性 seed=2025 fixed-163 clean pilot 重跑
   - 优先级 3: 失败 → BLOCKED
 
-### 5. Formal Winner (待 P1 rerun 后填写精确数值)
+### 5. Formal Winner (P1 RERUN 后, clean-HEAD, canonical_result_sha256 = 2efcc91486d4ce9d22bfdedc0a4d57c36857d506126bca40c1a31695a96d1b3a)
 
-| 变元 | PRE-FIX (INVALIDATED) | P1 RERUN (待测) |
+| 变元 | PRE-FIX (INVALIDATED) | P1 RERUN (本轮冻结) |
 |---|---|---|
-| heading_rad (θ) | 3.121767217560497 | TBD |
-| speed_mps (v) | 115.43351397802584 | TBD |
-| release_time_s | 1.7672692031529031 | TBD |
-| delay_s | 3.889202402720746 | TBD |
-| total_duration_s | 2.48275905609131 s | TBD |
-| interval | (6.0947…, 8.5774…) | TBD |
+| heading_rad (θ) | 3.121767217560497 | **3.121767217560497** |
+| speed_mps (v) | 115.43351397802584 | **115.43351397802584** |
+| release_time_s | 1.7672692031529031 | **1.7672692031529031** |
+| delay_s | 3.889202402720746 | **3.889202402720746** |
+| total_duration_s | 2.48275905609131 s | **2.48275905609131 s** |
+| interval | (6.0947…, 8.5774…) | **(6.094727521515435, 8.577486577606745) s** |
+| source_stage | formal_finalist_v2 | **formal_finalist_v2** |
+| evaluation_id | — | **3e1fa381e092dfdf3c72e10da7edeede** |
+| physical_candidate_sha256 | — | **485582b5dc4f8d9855e5894fcd5372e5e72375206425b756871bfd5ee8763c59** |
+| scan_step_s (winner 评测) | 0.005 | **0.005** |
+| wall_clock_s (winner 评测) | — | **29.33535759994993** |
+| pilot_best_source | — | **pilot_artifact_local** |
+| pilot_best_canonical_result_sha256 | — | **230fa220d65161f2979f16ac197a5347d2f7f5ea18b5d69cc484a9750971646a** |
+| pilot_best_run_identity_sha256 | — | **89593a2318419d663ab6e47cfca9e88ec8b600d675c3d118ca8a8b956ddb61ca** |
 
 > PRE-FIX 列仅作历史背景, 不得作为正式冻结结论.
-> P1 RERUN 列在 clean-HEAD formal execution 后替换, 替换前不写入.
+> P1 RERUN 列为本轮 clean-HEAD rerun 后的正式冻结 (canonical_result_sha256
+> 与 PRE-FIX 不同: `fa279e3fcc6…` → `2efcc91486d4…`), 16 项扰动显示
+> `local_perturbation_passed=False` (5/16 改善), 故本候选为
+> best-known 但需进一步局部搜索; 不冒充全局最优 / VERIFIED / FINAL.
+> 跨 seed 一致性: seed=2026 与 seed=2027 都各自跑出 fine winner
+> `total_duration_s = 1.3923839855194124` 对应 (θ=π, v=120, r=1.5,
+> d=3.6), 但 pilot 注入的 θ=3.121767217560497 候选在 seed=2025 fine
+> 阶段重评后 total_duration_s=2.48275905609131, 经过 13 个 fine 候选
+> 比较胜出 (finalist pool 共 13 distinct candidates after dedup).
 
-### 6. 时间步长稳定性 (3 档, PRE-FIX 数据)
+### 6. 时间步长稳定性 (3 档, P1 RERUN 后, clean-HEAD)
 
-| scan_step | total_duration_s | status | valid | n_intervals |
-|---|---|---|---|---|
-| 0.0200 | 2.48275905609131 | ok | True | 1 |
-| 0.0100 | 2.48275905609131 | ok | True | 1 |
-| 0.0050 | 2.48275905609131 | ok | True | 1 |
+| scan_step | total_duration_s | status | valid | n_intervals | evaluation_id |
+|---|---|---|---|---|---|
+| 0.0200 | 2.48275905609131 | ok | True | 1 | ad4e701cbff6404ec01f76ec7955bdaf |
+| 0.0100 | 2.48275905609131 | ok | True | 1 | ad4e701cbff6404ec01f76ec7955bdaf |
+| 0.0050 | 2.48275905609131 | ok | True | 1 | ad4e701cbff6404ec01f76ec7955bdaf |
 
 - `delta_0p01_vs_0p005_s = 0.000000`
-- `stability_ok = True`（PRE-FIX；P1 rerun 后必须重新测量）
+- `stability_ok = True`（P1 rerun 后重新测量, 仍完全一致, 三档 evaluation_id 同一）
+
+### 7. 16 项 one-variable-at-a-time 扰动 (P1 RERUN 后, 全部执行)
+
+| Pert | 变量 | sign | scale | perturbed candidate (4-tuple) | total_duration_s | improves_winner |
+|---|---|---|---|---|---|---|
+| 00 | heading_rad | +1 | large (0.05) | (3.1717672175604967, 115.43…, 1.767…, 3.889…) | 0.0 | False |
+| 01 | heading_rad | -1 | large (0.05) | (3.071767217560497, …) | 0.0 | False |
+| 02 | heading_rad | +1 | small (0.02) | (3.141767217560497, …) | 2.273793992996219 | False |
+| 03 | heading_rad | -1 | small (0.02) | (3.101767217560497, …) | 0.0 | False |
+| 04 | speed_mps | +1 | large (2.0) | (3.121…, 117.43351397802584, …) | 1.7018811130523686 | False |
+| 05 | speed_mps | -1 | large (2.0) | (3.121…, 113.43351397802584, …) | 3.02023230552673 | **True** |
+| 06 | speed_mps | +1 | small (1.0) | (3.121…, 116.43351397802584, …) | 2.136833305358884 | False |
+| 07 | speed_mps | -1 | small (1.0) | (3.121…, 114.43351397802584, …) | 2.7724792957305917 | **True** |
+| 08 | release_time_s | +1 | large (0.5) | (3.121…, 115.43…, 2.267269203152903, …) | 0.0 | False |
+| 09 | release_time_s | -1 | large (0.5) | (3.121…, 115.43…, 1.2672692031529031, …) | 3.3120429182052593 | **True** |
+| 10 | release_time_s | +1 | small (0.2) | (3.121…, 115.43…, 1.967269203152903, …) | 0.0 | False |
+| 11 | release_time_s | -1 | small (0.2) | (3.121…, 115.43…, 1.5672692031529032, …) | 3.256385827064512 | **True** |
+| 12 | delay_s | +1 | large (0.3) | (3.121…, 115.43…, 1.767…, 4.189202402720746) | 2.3056549978256244 | False |
+| 13 | delay_s | -1 | large (0.3) | (3.121…, 115.43…, 1.767…, 3.5892024027207463) | 0.0 | False |
+| 14 | delay_s | +1 | small (0.1) | (3.121…, 115.43…, 1.767…, 3.989202402720746) | 2.878093400001525 | **True** |
+| 15 | delay_s | -1 | small (0.1) | (3.121…, 115.43…, 1.767…, 3.789202402720746) | 0.2748999881744396 | False |
+
+- `n_total_perturbations = 16`
+- `n_legal_perturbations = 16`
+- `n_illegal_perturbations = 0`
+- `n_legal_improving = 5` (perts 05, 07, 09, 11, 14)
+- `any_improves = True`
+- `any_physical_rejected = False`
+- `local_not_yet_converged = True`
+- **`local_perturbation_passed = False`**（即 winner 不是 16 项 one-var
+  邻域内的局部极值；speed、release_time_s、delay_s 三个方向均存在
+  改善扰动, 但因扰动后 baseline 2.4827s 仍小于 16 个扰动值, 候选
+  保留为 best-known, 不进入局部收敛声明)
+- heading 4 项扰动均未改善 (区间端点对齐使 max 抖动回落到 0)
+- speed -1 方向两个尺度均改善 (-2.0 → 3.02s, -1.0 → 2.77s)
+- release_time_s -1 方向两个尺度均改善 (-0.5 → 3.31s, -0.2 → 3.26s)
+- delay_s +0.1 改善 (2.88s); delay_s -0.1 极差 (0.27s, 几乎无遮蔽)
 
 ### 7. 16 项 one-variable-at-a-time 扰动 (P1-3)
 
@@ -289,10 +344,43 @@
   不得在 formal winner 基础上声称 Q2 全局最优 / VERIFIED / FINAL /
   官方答案, 除非独立审查签字并立项 TASK_006.
 
+### 10. Per-seed formal run identity (P1 RERUN, clean-HEAD)
+
+| seed | wall_clock_s | formal_run_identity_sha256 | actual_completed_count | actual_unique_evaluation_ids | final_best_status | fine_top1_total_duration_s |
+|---|---|---|---|---|---|---|
+| 2025 | 454.1617 | abaf88cb7c7e7665165a7a6ab4a279ee37afec5cfabc81533100f5d464ec6871 | 1000 | 1000 | OK_FINE_RESULT | 2.48275905609131 |
+| 2026 | 442.4309 | 0dae4822e8607ea00e835bc1d4a5821d19404036b3cd67831a92116d713e24b2 | 1000 | 1000 | OK_FINE_RESULT | 1.3923839855194124 |
+| 2027 | 461.1655 | 0c8480c896518415508ee84bef66b38f6ce70a9cc055d4fbd77cfb40de57abe3 | 1000 | 1000 | OK_FINE_RESULT | 1.3923839855194124 |
+
+- 三个 seed 共用 `formal_config_sha256 = 988932acf0c1ca58140e1563ccdbe45303b412466ce59287c57ec5020dd75c0f`
+- 三个 seed 共用 `code_identity_sha256 = a1e425821afefb9910afca15f3cbd96adebd4fb85b90c57ba9bc3c414aec8a63`
+- 三个 seed 共用 `pipeline_effective_config_sha256 = 14675a3f7b263c89eb73e3061f8a5e642709c6e754ef6278176334d8b16ac09c`
+- `actual_stage_counts` (每个 seed, 从 `row.source_stage` 重建):
+  `{"global_coarse": 595, "global_medium": 49, "local_coarse": 294,
+  "local_medium": 49, "fine": 13}`, 严格 = config 总预算 1000.
+- `system_error_count` 每个 seed 都为 0.
+- `n_finalists_after_dedup = 13` (15 个 fine-top-5 → 13 distinct after
+  cross-seed dedup tolerance 1e-6).
+- pilot best-known candidate (priority 1 命中
+  `work/q2_pilot_calib/pilot_result.json`) 被注入 finalist pool:
+  `(3.121767217560497, 115.43351397802584, 1.7672692031529031,
+  3.889202402720746)`.
+
 ## 等级
 - 方案 A 点目标基线: **BASELINE / EXPERIMENTAL**
 - 方案 B 完整圆柱: **FULL-CYLINDER CANDIDATE / EXPERIMENTAL**
-- Q2 Formal Search (TASK_005): **FORMAL BEST-KNOWN Q2 CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM**
+- Q2 Formal Search (TASK_005 / P1 RERUN 后, clean-HEAD 467314d): **FORMAL BEST-KNOWN Q2 CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM**
+
+### TASK_005 P1 closure 测试汇总 (clean-HEAD)
+
+- `tests.test_q2_search` 全集 190/190 PASS
+  - 148 pilot-related (`Q2SearchProfileTests` 等)
+  - 22 `FormalProfileTests` (formal config 隔离、run_identity 绑定、budget gate 等)
+  - 20 `P1EvidenceGateTests` (clean worktree、fail-closed finalist、16 one-var 扰动、
+    pilot 三级注入等)
+- `tests.test_q1_baseline` 42/42 PASS
+- `tests.test_q1_cylinder` 75/75 PASS
+- 总计 **307/307 PASS** (本轮唯一一次全量回归)
 
 ## 备注
 - 任何后续计算结果必须以本文件为唯一更新入口。
