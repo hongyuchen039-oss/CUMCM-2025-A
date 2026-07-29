@@ -2711,63 +2711,109 @@ class FormalBudgetGateError(ValueError):
 
 
 def compute_formal_stage_counts(*, total_budget: int) -> Dict[str, int]:
-    """Largest-remainder scaling of the pilot 97:8:48:8:2 ratio.
+    """Largest-remainder scaling of the pilot 97:8:48:8:2 ratio,
+    **with the pipeline-saturating constraint** ``local_coarse ==
+    local_per_top * coarse_top_k`` where ``local_per_top = 6`` and
+    ``coarse_top_k = global_medium``.
 
-    Constraints:
-      - sum(stage_counts.values()) == total_budget
-      - global_coarse includes the Q1 anchor (built into budget
-        construction; we just enforce integer counts here)
-      - fine >= FORMAL_FINE_MIN_COUNT (raises if total_budget too small
-        to permit this)
+    The constraint arises because run_search_pipeline caps
+    ``local_coarse`` at ``min(local_per_top × |medium_confirmed|,
+    local_max_count)``.  For total budget integrity we set
+    ``local_max_count = 6 × coarse_top_k`` (saturated) so that the
+    actual local_coarse row count equals exactly ``6 × coarse_top_k``.
 
-    Returns the integer stage counts exactly equal to total_budget.
+    Pilot ratios (with the constraint baked in):
+      gc : gm : lc(=6·gm) : lm(=gm) : fi = 97 : 8 : 48 : 8 : 2 (sum 163)
+    Formal sum = ``gc + 8 gm + fi``.  Setting gm = lm produces the
+    formula ``T = gc + 9 gm + fi`` where the lc term cancels.
+
+    Returns the integer stage counts exactly equal to total_budget
+    AND satisfying the saturating local-coarse constraint.
 
     Raises:
-        ValueError: total_budget < minimal (fine>=4 forces total>=some
-            bound; computed via the same scaling).
+        ValueError: total_budget too small.
     """
     if not isinstance(total_budget, int):
         raise ValueError(
             f"total_budget must be int, got {type(total_budget).__name__}")
     if total_budget < FORMAL_FINE_MIN_COUNT * 5:
-        # even most-tiny scaling must still have fine>=4
         raise ValueError(
             f"total_budget={total_budget} too small for formal profile "
             f"(need fine>= {FORMAL_FINE_MIN_COUNT})")
-    targets = [(name, total_budget * ratio)
-               for name, ratio in _FORMAL_PILOT_RATIOS]
-    floors = {name: int(t) for name, t in targets}
-    # global_coarse must include 1 anchor (>=1); pilot ratio already
-    # gives 0.5951*N which for N=5 = 2.97 -> floor 2 → still >=1, OK.
-    # Adjust so that fine >= FORMAL_FINE_MIN_COUNT.
+    # Saturation-aware targets:
+    #   gc ≈ 97/163 · T,  gm ≈ 8/163 · T,  lm = gm,  fi ≈ 2/163 · T,
+    #   lc = 6 × gm = 6 × (8/163 · T) = 48/163 · T
+    pilots = {
+        "global_coarse": 97.0 / 163.0,
+        "global_medium": 8.0 / 163.0,
+        "local_medium": 8.0 / 163.0,
+        "fine": 2.0 / 163.0,
+    }
+    targets = {k: total_budget * r for k, r in pilots.items()}
+    floors = {k: int(v) for k, v in targets.items()}
+    # Constraint: fine >= FORMAL_FINE_MIN_COUNT.  If floor is below,
+    # redistribute from gc (largest stage) and increase gm accordingly
+    # to keep lc saturated at 6 × gm.
     while floors["fine"] < FORMAL_FINE_MIN_COUNT:
-        # redistribute by stealing from largest stage
         donor = max((k for k in floors if k != "fine"),
                     key=lambda k: floors[k])
         floors[donor] -= 1
         floors["fine"] += 1
-    residual = total_budget - sum(floors.values())
+        if donor == "global_medium":
+            floors["local_medium"] = floors["global_medium"]
+    # Reapply saturated lc:
+    floors["local_coarse"] = 6 * floors["global_medium"]
+    # Compute residual.  Sum should be target_total - shifts.
+    s = sum(floors.values())
+    residual = total_budget - s
     if residual < 0:
         raise ValueError(
-            f"total_budget={total_budget} < sum(floors)={sum(floors.values())}")
+            f"formal total_budget={total_budget} < sum(floors)={s}")
     if residual == 0:
         return floors
-    # sort stages by (target - floor) desc; tie-break by pilot ratio desc
-    remainders = [(name, targets[i][1] - floors[name])
-                  for i, (name, _) in enumerate(targets)]
+    # Sort stages by (target − floor) desc; tie-break by pilot ratio,
+    # then by PIPELINE_STAGES order (global_coarse first).
+    remainders = [(name, targets[name] - floors[name]) for name in pilots]
     remainders.sort(
-        key=lambda x: (-x[1], -dict(_FORMAL_PILOT_RATIOS).get(x[0], 0.0),
+        key=lambda x: (-x[1],
+                       -pilots.get(x[0], 0.0),
                        PIPELINE_STAGES.index(x[0])))
     idx = 0
     while residual > 0:
-        name, _ = remainders[idx % len(remainders)]
-        # avoid violating fine>=4 after bumping
-        if name == "fine" and floors[name] + 1 > total_budget // 4:
+        # Bumping gm adds 8 (gm + lc) to total; if residual < 8 we
+        # must NOT bump gm (it would overshoot).  Route any sub-8
+        # residual to gc and fi in 1-unit steps instead.
+        if residual < 8:
+            # sort the primary stages that take 1-unit bumps
+            candidates = [n for n in ("global_coarse", "fine")
+                          if n in floors]
+            # In case residual is small but gm has high remainder, we
+            # still need to honor "largest remainder" between gc and fi
+            cand_remainders = [(n, targets[n] - floors[n]) for n in
+                                candidates]
+            cand_remainders.sort(key=lambda x: -x[1])
+            pick = cand_remainders[0][0]
+            floors[pick] += 1
+            residual = total_budget - sum(floors.values())
             idx += 1
             continue
-        floors[name] += 1
-        residual -= 1
+        name, _ = remainders[idx % len(remainders)]
+        # Bump primary stage; recompute dependent stages.
+        if name == "global_medium":
+            floors["global_medium"] += 1
+            floors["local_medium"] = floors["global_medium"]
+            floors["local_coarse"] = 6 * floors["global_medium"]
+        elif name == "local_medium":
+            floors["local_medium"] += 1
+            floors["global_medium"] = floors["local_medium"]
+            floors["local_coarse"] = 6 * floors["global_medium"]
+        else:
+            floors[name] += 1
+        residual = total_budget - sum(floors.values())
         idx += 1
+        if idx > 10_000:
+            raise FormalBudgetGateError(
+                "compute_formal_stage_counts failed to converge")
     s = sum(floors.values())
     if s != total_budget:
         raise FormalBudgetGateError(
@@ -2776,6 +2822,9 @@ def compute_formal_stage_counts(*, total_budget: int) -> Dict[str, int]:
         raise FormalBudgetGateError(
             f"formal fine stage count too small: {floors['fine']} < "
             f"{FORMAL_FINE_MIN_COUNT}")
+    if floors["local_coarse"] != 6 * floors["global_medium"]:
+        raise FormalBudgetGateError(
+            "formal lc saturation broken: lc != 6 * gm")
     return floors
 
 

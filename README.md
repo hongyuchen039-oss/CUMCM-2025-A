@@ -13,9 +13,20 @@
 
 ## 当前状态
 
-Q1 与 Q2 单候选评估基础已经完成；Q2 Real Search Core v1.2 Verification Correction 已落地（真实 per-evaluation checkpoint + stage-end 额外 ckpt / resume rows 按 source_stage partition / 163 fixed budget via anchor-aware accounting: global_coarse_count=96 随机 + ANCHOR_COUNT=1 → stage global_coarse=97 + global_medium=8 + local_coarse=48 + local_medium=8 + fine=2 = 163；试写 `global_coarse_count=97` 因实际总数=164 必 raise；tests/test_q2_search_rp1.py 已合并并删除，49 项增量 RP1 测试全部移入 tests/test_q2_search.py）；134 个单元测试通过；当前等待 clean-HEAD uninterrupted/interrupted/resume 三轮实测（无 `--allow-dirty-worktree`）与独立审查 GPT 复核。
+Q1 与 Q2 单候选评估基础已经完成；Q2 Real Search Core v1.2 Verification Correction 已冻结在 main（pilot fixed-163 / 真实 per-evaluation checkpoint / resume rows 按 source_stage partition / 本任务分支不再修改）。
+
+TASK_005 Q2 FORMAL SEARCH & RESULT FREEZE 已在本分支独立完成：
+- 独立 schema 3 (gate_id `q2_search_formal_v1`)；
+- declaration = `FORMAL BEST-KNOWN Q2 CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM`；
+- 3 seeds (2025, 2026, 2027) × 1000 evals/seed × 5-stage pipeline；
+- 跨 seed 13 finalists，pilot best-known 已显式注入并复评为 winner；
+- 0.02 / 0.01 / 0.005 三档 duration delta=0.000s；
+- 4 方向扰动均未改善 winner（局部收敛）；
+- 物理合法性校验通过；
+- 22 个 FormalProfileTests 通过，148 个 pilot 测试未删除或放宽。
 
 ## 结果等级
 
-pilot 与 best-known candidate 仅用于验证搜索核心：
-NOT A FORMAL Q2 RESULT / NOT A PROVEN GLOBAL OPTIMUM。
+TASK_005 output 是 **BEST-KNOWN**，**NOT A PROVEN GLOBAL OPTIMUM**。
+要继续推进到 Q3 / Q4 / Q5 / result1/2/3.xlsx / 论文，必须先经过独立审查
+（Audit CC / Hermes）签字，并另立 TASK_006。

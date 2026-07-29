@@ -1,68 +1,98 @@
 # 当前唯一任务
 
 ## 任务编号
-TASK_004 Q2 REAL SEARCH CORE V1 — FINAL REMAINING-P1 CLOSURE / VERIFICATION CORRECTION BUILT / WAITING FOR CLEAN-HEAD 3-RUN VERIFICATION
+TASK_005 Q2 FORMAL SEARCH & RESULT FREEZE — BUILT AND RUN, WAITING FOR INDEPENDENT MATH/RESULT REVIEW
 
 ## 唯一目标
-提交 Verification Correction 单次收口 commit (`FIX: finish evaluation-safe Q2 search closure`) → clean-HEAD uninterrupted/interrupted/resume 三轮验证（无 `--allow-dirty-worktree`）→ push → 更新 PR #9 → 等待独立审查 GPT 复核。
+不修改本任务分支；不进入 Q3；不写 result1.xlsx；不声明全局最优。
+等待独立审查（Audit CC / Hermes）复算 winner 物理量 + 稳定性 + 扰动 +
+finalist pool 解释性。仅在审查通过后另立 TASK_006（Q3 三弹串接 / result1.xlsx）。
 
 ## 为什么值得做
-v1.2 Verification Correction 已落地:
-- 真实 per-evaluation checkpoint (RP1 evaluation-safe); stage-end 再额外存一次 stage-completed 副本;
-- stop_after_evaluations 必须精确停在 N, 不得等 stage 结束;
-- resume rows 按 source_stage partition; prior-stage rows 不污染当前 stage 排名;
-- budget 修正: `global_coarse_count=96` + ANCHOR_COUNT=1 → stage global_coarse 实际 97; total 固定 163; 写入 97 时因总数=164 被 raise 拒绝;
-- tests/test_q2_search_rp1.py 中 49 项增量 RP1 测试已合并进 tests/test_q2_search.py, rp1 文件已删除;
-- tests/test_q2_search.py 134 个单元测试 (85 v1.1 + 49 RP1) 通过.
-
-但 clean-HEAD 3-run 验证(无 `--allow-dirty-worktree`)尚未执行(spec 要求 commit-before-pilot).
+TASK_005 已在本任务分支完成：
+- 独立 schema 3 / gate_id `q2_search_formal_v1` / declaration
+  `FORMAL BEST-KNOWN Q2 CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM`；
+- 三 seeds (2025, 2026, 2027) × 1000 evals/seed × 5-stage pipeline 全部完成；
+- 跨 seed 13 finalists，pilot best-known 已显式注入；
+- 统一 fine cylinder re-evaluation（scan_step=0.005）→ winner 与 pilot
+  fixed-163 best-known 完全一致
+  (h=3.121767217560497, s=115.43351397802584, r=1.7672692031529031,
+  d=3.889202402720746, dur=2.48275905609131 s)；
+- 0.02 / 0.01 / 0.005 三档 duration delta=0.000s；
+- 4 方向扰动均未改善 winner（局部收敛）；
+- 物理合法性校验通过（speed ∈ [70,140], release ≥ 0, delay 在落地约束内,
+  heading ∈ [0, 2π)）；
+- 22 个新增 FormalProfileTests 通过, 148 个 pilot 测试未删除或放宽；
+- PR "TASK_005: formalize and freeze Q2 best-known result" 已开 Draft.
 
 ## 输入
-- v1.2 Verification Correction 源码（src/q2_search.py + configs/q2_search_gate_v1.json + tests/test_q2_search.py; tests/test_q2_search_rp1.py 已删除）;
-- git HEAD 待 commit;
-- PR #9.
+- src/q2_search.py（仅追加 formal block, pilot fixed-163 不动）；
+- configs/q2_search_formal_v1.json (新, schema 3)；
+- scripts/run_q2_formal.py (新, 唯一 orchestrator)；
+- tests/test_q2_search.py（追加 22 个 FormalProfileTests）；
+- outputs/q2/q2_formal_summary.json + per_seed_summary.json；
+- outputs/q2/seed_{2025,2026,2027}/pilot_result.json；
+- work/q2_formal/ + work/q2_pilot_calib/（gitignored）；
+- START_HERE.md / NEXT_TASK.md / README.md / MODEL.md / RESULTS.md；
+- Draft PR "TASK_005: formalize and freeze Q2 best-known result".
 
 ## 允许修改
-本轮可写入：MODEL.md, START_HERE.md, NEXT_TASK.md, README.md, configs/q2_search_gate_v1.json, src/q2_search.py, tests/test_q2_search.py, tests/test_q2_search_rp1.py (本轮删除), work/ (untracked, 不入 PR), PR #9 描述; 其它冻结.
+本轮（仅剩收口动作）：
+- START_HERE.md / NEXT_TASK.md / README.md / MODEL.md / RESULTS.md；
+- 1 个 REVIEW 风格 commit；
+- PR 描述更新；
+- 175 项 unittest 全量回归。
 
 ## 禁止修改
-- Q1 与 Q2 Foundation 数学和代码 (q1_baseline/q1_cylinder/q2_single_bomb);
-- RESULTS.md;
-- problem/;
-- result1/2/3.xlsx;
-- main;
-- Git 历史;
-- .github/、outputs/、scripts/、CLAUDE.md、.claude/skills/.
+- configs/q2_search_gate_v1.json（pilot 不动）；
+- src/q1_baseline.py / src/q1_cylinder.py / src/q2_single_bomb.py；
+- tests/test_q1_baseline.py / tests/test_q1_cylinder.py /
+  tests/test_q2_single_bomb.py；
+- scripts/verify_task_context.py；
+- tests/test_verify_task_context.py；
+- problem/；
+- outputs/submission/；
+- result1/2/3.xlsx；
+- .github/；
+- CLAUDE.md / .claude/；
+- main / Git 历史；
+- 旧 pilot identity（4a8ee08 / f81f436 / 8861203e… / 98 global_coarse /
+  164 completed_count）不得回写 MODEL.md / PR 描述 / 代码。
 
-禁止扩大预算（必须保持 163 evaluations 固定，含 anchor）、进入 Q3、声明全局最优、自动合并、自动转 Ready、使用 `--allow-dirty-worktree`、把旧 4a8ee08 / f81f436 pilot identity (`8861203e...` / `98 global_coarse` / `164 completed_count`) 写回 MODEL.md / PR 描述 / 代码.
+禁止：自动合并 / 自动转 Ready / 自行写入 result1.xlsx / 启动 Q3 / 扩大
+formal 预算到 2000（> 3600s wall-clock gate）/ 声明全局最优 / 改写
+正式历史。
 
 ## 必须执行
-- 仅一次最终 commit (`FIX: finish evaluation-safe Q2 search closure`), 不得 baseline commit / 中间 commit / amend;
-- commit BEFORE pilot (clean HEAD first);
-- clean-HEAD pilot (A) uninterrupted → rc=0 + global_coarse=97 + total=163 + completed_count=163 + worktree_dirty=false + system_error=0 + fine finalists=2;
-- clean-HEAD pilot (B) interrupted (`--stop-after-evaluations 50`) → rc=3 + completed_count=50 + interrupted_stage=global_coarse (不得继续到 97) + checkpoint_v2.json + controlled_interruption.json 完整;
-- clean-HEAD pilot (C) resume from B → rc=0 + resumed_n_completed=50 + newly_evaluated=113 + total=163 + 无重复 ID + canonical_result_sha256 / run_identity_sha256 / lineage_manifest_sha256 / finalists / final_best 与 A 完全一致;
-- 每轮之后 `git status --short` 必须为空 (不允许 dirty);
-- 不得使用 `--allow-dirty-worktree`;
-- push + 更新 PR #9 描述 (移除 4a8ee08 / f81f436 旧 identity, 记录 Verification Correction clean-HEAD 3-run 证据);
-- 50-item 验收报告.
+1. 收口：REMOVE 旧 TASK_004 文本（PR #9 / Verification Correction 等），
+   REPLACE 为 TASK_005 现状；
+2. 1 个 REVIEW 风格 commit（不拆分、不 amend、不 baseline commit）；
+3. push 到 task/TASK_005-q2-formal-search；
+4. 创建/更新 Draft PR "TASK_005: formalize and freeze Q2 best-known result"；
+5. 175 项 unittest 全量回归 `python -m unittest discover -s tests -p "test_*.py" -v`；
+6. 报告：`TASK_005 Q2 FORMAL SEARCH BUILT AND RUN — WAITING FOR INDEPENDENT MATH/RESULT REVIEW`；
+7. 停止（不自动进入下一阶段，不自动合并，不启动 Q3 / Audit CC / Hermes / TASK_GOV_002）。
 
 ## 必须产出
-- 一次冻结 commit (`FIX: finish evaluation-safe Q2 search closure`);
-- work/q2_search_final_exact*/ 下三组 pilot artifacts (uninterrupted + interrupted + resume 三轮);
-- PR #9 更新描述 (Verification Correction 证据);
-- tests/test_q2_search.py 中 134 个测试全部 PASS.
+- 1 个收口 commit（REVIEW 前缀）；
+- PR "TASK_005: formalize and freeze Q2 best-known result" 草稿已开 / 已更新；
+- 175 项 unittest 全部 PASS（148 pilot + 22 formal + 5 harness）；
+- 50-item 收口报告；
+- 独立审查 checklist（winner 物理量复算 / 稳定性 / 扰动 / finalist pool 解释性）。
 
 ## 验收标准
-1. RP1-1..7 + P2 uniq output 全部闭合, 且在 Verification Correction 下语义重新验证 (per-eval ckpt / stage partition / 163 fixed budget / 47+1 项 RP1 测试合并回 test_q2_search / rp1 文件删除);
-2. 134 个 Q2 search 单元测试通过 (85 v1.1 + 49 RP1 合并);
-3. clean-HEAD uninterrupted/interrupted/resume 三轮验证全部 rc 正确, 数字符合上述要求;
-4. uninterrupted 与 resumed canonical_result_sha256 / run_identity_sha256 / lineage_manifest_sha256 完全一致, finalists 与 final_best 完全一致, 无重复 evaluation_id;
-5. 不修改 Q1/Q2 Foundation; 不写入 RESULTS.md; 不生成 result1/2/3.xlsx; 不使用 `--allow-dirty-worktree`;
-6. PR changed files 严格为 8 个 (MODEL.md / NEXT_TASK.md / README.md / START_HERE.md / configs/q2_search_gate_v1.json / src/q2_search.py / tests/test_q2_search.py / tests/test_q2_search_rp1.py 的删除).
-
-## 返工
-RP1 + Verification Correction 闭合为本轮最后一次返工上限 (spec 明示).
+1. 148 个 pilot 测试 + 22 个 formal 测试 + 5 个 harness 测试共 175 项全 PASS；
+2. PR "TASK_005: formalize and freeze Q2 best-known result" 是 Open / Draft；
+3. declaration = `FORMAL BEST-KNOWN Q2 CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM`；
+4. final_best_status = `OK_FINE_RESULT`；
+5. 不写入 result1/2/3.xlsx，不启动 Q3，不声明全局最优；
+6. pilot best-known 数值与 formal winner 数值一致
+   (h=3.121767217560497, s=115.43351397802584, r=1.7672692031529031,
+   d=3.889202402720746, dur=2.48275905609131 s)；
+7. stability_ok=True, perturbation.any_improves=False,
+   physical_validity.ok=True；
+8. 入口文档同步（START_HERE.md / NEXT_TASK.md / README.md / MODEL.md / RESULTS.md）。
 
 ## 停止条件
-clean-HEAD 3-run 验证完成 + PR #9 更新后立即停止, 不自动转 Ready、不合并、不进入下一阶段、不启动 Audit CC / Hermes / TASK_GOV_002.
+独立审查清单交付 + 175 项全量回归 PASS + PR 已开 Draft 后立即停止，
+不自动合并、不进入 Q3 / TASK_006、不启动 Audit CC / Hermes / TASK_GOV_002。

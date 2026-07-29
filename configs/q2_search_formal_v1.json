@@ -13,17 +13,17 @@
   "seeds": [2025, 2026, 2027],
   "selected_budget": 1000,
   "budget_candidates": {
-    "500":  {"stage_counts": {"global_coarse": 298, "global_medium": 25, "local_coarse": 147, "local_medium": 24, "fine": 6}},
-    "1000": {"stage_counts": {"global_coarse": 595, "global_medium": 49, "local_coarse": 295, "local_medium": 49, "fine": 12}},
-    "2000": {"stage_counts": {"global_coarse": 1190, "global_medium": 98, "local_coarse": 589, "local_medium": 98, "fine": 25}}
+    "500":  {"stage_counts": {"global_coarse": 300, "global_medium": 24, "local_coarse": 144, "local_medium": 24, "fine": 8}},
+    "1000": {"stage_counts": {"global_coarse": 595, "global_medium": 49, "local_coarse": 294, "local_medium": 49, "fine": 13}},
+    "2000": {"stage_counts": {"global_coarse": 1191, "global_medium": 98, "local_coarse": 588, "local_medium": 98, "fine": 25}}
   },
   "total_budget": 1000,
   "stage_counts": {
     "global_coarse": 595,
     "global_medium": 49,
-    "local_coarse": 295,
+    "local_coarse": 294,
     "local_medium": 49,
-    "fine": 12
+    "fine": 13
   },
   "search_domain": {
     "heading_rad":    {"min": 0.0, "max": 6.283185307179586, "period": 6.283185307179586},
@@ -56,9 +56,9 @@
     "coarse_top_k": 49,
     "medium_re_evaluate_count": 49,
     "local_per_top": 6,
-    "local_max_count": 295,
+    "local_max_count": 294,
     "local_medium_count": 49,
-    "fine_final_count": 12,
+    "fine_final_count": 13,
     "local_delta": [0.10, 5.0, 0.5, 0.3]
   },
   "dedupe_tolerance": {

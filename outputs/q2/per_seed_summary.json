@@ -1,0 +1,165 @@
+{
+  "seeds": [
+    2025,
+    2026,
+    2027
+  ],
+  "per_seed": [
+    {
+      "seed": 2025,
+      "wall_clock_s": 465.6146250999882,
+      "stage_counts": {
+        "global_coarse": 595,
+        "global_medium": 49,
+        "local_medium": 49,
+        "fine": 13,
+        "local_coarse": 294
+      },
+      "canonical_result_sha256": "d7c63188b29f4ee56be4f0c11c0c340bb908ac869159223335ca6756f796bae9",
+      "run_identity_sha256": "1421765862adc5b371e4b4843404190bd907837cf4f3263ff5fe0ad59d93dff7",
+      "best_known_candidate": {
+        "evaluation_id": "a44759ddc8583a99e18af21daf1070ab",
+        "source_stage": "fine",
+        "source_candidate_index": 0,
+        "physical_candidate_sha256": "485582b5dc4f8d9855e5894fcd5372e5e72375206425b756871bfd5ee8763c59",
+        "candidate_index": -1,
+        "stage": "fine",
+        "seed": 2025,
+        "heading_rad": 3.121767217560497,
+        "speed_mps": 115.43351397802584,
+        "release_time_s": 1.7672692031529031,
+        "delay_s": 3.889202402720746,
+        "valid": true,
+        "status": "ok",
+        "total_duration_s": 2.48275905609131,
+        "intervals": [
+          [
+            6.094727521515435,
+            8.577486577606745
+          ]
+        ],
+        "release_point": [
+          17596.03799572056,
+          4.044165532408561,
+          1800.0
+        ],
+        "detonation_time_s": 5.65647160587365,
+        "detonation_point": [
+          17147.181921223168,
+          12.944098987698323,
+          1725.8831128862887
+        ],
+        "sample_level": "fine",
+        "scan_step_s": 0.01,
+        "evaluator_kind": "real",
+        "wall_clock_s": 15.917132900038268,
+        "error_type": null,
+        "error_message": null
+      }
+    },
+    {
+      "seed": 2026,
+      "wall_clock_s": 471.46870199998375,
+      "stage_counts": {
+        "global_coarse": 595,
+        "global_medium": 49,
+        "local_medium": 49,
+        "fine": 13,
+        "local_coarse": 294
+      },
+      "canonical_result_sha256": "996c72c4acd31a359ab2b7cab8cdfe1883a733e21ba213e367afa1c49d9e9415",
+      "run_identity_sha256": "a3999e1765415cd6b114f4d53bc93c95d329ba54aedccf82469752f4afddd4d3",
+      "best_known_candidate": {
+        "evaluation_id": "cac4da59cfe42cadae8c8ef8133c055c",
+        "source_stage": "fine",
+        "source_candidate_index": 0,
+        "physical_candidate_sha256": "b96326762a7f39a225badf308b26e70c8a57c0ddc48b3dd5095199d3a6667242",
+        "candidate_index": -1,
+        "stage": "fine",
+        "seed": 2026,
+        "heading_rad": 3.141592653589793,
+        "speed_mps": 120.0,
+        "release_time_s": 1.5,
+        "delay_s": 3.6,
+        "valid": true,
+        "status": "ok",
+        "total_duration_s": 1.3923839855194124,
+        "intervals": [
+          [
+            8.055704169273376,
+            9.448088154792789
+          ]
+        ],
+        "release_point": [
+          17620.0,
+          2.2043642384652358e-14,
+          1800.0
+        ],
+        "detonation_time_s": 5.1,
+        "detonation_point": [
+          17188.0,
+          7.494838410781802e-14,
+          1736.496
+        ],
+        "sample_level": "fine",
+        "scan_step_s": 0.01,
+        "evaluator_kind": "real",
+        "wall_clock_s": 15.194269400031772,
+        "error_type": null,
+        "error_message": null
+      }
+    },
+    {
+      "seed": 2027,
+      "wall_clock_s": 515.1381126999622,
+      "stage_counts": {
+        "global_coarse": 595,
+        "global_medium": 49,
+        "local_medium": 49,
+        "fine": 13,
+        "local_coarse": 294
+      },
+      "canonical_result_sha256": "3dba557147b911ec80cd50dda67a541548ad6899035e9bb87428e708ff3ce791",
+      "run_identity_sha256": "9c9c25ce952959fdbf2a4ccfb11a69fafb9fdfa5b1deef334cd27722d2aaf89d",
+      "best_known_candidate": {
+        "evaluation_id": "cac4da59cfe42cadae8c8ef8133c055c",
+        "source_stage": "fine",
+        "source_candidate_index": 0,
+        "physical_candidate_sha256": "b96326762a7f39a225badf308b26e70c8a57c0ddc48b3dd5095199d3a6667242",
+        "candidate_index": -1,
+        "stage": "fine",
+        "seed": 2027,
+        "heading_rad": 3.141592653589793,
+        "speed_mps": 120.0,
+        "release_time_s": 1.5,
+        "delay_s": 3.6,
+        "valid": true,
+        "status": "ok",
+        "total_duration_s": 1.3923839855194124,
+        "intervals": [
+          [
+            8.055704169273376,
+            9.448088154792789
+          ]
+        ],
+        "release_point": [
+          17620.0,
+          2.2043642384652358e-14,
+          1800.0
+        ],
+        "detonation_time_s": 5.1,
+        "detonation_point": [
+          17188.0,
+          7.494838410781802e-14,
+          1736.496
+        ],
+        "sample_level": "fine",
+        "scan_step_s": 0.01,
+        "evaluator_kind": "real",
+        "wall_clock_s": 16.14310599997407,
+        "error_type": null,
+        "error_message": null
+      }
+    }
+  ]
+}

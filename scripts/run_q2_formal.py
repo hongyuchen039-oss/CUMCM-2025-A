@@ -54,7 +54,18 @@ def _run_single_seed(
     cfg: Dict[str, Any],
     output_root: str,
 ) -> Dict[str, Any]:
-    """Run a single-seed formal pipeline and return a per-seed summary."""
+    """Run a single-seed formal pipeline and return a per-seed summary.
+
+    Implementation note: run_search_pipeline internally calls
+    resolve_effective_config which only accepts the pilot schema-2 config.
+    To execute the formal budget we route through the pilot config file
+    (DEFAULT_CONFIG_PATH, schema 2) and pass the formal budget via
+    cli_overrides; with enforce_fixed_production_result=False the
+    pilot FIXED-163 invariant is bypassed and the effective total is
+    governed by the formal config plus validate_formal_budget above.
+    The formal config remains the source of truth for stage_counts,
+    seeds, dedupe_tolerance, declaration, etc.
+    """
     seed_dir = os.path.join(output_root, f"seed_{seed}")
     os.makedirs(seed_dir, exist_ok=True)
     pilot_budget = qs.formal_pilot_budget_from_stage_counts(
@@ -65,7 +76,7 @@ def _run_single_seed(
         t_arrival=qs.TEST_T_ARRIVAL,
         budget=pilot_budget,
         output_dir=seed_dir,
-        config_path=FORMAL_CONFIG_PATH,
+        config_path=qs.DEFAULT_CONFIG_PATH,  # pilot schema 2 (mandatory)
         require_clean_worktree=False,
         enforce_fixed_production_result=False,
         cli_overrides=pilot_budget,
@@ -115,7 +126,7 @@ def _run_single_seed(
         "canonical_result_sha256": str(
             out.get("canonical_result_sha256", "")),
         "total_expected_evaluations": int(
-            out.get("total_expected_evaluations", expected_stage_counts[0])),
+            out.get("total_expected_evaluations", cfg["total_budget"])),
         "final_best_status": str(out.get("final_best_status", "")),
         "best_known_candidate": out.get("best_known_candidate"),
         "fine_rows": out.get("fine_rows", []) or [],
