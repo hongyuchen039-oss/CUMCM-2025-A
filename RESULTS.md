@@ -366,6 +366,71 @@
   `(3.121767217560497, 115.43351397802584, 1.7672692031529031,
   3.889202402720746)`.
 
+## TASK_005 LOCAL REFINEMENT (BOUNDED RUNTIME AMENDMENT, MAIN 补充修订)
+
+> 不重跑 3 seeds / 不重跑 17 候选完整复评 / 不重跑 473 全量.
+> 复评起点: 2 个 parent (formal winner + pert_09 best), 真实 duration
+> 较大者作为 refinement 起点.
+> 最多 32 次 refinement evaluation, 硬时间上限 2100s.
+
+### 0. 复评结果 (待 refine-only 运行后填写)
+
+| 起点 | h | s | r | d | real duration @ scan_step=0.005 |
+|---|---|---|---|---|---|
+| A. formal winner | 3.121767217560497 | 115.43351397802584 | 1.7672692031529031 | 3.889202402720746 | TBD |
+| B. pert_09 best | 3.121767217560497 | 115.43351397802584 | 1.2672692031529031 | 3.889202402720746 | TBD |
+
+起点选取: TBD (填入真实 duration 较大者, 不信任 pert_09 文档中
+3.312s 的舍入).
+
+### 1. Coordinate search 进展 (待 refine-only 运行后填写)
+
+| Level | sweep | evals | best candidate (after sweep) | best duration |
+|---|---|---|---|---|
+| 1 | 1 | 0..8 | TBD | TBD |
+| 1 | 2 | 8..16 | TBD | TBD |
+| 2 | 1 | 16..24 | TBD | TBD |
+| 3 | 1 | 24..32 | TBD | TBD |
+
+- evaluations_completed (总数) ≤ 32
+- elapsed_seconds (wall-clock) ≤ 2100s
+
+### 2. 最终稳定性 (refine 后, scan_step=0.005)
+
+| scan_step | total_duration_s | n_intervals |
+|---|---|---|
+| 0.0200 | TBD | TBD |
+| 0.0100 | TBD | TBD |
+| 0.0050 | TBD | TBD |
+
+stability_ok: TBD.
+
+### 3. 最终 16 项 one-var 扰动 (refine 后, scan_step=0.005)
+
+- n_total_perturbations: 16
+- n_legal_perturbations: TBD
+- n_legal_improving: TBD
+- any_improves: TBD
+- local_perturbation_passed: TBD
+  - True → 全部 16 项合法扰动均未改善, refined candidate 冻结
+  - False → 任一扰动改善, refinement 未完成局部收敛, 触发
+    `TASK_005 LOCAL REFINEMENT P1 REMAINS — MATH/RESULT REVIEW BLOCKED`
+
+### 4. 失败模式 (fail-closed, 触发后停止)
+
+- `TASK_005 LOCAL REFINEMENT BUDGET EXHAUSTED — RESULT REVIEW BLOCKED`
+  (32 次 evaluation 用完, 仍有改善趋势)
+- `TASK_005 LOCAL REFINEMENT WALL-CLOCK GATE HIT — RESULT REVIEW BLOCKED`
+  (2100s 硬上限命中)
+- `TASK_005 LOCAL REFINEMENT P1 REMAINS — MATH/RESULT REVIEW BLOCKED`
+  (16 项 one-var 仍有改善)
+
+### 5. 等级 (本轮)
+
+- 等级: **FORMAL BEST-KNOWN Q2 CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM**
+  (formal 冻结, refine-only 仍在 32 次预算 + 2100s 上限内运行,
+  不在 refine 通过前升级)
+
 ## 等级
 - 方案 A 点目标基线: **BASELINE / EXPERIMENTAL**
 - 方案 B 完整圆柱: **FULL-CYLINDER CANDIDATE / EXPERIMENTAL**

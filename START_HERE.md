@@ -7,8 +7,11 @@
 Q2 单架 FY1 投放一枚烟幕弹的最优策略。
 
 ## 当前阶段
-TASK_005 Q2 FORMAL EVIDENCE PATCH BUILT AND RERUN (P1 closure)
-— WAITING FOR INDEPENDENT MATH/RESULT REVIEW.
+TASK_005 LOCAL REFINEMENT — BOUNDED RUNTIME AMENDMENT (MAIN 补充修订).
+P1 证据门闭环已完成 (REVIEW 335a1f4d, canonical_result_sha256=2efcc91486d4…);
+本轮做最多 32 次 refinement evaluation 的 deterministic coordinate search,
+仅复评 2 个 parent (formal winner + pert_09 best), 不重跑 3 seeds,
+不重跑 17 候选完整复评, 不重跑 473 全量回归.
 
 ## 最后可信成果
 - Q1 点目标基线、完整圆柱严格遮蔽候选已冻结（不在本任务修改）；

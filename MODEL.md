@@ -866,3 +866,93 @@ formal execution path = `src.q2_search.run_formal_pipeline(seed, config, output_
 - 等级: **FORMAL BEST-KNOWN Q2 CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM**.
   不得在 formal winner 基础上声称 Q2 全局最优 / VERIFIED / FINAL /
   官方答案, 除非独立审查签字并立项 TASK_006.
+
+## TASK_005 LOCAL REFINEMENT — BOUNDED RUNTIME AMENDMENT (本轮生效)
+
+> MAIN 补充修订: 不重跑 3 seeds, 不重跑 17 候选完整复评, 不重跑 473 全量.
+> 只在 clean HEAD 上对 2 个 parent 做确定性 coordinate search, 最多 32 次
+> refinement evaluation, 硬时间上限 2100s.
+
+### 1. 复评起点
+
+A. 原 formal candidate (POST-FIX winner):
+```
+h=3.121767217560497, s=115.43351397802584,
+r=1.7672692031529031, d=3.889202402720746
+```
+
+B. 上一轮 16 项扰动中表现最好的候选 (pert_09):
+```
+h=3.121767217560497, s=115.43351397802584,
+r=1.2672692031529031, d=3.889202402720746
+```
+两者均使用 real evaluator + scan_step=0.005 复评, 真实 duration
+较大者作为 refinement 起点. 不信任文档中 pert_09 的 3.312s 舍入结果.
+
+### 2. 坐标搜索 3 levels (deterministic coordinate search)
+
+| Level | 4 vars 尺度 | sweeps | evals/sweep | 总预算 |
+|---|---|---|---|---|
+| Level 1 | heading ±0.02, speed ±1.0, release ±0.2, delay ±0.1 | 2 | 8 | 16 |
+| Level 2 | heading ±0.01, speed ±0.5, release ±0.1, delay ±0.05 | 1 | 8 | 8 |
+| Level 3 | heading ±0.005, speed ±0.25, release ±0.05, delay ±0.025 | 1 | 8 | 8 |
+| **总计** | | **4** | | **32** |
+
+- 每次 sweep = 4 vars × 2 signs = 8 evaluations
+- 每轮仅扰动一个变量, 其它三个保持当前 best 精确值
+- heading 按 2π 周期 wrap
+- sweep scan_step = 0.01 (与 formal pipeline 一致)
+- 改善容差 1e-6 s (strict improvement)
+- 单 sweep greedy: 严格改善最大者作为 sweep 新 best
+- 任一 sweep 无改善 → 提前 break level
+
+### 3. 有界预算 + 硬时间上限
+
+- REFINE_MAX_TOTAL_EVALUATIONS = 32 (跨所有 levels 累计)
+- REFINE_HARD_DEADLINE_S = 2100 (从第一次 parent 复评 wall-clock)
+- 每次 evaluation 前检查 deadline; 不足则:
+  - 不启动下一次 evaluation
+  - 原子写入 checkpoint
+  - 抛 `FormalRefinementGateError`
+  - 返回非零退出码
+  - 不生成成功 summary
+
+### 4. 可恢复 checkpoint
+
+每 evaluation 后原子写入 `work/q2_formal_refinement/checkpoint.json`,
+含:
+- HEAD SHA
+- parent candidate
+- current best candidate + duration
+- level / sweep
+- evaluations completed
+- evaluated candidate identities
+- elapsed seconds
+- refinement config SHA
+- status
+
+resume 验证: HEAD 一致 + refinement config SHA 一致 + parent identity 合法.
+任一不一致 → BLOCKED, 不静默 fallback.
+
+### 5. 实时进度 + 静默禁止
+
+每 evaluation 必须打印一行 `[REFINE]` (flush=True), 包含
+eval / level / sweep / variable / direction / duration / best_duration /
+elapsed_s / remaining_budget / eta_s.
+
+启动命令必须 `set -o pipefail; ... | tee log; rc=${PIPESTATUS[0]}; exit "$rc"`,
+禁止 `| tail -10`, 禁止仅依据管道末命令 rc 判断成功.
+
+### 6. 失败保护 (fail-closed)
+
+- 预算耗尽 → `TASK_005 LOCAL REFINEMENT BUDGET EXHAUSTED — RESULT REVIEW BLOCKED`
+- 时间上限命中 → `TASK_005 LOCAL REFINEMENT WALL-CLOCK GATE HIT — RESULT REVIEW BLOCKED`
+- 最终 16 项 one-var 仍有改善 → `TASK_005 LOCAL REFINEMENT P1 REMAINS — MATH/RESULT REVIEW BLOCKED`
+- 全部 16 项 one-var 合法扰动均无改善 → `local_perturbation_passed = true`,
+  可以 `TASK_005 LOCAL REFINEMENT FROZEN — WAITING FOR INDEPENDENT MATH/RESULT REVIEW`.
+
+### 7. 最终验证 (refine 完成后, scan_step=0.005)
+
+1. refined candidate stability 复评 (0.02 / 0.01 / 0.005 三档)
+2. 最终 16 项 one-variable perturbations (4 vars × 2 signs × 2 scales)
+3. 仅当 16 项中任一合法候选改善 > 1e-6 → 阻断冻结, 不得再自动启动第二轮

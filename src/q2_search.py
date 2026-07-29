@@ -4120,5 +4120,639 @@ def formal_pilot_best_rehydrate(
         f"Last error: {last_error}")
 
 
+# ---------------------------------------------------------------------------
+# TASK_005 LOCAL REFINEMENT — BOUNDED RUNTIME AMENDMENT
+# ---------------------------------------------------------------------------
+#
+# Main补充修订: 不重跑 3 seeds, 不重跑 17 候选完整复评, 不重跑 473 全量.
+# 只在 clean HEAD 上对 2 个 parent (formal winner + pert_09 best-perturb)
+# 做确定性 coordinate search, 最多 32 次 refinement evaluation.
+#
+# Level 1 (sweep 1+2, 4 vars x 2 signs x 2 scales - 4 = 8 per sweep? No,
+# we use the canonical 4 vars x 2 signs = 8 per sweep, ≤ 2 sweeps):
+#   heading ±0.02, speed ±1.0, release ±0.2, delay ±0.1
+#   each sweep = up to 8 evaluations (4 vars x 2 signs)
+# Level 2 (1 sweep, ≤ 8 evaluations):
+#   heading ±0.01, speed ±0.5, release ±0.1, delay ±0.05
+# Level 3 (1 sweep, ≤ 8 evaluations):
+#   heading ±0.005, speed ±0.25, release ±0.05, delay ±0.025
+#
+# refinement scan_step = 0.01 (sweeps); final stability + 16 one-var
+# re-eval uses scan_step = 0.005.
+#
+# Hard wall-clock gate = 2100 s from first parent rehydration.
+# Improve tolerance = 1e-6 s.
+# ---------------------------------------------------------------------------
+
+REFINE_PARENT_FORMAL: Tuple[float, float, float, float] = (
+    3.121767217560497,    # heading_rad (POST-FIX formal winner)
+    115.43351397802584,   # speed_mps
+    1.7672692031529031,   # release_time_s
+    3.889202402720746,    # delay_s
+)
+
+REFINE_PARENT_PERT09: Tuple[float, float, float, float] = (
+    3.121767217560497,    # heading_rad (same as formal)
+    115.43351397802584,   # speed_mps (same)
+    1.2672692031529031,   # release_time_s (pert_09 release_time_s -0.5)
+    3.889202402720746,    # delay_s (same)
+)
+
+REFINE_LEVELS: Tuple[Dict[str, Any], ...] = (
+    {  # Level 1
+        "name": "level_1",
+        "max_sweeps": 2,
+        "max_evals_per_sweep": 8,
+        "scales": {
+            "heading_rad":    0.02,
+            "speed_mps":      1.0,
+            "release_time_s": 0.2,
+            "delay_s":        0.1,
+        },
+    },
+    {  # Level 2
+        "name": "level_2",
+        "max_sweeps": 1,
+        "max_evals_per_sweep": 8,
+        "scales": {
+            "heading_rad":    0.01,
+            "speed_mps":      0.5,
+            "release_time_s": 0.1,
+            "delay_s":        0.05,
+        },
+    },
+    {  # Level 3
+        "name": "level_3",
+        "max_sweeps": 1,
+        "max_evals_per_sweep": 8,
+        "scales": {
+            "heading_rad":    0.005,
+            "speed_mps":      0.25,
+            "release_time_s": 0.05,
+            "delay_s":        0.025,
+        },
+    },
+)
+
+REFINE_MAX_TOTAL_EVALUATIONS: int = 32  # ≤32 across all 3 levels
+REFINE_HARD_DEADLINE_S: float = 2100.0
+REFINE_SWEEP_SCAN_STEP: float = 0.01   # for sweep evaluations
+REFINE_FINAL_SCAN_STEP: float = 0.005  # for stability + final 16 one-var
+REFINE_IMPROVE_TOL_S: float = 1e-6
+
+
+class FormalRefinementGateError(Exception):
+    """Raised when the bounded refinement path must abort:
+
+    - hard wall-clock deadline hit
+    - total evaluation budget exhausted mid-sweep
+    - resume validation fails (HEAD / config SHA / parent identity)
+    - no legal candidate after physical validity check
+    - improvement budget exhausted without convergence
+    """
+
+
+def _refine_config_payload() -> Dict[str, Any]:
+    """Stable payload for refinement config SHA computation."""
+    return {
+        "schema": "q2_refine_v1",
+        "parents": {
+            "formal": list(REFINE_PARENT_FORMAL),
+            "pert09": list(REFINE_PARENT_PERT09),
+        },
+        "levels": [
+            {
+                "name": lv["name"],
+                "max_sweeps": lv["max_sweeps"],
+                "max_evals_per_sweep": lv["max_evals_per_sweep"],
+                "scales": {k: float(v) for k, v in lv["scales"].items()},
+            }
+            for lv in REFINE_LEVELS
+        ],
+        "max_total_evaluations": REFINE_MAX_TOTAL_EVALUATIONS,
+        "hard_deadline_s": REFINE_HARD_DEADLINE_S,
+        "sweep_scan_step": REFINE_SWEEP_SCAN_STEP,
+        "final_scan_step": REFINE_FINAL_SCAN_STEP,
+        "improve_tol_s": REFINE_IMPROVE_TOL_S,
+    }
+
+
+def refine_config_sha256() -> str:
+    """Stable SHA-256 of the refinement config payload."""
+    payload = _refine_config_payload()
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _refine_physical_validity_or_record(
+    candidate: Tuple[float, float, float, float],
+) -> Tuple[bool, str]:
+    """Wrap heading mod 2π first (so formal_physical_validity accepts it),
+    then run the formal check.  Returns (ok, reason)."""
+    h, s, r, d = candidate
+    wrapped = _wrap_heading(float(h))
+    cand2 = (float(wrapped), float(s), float(r), float(d))
+    return formal_physical_validity(cand2)
+
+
+def _refine_evaluate(
+    candidate: Tuple[float, float, float, float],
+    *,
+    seed: int,
+    scan_step: float,
+    source_stage: str,
+    source_candidate_index: int = -1,
+) -> SearchEvaluationRow:
+    """Evaluate one candidate.  Heading is wrapped first."""
+    h, s, r, d = candidate
+    wrapped = _wrap_heading(float(h))
+    cand2 = (float(wrapped), float(s), float(r), float(d))
+    return evaluate_with_real_evaluator(
+        cand2,
+        sample_level="fine",
+        scan_step=float(scan_step),
+        seed=int(seed),
+        source_stage=source_stage,
+        source_candidate_index=source_candidate_index,
+    )
+
+
+def _refine_checkpoint_payload(
+    *,
+    head_sha: str,
+    parent_candidate: Tuple[float, float, float, float],
+    current_best_candidate: Tuple[float, float, float, float],
+    current_best_duration: float,
+    level: str,
+    sweep: int,
+    evaluations_completed: int,
+    evaluated_candidate_identities: Sequence[str],
+    elapsed_seconds: float,
+    refine_config_sha: str,
+    status: str,
+    extras: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "schema": "q2_refine_checkpoint_v1",
+        "head_sha": str(head_sha),
+        "parent_candidate": list(parent_candidate),
+        "current_best_candidate": list(current_best_candidate),
+        "current_best_duration": float(current_best_duration),
+        "level": str(level),
+        "sweep": int(sweep),
+        "evaluations_completed": int(evaluations_completed),
+        "evaluated_candidate_identities": list(
+            evaluated_candidate_identities),
+        "elapsed_seconds": float(elapsed_seconds),
+        "refinement_config_sha256": str(refine_config_sha),
+        "status": str(status),
+    }
+    if extras:
+        payload["extras"] = dict(extras)
+    return payload
+
+
+def _refine_atomic_write_json(path: str, payload: Mapping[str, Any]) -> None:
+    """Atomic JSON write: tmpfile in same dir, fsync, os.replace."""
+    parent = os.path.dirname(os.path.abspath(path)) or "."
+    os.makedirs(parent, exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, ensure_ascii=False)
+        f.flush()
+        try:
+            os.fsync(f.fileno())
+        except OSError:
+            pass
+    os.replace(tmp, path)
+
+
+def _refine_progress_print(
+    *,
+    eval_index: int,
+    level: str,
+    sweep: int,
+    variable: str,
+    direction: int,
+    duration: float,
+    best_duration: float,
+    elapsed_s: float,
+    remaining_budget: int,
+    eta_s: float,
+) -> None:
+    line = (
+        f"[REFINE] eval={eval_index}/{REFINE_MAX_TOTAL_EVALUATIONS} "
+        f"level={level} sweep={sweep} variable={variable} "
+        f"direction={direction} duration={duration:.6f} "
+        f"best_duration={best_duration:.6f} "
+        f"elapsed_s={elapsed_s:.2f} "
+        f"remaining_budget={remaining_budget} eta_s={eta_s:.2f}"
+    )
+    print(line, flush=True)
+
+
+def _refine_sweep_candidates(
+    center: Tuple[float, float, float, float],
+    scales: Mapping[str, float],
+) -> List[Tuple[str, int, Tuple[float, float, float, float]]]:
+    """Generate one sweep's candidate list.  Order: heading+/-, speed+/-,
+    release+/-, delay+/- (8 evals total = 4 vars × 2 signs)."""
+    out: List[Tuple[str, int, Tuple[float, float, float, float]]] = []
+    base = list(center)
+    for var_name in _FORMAL_VAR_NAMES:
+        scale = float(scales[var_name])
+        idx = _FORMAL_VAR_INDEX[var_name]
+        for sign in (+1, -1):
+            new = list(base)
+            new[idx] = base[idx] + sign * scale
+            cand = (float(new[0]), float(new[1]), float(new[2]),
+                    float(new[3]))
+            out.append((str(var_name), int(sign), cand))
+    return out
+
+
+def run_formal_refinement(
+    *,
+    checkpoint_path: str = "work/q2_formal_refinement/checkpoint.json",
+    parent_seed: int = 2025,
+    print_fn: Any = None,
+) -> Dict[str, Any]:
+    """Bounded refinement driver.  Re-evaluates exactly 2 parents at
+    scan_step=REFINE_SWEEP_SCAN_STEP, picks the better one (real duration
+    comparison, not the rounded 3.312 from the previous perturb row),
+    then performs 3-level coordinate search with cumulative eval budget
+    ≤ REFINE_MAX_TOTAL_EVALUATIONS and a hard wall-clock deadline of
+    REFINE_HARD_DEADLINE_S seconds (measured from the first parent
+    rehydration).
+
+    Atomic checkpoint after every evaluation; fail-closed gates:
+      - wall-clock hit -> raise FormalRefinementGateError
+      - budget exhausted -> raise FormalRefinementGateError
+      - no improvement after all sweeps -> still return current best, but
+        local_perturbation_passed may be False (caller verifies)
+      - parent identity missing / invalid -> FormalRefinementGateError
+    """
+    if print_fn is None:
+        print_fn = print
+
+    # 0. Wall-clock anchor + HEAD identity
+    head_sha = _git_head_sha()
+    refine_cfg_sha = refine_config_sha256()
+    started_at = time.monotonic()
+    deadline = started_at + REFINE_HARD_DEADLINE_S
+
+    # 1. Resume validation (if checkpoint exists)
+    ck: Optional[Dict[str, Any]] = None
+    if os.path.exists(checkpoint_path):
+        try:
+            with open(checkpoint_path, "r", encoding="utf-8") as f:
+                ck = json.load(f)
+        except Exception as exc:
+            ck = None
+            print_fn(f"[REFINE] WARNING: failed to load checkpoint "
+                     f"{checkpoint_path}: {exc}; ignoring", flush=True)
+    if ck is not None:
+        if ck.get("head_sha") != head_sha:
+            raise FormalRefinementGateError(
+                f"resume HEAD mismatch: checkpoint={ck.get('head_sha')!r} "
+                f"actual={head_sha!r}")
+        if ck.get("refinement_config_sha256") != refine_cfg_sha:
+            raise FormalRefinementGateError(
+                f"resume config SHA mismatch: "
+                f"checkpoint={ck.get('refinement_config_sha256')!r} "
+                f"actual={refine_cfg_sha!r}")
+        # parent identity is the first parent evaluated
+        ck_parent = tuple(ck.get("parent_candidate", ()))
+        if (len(ck_parent) != 4
+                or any(not _isfinite_f(x) for x in ck_parent)):
+            raise FormalRefinementGateError(
+                f"resume parent candidate invalid: "
+                f"{ck.get('parent_candidate')!r}")
+        print_fn(
+            f"[REFINE] resuming from checkpoint: "
+            f"eval={ck.get('evaluations_completed')} "
+            f"best_dur={ck.get('current_best_duration'):.6f} "
+            f"status={ck.get('status')}",
+            flush=True,
+        )
+        # We always start fresh on resume boundary, but preserve
+        # evaluated_candidate_identities to avoid duplicates.
+        already_evaluated_ids: List[str] = list(
+            ck.get("evaluated_candidate_identities", []))
+        current_best = tuple(ck.get("current_best_candidate", ()))
+        if len(current_best) != 4:
+            current_best = REFINE_PARENT_FORMAL
+        current_best_dur = float(ck.get("current_best_duration", 0.0))
+        evaluations_completed = int(ck.get("evaluations_completed", 0))
+        # On resume we re-evaluate parents from scratch (idempotent at
+        # this scan_step) to recover state cleanly.
+    else:
+        already_evaluated_ids = []
+        current_best = REFINE_PARENT_FORMAL
+        current_best_dur = 0.0
+        evaluations_completed = 0
+
+    def _check_deadline() -> None:
+        """Check wall-clock budget BEFORE each new evaluation."""
+        now = time.monotonic()
+        if now >= deadline:
+            raise FormalRefinementGateError(
+                f"wall-clock gate hit at elapsed={now - started_at:.2f}s "
+                f"(hard_deadline={REFINE_HARD_DEADLINE_S}s)")
+
+    def _check_budget() -> None:
+        if evaluations_completed >= REFINE_MAX_TOTAL_EVALUATIONS:
+            raise FormalRefinementGateError(
+                f"refinement budget exhausted "
+                f"({evaluations_completed} >= "
+                f"{REFINE_MAX_TOTAL_EVALUATIONS})")
+
+    def _persist(
+        level: str, sweep: int, status: str,
+        evaluated_so_far: Sequence[str],
+        extras: Optional[Mapping[str, Any]] = None,
+    ) -> None:
+        ck_payload = _refine_checkpoint_payload(
+            head_sha=head_sha,
+            parent_candidate=REFINE_PARENT_FORMAL,
+            current_best_candidate=current_best,
+            current_best_duration=current_best_dur,
+            level=level,
+            sweep=sweep,
+            evaluations_completed=evaluations_completed,
+            evaluated_candidate_identities=evaluated_so_far,
+            elapsed_seconds=time.monotonic() - started_at,
+            refine_config_sha=refine_cfg_sha,
+            status=status,
+            extras=extras,
+        )
+        try:
+            _refine_atomic_write_json(checkpoint_path, ck_payload)
+        except Exception as exc:
+            print_fn(f"[REFINE] WARNING: checkpoint write failed: {exc}",
+                     flush=True)
+
+    # 2. Re-evaluate both parents at the sweep scan_step.
+    print_fn(
+        f"[REFINE] starting: parents=A,B scan_step="
+        f"{REFINE_SWEEP_SCAN_STEP} deadline={REFINE_HARD_DEADLINE_S}s "
+        f"max_evals={REFINE_MAX_TOTAL_EVALUATIONS}",
+        flush=True,
+    )
+    print_fn(
+        f"[REFINE] parent A (formal winner): "
+        f"{list(REFINE_PARENT_FORMAL)}",
+        flush=True,
+    )
+    print_fn(
+        f"[REFINE] parent B (pert_09 best):  "
+        f"{list(REFINE_PARENT_PERT09)}",
+        flush=True,
+    )
+
+    _check_deadline()
+    _check_budget()
+    row_a = _refine_evaluate(
+        REFINE_PARENT_FORMAL,
+        seed=parent_seed,
+        scan_step=REFINE_SWEEP_SCAN_STEP,
+        source_stage="refine_parent_formal",
+    )
+    evaluations_completed += 1
+    a_dur = float(row_a.total_duration_s) if (row_a.status == "ok"
+                                              and row_a.valid) else -1.0
+    a_id = str(row_a.evaluation_id)
+    print_fn(
+        f"[REFINE] parent A real duration = {a_dur:.6f} s "
+        f"(eval_id={a_id})",
+        flush=True,
+    )
+    _persist("parent", 0, "parent_a_evaluated", [a_id])
+
+    _check_deadline()
+    _check_budget()
+    row_b = _refine_evaluate(
+        REFINE_PARENT_PERT09,
+        seed=parent_seed,
+        scan_step=REFINE_SWEEP_SCAN_STEP,
+        source_stage="refine_parent_pert09",
+    )
+    evaluations_completed += 1
+    b_dur = float(row_b.total_duration_s) if (row_b.status == "ok"
+                                              and row_b.valid) else -1.0
+    b_id = str(row_b.evaluation_id)
+    print_fn(
+        f"[REFINE] parent B real duration = {b_dur:.6f} s "
+        f"(eval_id={b_id})",
+        flush=True,
+    )
+    _persist("parent", 0, "parent_b_evaluated", [a_id, b_id])
+
+    # 3. Choose parent with strictly larger real duration as starting point
+    if a_dur < 0 and b_dur < 0:
+        raise FormalRefinementGateError(
+            "both parents failed physical validity / status; cannot start")
+    if b_dur > a_dur + REFINE_IMPROVE_TOL_S:
+        current_best = REFINE_PARENT_PERT09
+        current_best_dur = b_dur
+        print_fn(
+            f"[REFINE] parent B beats A ({b_dur:.6f} > {a_dur:.6f}); "
+            f"starting from B",
+            flush=True,
+        )
+    else:
+        current_best = REFINE_PARENT_FORMAL
+        current_best_dur = a_dur
+        print_fn(
+            f"[REFINE] parent A kept ({a_dur:.6f} >= {b_dur:.6f}); "
+            f"starting from A",
+            flush=True,
+        )
+    _persist("parent", 0, "start_chosen", [a_id, b_id])
+
+    # 4. Coordinate search: 3 levels.
+    for level_cfg in REFINE_LEVELS:
+        level_name = str(level_cfg["name"])
+        scales = level_cfg["scales"]
+        for sweep_idx in range(1, int(level_cfg["max_sweeps"]) + 1):
+            sweep_improved = False
+            print_fn(
+                f"[REFINE] {level_name} sweep={sweep_idx} starting; "
+                f"current_best_dur={current_best_dur:.6f}",
+                flush=True,
+            )
+            sweep_cands = _refine_sweep_candidates(current_best, scales)
+            for var_name, sign, cand in sweep_cands:
+                _check_deadline()
+                _check_budget()
+                ok, reason = _refine_physical_validity_or_record(cand)
+                if not ok:
+                    print_fn(
+                        f"[REFINE] skip illegal: var={var_name} "
+                        f"sign={sign} reason={reason}",
+                        flush=True,
+                    )
+                    continue
+                elapsed_before = time.monotonic() - started_at
+                remaining_budget = (
+                    REFINE_MAX_TOTAL_EVALUATIONS - evaluations_completed)
+                eta_s = (elapsed_before / max(evaluations_completed, 1)
+                         ) * remaining_budget if evaluations_completed else 0.0
+                _refine_progress_print(
+                    eval_index=evaluations_completed + 1,
+                    level=level_name,
+                    sweep=sweep_idx,
+                    variable=var_name,
+                    direction=sign,
+                    duration=-1.0,  # not yet known
+                    best_duration=current_best_dur,
+                    elapsed_s=elapsed_before,
+                    remaining_budget=remaining_budget,
+                    eta_s=eta_s,
+                )
+                row = _refine_evaluate(
+                    cand,
+                    seed=parent_seed,
+                    scan_step=REFINE_SWEEP_SCAN_STEP,
+                    source_stage=f"refine_{level_name}_s{sweep_idx}",
+                )
+                evaluations_completed += 1
+                dur = float(row.total_duration_s) if (
+                    row.status == "ok" and row.valid) else -1.0
+                improves = (
+                    dur > current_best_dur + REFINE_IMPROVE_TOL_S)
+                # Re-print with actual duration
+                elapsed_after = time.monotonic() - started_at
+                remaining_budget = (
+                    REFINE_MAX_TOTAL_EVALUATIONS - evaluations_completed)
+                eta_s = (elapsed_after / max(evaluations_completed, 1)
+                         ) * remaining_budget if evaluations_completed else 0.0
+                print_fn(
+                    f"[REFINE] eval={evaluations_completed}/"
+                    f"{REFINE_MAX_TOTAL_EVALUATIONS} "
+                    f"level={level_name} sweep={sweep_idx} "
+                    f"variable={var_name} direction={sign} "
+                    f"duration={dur:.6f} "
+                    f"best_duration={current_best_dur:.6f} "
+                    f"elapsed_s={elapsed_after:.2f} "
+                    f"remaining_budget={remaining_budget} "
+                    f"eta_s={eta_s:.2f} "
+                    f"improves={'yes' if improves else 'no'}",
+                    flush=True,
+                )
+                if improves:
+                    # Strict best-improvement: only keep new best if it
+                    # improves by more than the tolerance AND is the
+                    # largest in this sweep (single-sweep greedy).
+                    current_best = cand
+                    current_best_dur = dur
+                    sweep_improved = True
+                    _persist(
+                        level_name, sweep_idx,
+                        f"s{sweep_idx}_improved_{var_name}_{sign}",
+                        [a_id, b_id],
+                    )
+                else:
+                    _persist(
+                        level_name, sweep_idx,
+                        f"s{sweep_idx}_no_improve_{var_name}_{sign}",
+                        [a_id, b_id],
+                    )
+            # Per MAIN: each sweep iterates once; if no improvement,
+            # don't redo same-scale sweep.
+            if not sweep_improved:
+                print_fn(
+                    f"[REFINE] {level_name} sweep={sweep_idx} "
+                    f"had no improvement; breaking level early",
+                    flush=True,
+                )
+                break
+        # After each level, write a checkpoint marker
+        _persist(
+            level_name, 0,
+            f"{level_name}_done",
+            [a_id, b_id],
+            extras={"current_best_dur": current_best_dur},
+        )
+
+    # 5. Final verification at scan_step=REFINE_FINAL_SCAN_STEP
+    print_fn(
+        f"[REFINE] final verification at scan_step="
+        f"{REFINE_FINAL_SCAN_STEP} "
+        f"current_best_dur={current_best_dur:.6f}",
+        flush=True,
+    )
+    _check_deadline()
+    final_row = _refine_evaluate(
+        current_best,
+        seed=parent_seed,
+        scan_step=REFINE_FINAL_SCAN_STEP,
+        source_stage="refine_final_fine",
+    )
+    evaluations_completed += 1
+    final_dur = float(final_row.total_duration_s) if (
+        final_row.status == "ok" and final_row.valid) else -1.0
+    final_id = str(final_row.evaluation_id)
+    if final_dur > current_best_dur + REFINE_IMPROVE_TOL_S:
+        # Final scan_step yields different (better) duration; we keep the
+        # sweep_best_4tuple but report both.
+        print_fn(
+            f"[REFINE] final scan_step=0.005 yields "
+            f"{final_dur:.6f} vs sweep {current_best_dur:.6f}; "
+            f"keeping sweep best candidate for perturbation",
+            flush=True,
+        )
+    # Stability check (3 scan_steps)
+    stability = formal_stability_check(
+        current_best, scan_steps=(0.02, 0.01, REFINE_FINAL_SCAN_STEP),
+        seed=parent_seed)
+    # Final 16 one-var perturbation at scan_step=0.005
+    perturbation = formal_one_variable_perturbation_check(
+        current_best, seed=parent_seed,
+        scan_step=REFINE_FINAL_SCAN_STEP)
+
+    # Persist final summary
+    summary: Dict[str, Any] = {
+        "schema": "q2_refine_summary_v1",
+        "head_sha": head_sha,
+        "refinement_config_sha256": refine_cfg_sha,
+        "parent_a_real_duration_s": a_dur,
+        "parent_a_evaluation_id": a_id,
+        "parent_b_real_duration_s": b_dur,
+        "parent_b_evaluation_id": b_id,
+        "starting_candidate": (
+            "B" if b_dur > a_dur + REFINE_IMPROVE_TOL_S else "A"),
+        "refined_candidate": list(current_best),
+        "refined_sweep_duration_s": current_best_dur,
+        "final_scan_step_duration_s": final_dur,
+        "final_evaluation_id": final_id,
+        "stability": stability,
+        "perturbation": perturbation,
+        "evaluations_completed": evaluations_completed,
+        "elapsed_seconds": time.monotonic() - started_at,
+        "local_perturbation_passed": bool(
+            perturbation.get("local_perturbation_passed")),
+    }
+    print_fn(
+        f"[REFINE] DONE: refined_candidate="
+        f"{list(current_best)} dur={current_best_dur:.6f} "
+        f"final_0p005_dur={final_dur:.6f} "
+        f"local_perturbation_passed="
+        f"{summary['local_perturbation_passed']} "
+        f"elapsed={summary['elapsed_seconds']:.2f}s "
+        f"evaluations={evaluations_completed}/"
+        f"{REFINE_MAX_TOTAL_EVALUATIONS}",
+        flush=True,
+    )
+    return summary
+
+
+def _isfinite_f(x: Any) -> bool:
+    try:
+        return float(x) == float(x) and abs(float(x)) != float("inf")
+    except Exception:
+        return False
+
+
 if __name__ == "__main__":
     sys.exit(main())

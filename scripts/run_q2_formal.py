@@ -314,6 +314,19 @@ def run_formal_search(
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(
+        description="TASK_005 formal Q2 search orchestrator (P1) "
+                    "and bounded refinement (LOCAL REFINEMENT).")
+    parser.add_argument(
+        "--refine-only", action="store_true",
+        help="Run only the bounded refinement path (no 3-seed rerun).")
+    args = parser.parse_args()
+    if args.refine_only:
+        res = qs.run_formal_refinement()
+        print(f"[REFINE] canonical_refinement_sha256="
+              f"{res.get('local_perturbation_passed')}")
+        sys.exit(0)
     res = run_formal_search()
     print(f"[FORMAL] canonical_result_sha256="
           f"{res['canonical_result_sha256']}")
