@@ -127,8 +127,13 @@ RESULT_AUTO_PROMOTED     : <NO — 必须由独立 Audit / 用户显式裁决>
 
 ## Reporting hygiene
 
-- 不得在汇报中出现 `[redacted]`, `[assume]`, `约`, `应该` 等含糊词。
 - 数值必须从 artifact 中读出, 不得手抄记忆。
+- 禁止无证据的含糊近似（`[redacted]` / `[assume]` / `应该` 等）。
+- **允许** 使用 `约` 或 `≈` 表示近似，**但必须同时提供**：
+  - 原始精确值；
+  - 使用的 rounding / approximation rule（例如："四舍五入到 9 位有效位"、
+    "相对差异 = |ΔT| / baseline × 100%, 截断到 3 位小数"）；
+  - 该近似所对应的 artifact 字段名、JSON 路径或计算来源行号。
 - 不冒充声明不得省略。
 - 不在汇报中写"测试都通过"而不分层; 必须 FAST / TASK / FULL 分别报告。
 - 不在汇报中写"全局最优"或"verified"而无论证。

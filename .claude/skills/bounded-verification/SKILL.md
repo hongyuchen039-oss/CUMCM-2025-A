@@ -39,7 +39,7 @@ evaluation budget / wall-clock budget / checkpoint path / 验收等级，并在�
 | DOCS | 仅改 docs | 否 |
 | FAST | 仅改局部代码 / 单文件 | 否 |
 | TASK | 模块级（多文件） | 视修改范围决定 |
-| EXPENSIVE | 多 seed 搜索 / refinement / evaluator > 60s | 仅在冻结 result*.xlsx 时 |
+| EXPENSIVE | 多 seed 搜索 / refinement / evaluator > 60s | 见 §4（共享数学核心修改 / formal-canonical result freeze / result1/2/3.xlsx freeze / 最终论文一致性 / MAIN 显式授权） |
 | GOVERNANCE | Skill / harness / 治理文件 | 否 |
 
 ## 4. Test tiers (FAST / TASK / FULL)
@@ -50,67 +50,133 @@ evaluation budget / wall-clock budget / checkpoint path / 验收等级，并在�
 | TASK | ≤ 10 分钟 | 真实 integration smoke / checkpoint / resume / task-specific harness | 任务里程碑 |
 | FULL | 不限时 | 全量 unittest discover | 仅 milestone 触发 |
 
-FULL 仅在以下 milestone 触发：
+FULL 仅在以下 milestone 触发（统一规则，不因 task type 不同而漂移）：
 
-- 修改共享数学核心（`src/q1_cylinder.py` / `src/q2_single_bomb.py` / `src/q2_search.py`）；
-- 正式结果冻结（best-known → canonical）；
-- result1/2/3.xlsx 冻结；
-- 最终论文一致性审计；
+- 共享数学核心修改（`src/q1_*.py` / `src/q2_*.py` / `src/q3_*.py` 等）。
+- formal / canonical result freeze（任何 best-known → FORMAL_RESULT_VERIFIED 的晋升）。
+- result1.xlsx / result2.xlsx / result3.xlsx 提交物冻结。
+- 最终论文一致性审计。
 - MAIN 明确授权。
 
-普通文档或局部补丁不得触发 FULL。
+普通文档或局部补丁不得触发 FULL。EXPENSIVE 任务如果只是运行 evaluator 而不涉及上述任何一项，
+也不触发 FULL。
 
 ## 5. Required task contract
 
-每个 expensive task 必须在启动前冻结并写入 `work/task_context.json`：
+每个 expensive task 必须在启动前冻结并写入 `work/task_context.json`。
+文件格式是 **真实 JSON**，不是 YAML。
+
+`work/task_context.json` 由两层组成：
+
+### 5.1 Outer Harness schema v1（必须）
+
+外层字段由 `scripts/verify_task_context.py` 强制校验（v1 已知字段）：
 
 ```
-task_id
-base_sha
-branch
-worktree
-goal
-task_type                  (DOCS / FAST / TASK / EXPENSIVE / GOVERNANCE)
-acceptance_level           (BUDGET_LIMITED_BEST_KNOWN / FORMAL_RESULT_VERIFIED)
-FAST_TESTS
-TASK_TESTS
-FULL_REGRESSION_TRIGGER
-MAX_TEST_WALL_CLOCK
-MAX_EXPENSIVE_EVALUATIONS
-MAX_RUN_WALL_CLOCK
-CHECKPOINT_PATH
-RESUME_IDENTITY_FIELDS     (head_sha, config_sha, parent_candidate)
-ALLOWED_PATHS
-FORBIDDEN_PATHS
-STOP_CONDITION
+schema_version                 : int = 1
+task_id                        : str
+repository_full_name           : str
+worktree_path                  : str
+branch                         : str
+expected_head                  : 40-char sha
+base_branch                    : str
+base_sha                       : 40-char sha
+pr_number                      : int | null
+pr_head_branch                 : str
+allowed_modified_paths         : list[str]
+allowed_untracked_paths        : list[str]
+forbidden_paths                : list[str]
 ```
 
-模板见 `templates/task-contract.md`。**不得先运行后补预算。**
+以下字段当前由 v1 Harness **忽略**（未知字段保留），
+
+但本 Skill 要求每个 expensive task **必须填**：
+
+```
+bounded_verification           : object  (see §5.2)
+```
+
+未知附加字段由 Harness v1 默默保留；如果未来 Harness 升级为 v2，
+这些字段会按新 schema 校验。**本轮不扩建 Harness。**
+
+### 5.2 bounded_verification nested block（必须）
+
+```
+bounded_verification:
+  goal                          : str
+  task_type                     : DOCS | FAST | TASK | EXPENSIVE | GOVERNANCE
+  acceptance_level              : EXPERIMENTAL | BUDGET_LIMITED_BEST_KNOWN
+                                   | FORMAL_RESULT_VERIFIED
+  fast_tests                    : list[str]
+  task_tests                    : list[str]
+  full_regression_trigger       : bool
+  max_test_wall_clock_seconds   : int
+  max_expensive_evaluations     : int
+  max_run_wall_clock_seconds    : int
+  checkpoint_path               : str
+  resume_identity_fields        : list[str]
+  output_artifacts              : list[str]
+  result_claim                  : str
+  stop_condition                : str
+```
+
+### 5.3 Validation split（重要）
+
+- 外层 Harness schema v1 由 `verify_task_context.py` 强制校验（FAIL = CONTEXT_INVALID）。
+- `bounded_verification` 子对象由本 Skill 强制要求；Harness v1 当前
+  不校验 `bounded_verification` 字段；其正确性靠 **Builder 自检 +
+  独立 Audit 复核**。
+- **不得声称** `verify_task_context.py` 已自动校验预算字段。
+- 模板见 `templates/task-contract.md`。**不得先运行后补预算。**
 
 ## 6. Evaluation budget
 
-正式运行前必须冻结 `MAX_EXPENSIVE_EVALUATIONS`：
+正式运行前必须冻结 `bounded_verification.max_expensive_evaluations`：
 
-- pilot multi-seed：seed 数量 × 单 seed 上限
-- cross-seed finalist re-eval：≤ 30 candidates
-- bounded refinement：≤ 32 evaluations
-- clean-head verification：≤ 5 evaluator calls
-- independent Audit：≤ 6 evaluator calls
+| 阶段类别 | TASK_005 历史参考（reference example，并非全项目固定上限） |
+|---|---|
+| pilot multi-seed | seed 数量 × 单 seed 上限（TASK_005 = 3 × 1000）|
+| cross-seed finalist re-eval | ≤ 30 candidates（TASK_005 historical） |
+| bounded refinement | ≤ 32 evaluations（TASK_005 historical） |
+| clean-head verification | ≤ 5 evaluator calls（TASK_005 historical） |
+| independent Audit | ≤ 6 evaluator calls（TASK_005 historical） |
+
+**重要说明**：
+
+- 上述数字仅作为 TASK_005 项目阶段的 reference example；
+- Q3 / Q4 / Q5 等后续 task **必须**根据 pilot 实测 + checkpoint
+  evidence 重新冻结 task-specific 数值；
+- task contract 中实际填写的 `max_expensive_evaluations` 优先于
+  上表；
+- 不得自动沿用 TASK_005 数字；
+- 不得声称这些数字是"全项目上限"。
 
 每次新 evaluation 启动前调用 `_check_budget()`：
 
 - 已完成数 ≥ MAX → raise `EvaluationBudgetExhausted`
 - 原子写 checkpoint
-- 抛异常并保留 BUDGET-LIMITED BEST-KNOWN 状态
+- 抛异常并保留 `BUDGET_LIMITED_BEST_KNOWN` 状态
 - 不静默继续
 
 ## 7. Wall-clock budget
 
-正式运行前必须冻结 `MAX_RUN_WALL_CLOCK`：
+正式运行前必须冻结 `bounded_verification.max_run_wall_clock_seconds`：
 
-- pilot multi-seed：≤ 3600 秒
-- bounded refinement：≤ 2100 秒
-- clean-head verification：≤ 300 秒
+| 阶段类别 | TASK_005 历史参考（reference example，并非全项目固定上限） |
+|---|---|
+| pilot multi-seed | ≤ 3600 s（TASK_005 historical） |
+| bounded refinement | ≤ 2100 s（TASK_005 historical） |
+| clean-head verification | ≤ 300 s（TASK_005 historical） |
+
+**重要说明**：
+
+- 上述数字仅作为 TASK_005 项目阶段的 reference example；
+- Q3 / Q4 / Q5 等后续 task **必须**根据 pilot 实测重新冻结
+  task-specific 数值；
+- task contract 中实际填写的 `max_run_wall_clock_seconds` 优先于
+  上表；
+- 不得自动沿用 TASK_005 数字；
+- 不得声称这些数字是"全项目上限"。
 
 每次新 evaluation 启动前调用 `_check_deadline()`：
 
