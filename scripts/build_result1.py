@@ -302,16 +302,31 @@ def _collect_template_fingerprint(wb) -> Dict[str, Any]:
 
 
 def _fingerprint_matches(fp1: Dict[str, Any], fp2: Dict[str, Any]) -> bool:
-    """两个 fingerprint dict 是否完全一致."""
+    """两个 fingerprint dict 是否完全一致 (列宽 / 行高容许浮点 1e-9 误差)."""
     keys_to_compare = [
         "sheet_names", "active_sheet", "dimensions", "merged_cells",
-        "freeze_panes", "row_heights", "col_widths",
-        "non_data_cells", "non_data_formulas",
+        "freeze_panes", "non_data_cells", "non_data_formulas",
         "non_data_styles", "non_data_number_formats",
     ]
     for k in keys_to_compare:
         if fp1.get(k) != fp2.get(k):
             return False
+    # row_heights / col_widths 容许 1e-9 浮点误差 (openpyxl re-serialize)
+    for k in ("row_heights", "col_widths"):
+        d1 = fp1.get(k, {})
+        d2 = fp2.get(k, {})
+        if set(d1.keys()) != set(d2.keys()):
+            return False
+        for key in d1:
+            v1 = d1[key]
+            v2 = d2[key]
+            if v1 is None and v2 is None:
+                continue
+            if v1 is None or v2 is None:
+                return False
+            if not math.isclose(float(v1), float(v2), abs_tol=1e-9,
+                                rel_tol=1e-9):
+                return False
     return True
 
 

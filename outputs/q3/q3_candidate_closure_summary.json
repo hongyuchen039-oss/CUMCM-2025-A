@@ -1,1 +1,132 @@
-{"canonical_q3_candidate": {"delay_1_s": 3.720360704323356, "delay_2_s": 3.7704749980723404, "delay_3_s": 3.7180978311642083, "heading_rad": 3.127613485137657, "release_time_1_s": 0.993241052387636, "release_time_2_s": 4.88566490244013, "release_time_3_s": 10.157737577136487, "speed_mps": 116.12799297398149}, "canonical_q3_evidence": {"rehydrated_from_completed_records": true, "total_union_duration_s": 4.478218820691105}, "canonical_total_union_duration_s": 4.478218820691105, "comparison": {"absolute_improvement_s": 0.009205682873719923, "incumbent_reference_total_union_duration_s": 4.469013137817385, "relative_improvement": 0.0020598916561287784}, "contract_version": 4, "counts": {"accepted_candidates": 32, "attempted_candidates": 32, "completed_q3_evaluations": 32, "rejected_candidates": 0, "single_bomb_evaluator_calls": 96, "system_error_count": 0, "unique_q3_evaluation_ids": 32}, "current_process_elapsed_seconds": 290.5430561999674, "identity": {"candidate_schema_version": 1, "checkpoint_path": "work/q3_candidate_closure/checkpoint.json", "checkpoint_schema_version": 4, "closure_config_sha256": "bb14372513b1f719b03e4070101506765d3549c16dad02c7448a41894cbebc52", "closure_run_identity_sha256": "e063f7caa7b0f8c9d64a0f4411da90efc4512ffcde1770125841bd698cd2152c", "closure_schedule_sha256": "f895842bb07d9b2b6f8f2269729a9b86c4d32955cfc6fafc1c5521147b2fda63", "contract_snapshot_sha256": "689ddbcdc9688dffde0e914f507da3c2e2efa14ae9b5390dc7b1730d78b89291", "execution_head_sha": "def084d9bc38bf92cd714d24676016fa8911a83c", "q2_single_bomb_code_sha256": "b3ee61216a996404e76d4fc361d0adfe84cd5c76847746062e01a3acda7dd75a", "q3_search_code_sha256": "b814f0fe53c7bb8741b8a942302aac6ad6e3e0e512dd58430c848acaca179b3c", "q3_three_bombs_code_sha256": "eb79963906bc68f7ace568ae14b8bf71d60666d3f561e287039c2acc47462fd3"}, "incumbent_high_resolution": {"candidate": {"_reference_duration_s": 4.469013137817385, "delay_1_s": 3.720360704323356, "delay_2_s": 3.7704749980723404, "delay_3_s": 3.7180978311642083, "heading_rad": 3.127613485137657, "release_time_1_s": 0.993241052387636, "release_time_2_s": 4.88566490244013, "release_time_3_s": 10.157737577136487, "speed_mps": 116.62799297398149}, "p2_evidence_commit": "dc970a483ab9e05d76467decf63f61dff70f0862", "p2_execution_head": "70a4dd767f057edded65bd2011ac544347f661dc", "reference_total_union_duration_s": 4.469013137817385, "source": "TASK_006-P2 stage_E_high_resolution_verification_rank_1"}, "original_p2_evidence_preservation": {"original_512_evaluations_preserved": true, "original_834_07s_wall_clock_preserved": true, "original_p2_evidence_commit": "dc970a483ab9e05d76467decf63f61dff70f0862", "original_p2_execution_head": "70a4dd767f057edded65bd2011ac544347f661dc", "p2_search_rerun_performed": false}, "p2c_contract_snapshot_path": "work/task_contracts/TASK_006-P2C-v4.json", "phase_id": "TASK_006-P2C", "previous_elapsed_seconds_total": 0.0, "result_level": {"declared_level": "BUDGET_LIMITED_BEST_KNOWN", "local_convergence_established": false, "not_a_formal_q3_result": true, "not_a_proven_global_optimum": true, "result1_xlsx_generated": false}, "stage_counts": {"A": 0, "B": 0, "C": 0, "D": 0, "E": 0, "F1": 16, "F2": 8, "F3": 4, "F4": 2, "F5": 2, "total": 32}, "status": {"checkpoint_load_error": false, "evaluation_budget_exhausted": false, "pilot_complete": true, "raw_status": "pilot_complete", "resume_identity_mismatch": false, "run_system_error": false, "wall_clock_gate_hit": false}, "timing": {"coarse": {"count": 24, "median_seconds": 0.5643875999958254, "p90_seconds": 0.6515669000218622}, "fine": {"count": 4, "median_seconds": 63.68500580001273, "p90_seconds": 84.78621170000406}, "medium": {"count": 4, "median_seconds": 5.452447849995224, "p90_seconds": 5.470999899960589}}, "total_wall_clock_seconds": 290.5430561999674}
+{
+  "canonical_q3_candidate": {
+    "delay_1_s": 3.720360704323356,
+    "delay_2_s": 3.7704749980723404,
+    "delay_3_s": 3.7180978311642083,
+    "heading_rad": 3.127613485137657,
+    "release_time_1_s": 0.993241052387636,
+    "release_time_2_s": 4.88566490244013,
+    "release_time_3_s": 10.157737577136487,
+    "speed_mps": 116.12799297398149
+  },
+  "canonical_q3_evidence": {
+    "rehydrated_from_completed_records": true,
+    "total_union_duration_s": 4.478218820691105
+  },
+  "canonical_total_union_duration_s": 4.478218820691105,
+  "comparison": {
+    "absolute_improvement_s": 0.009205682873719923,
+    "incumbent_reference_total_union_duration_s": 4.469013137817385,
+    "relative_improvement": 0.0020598916561287784
+  },
+  "contract_version": 4,
+  "counts": {
+    "accepted_candidates": 32,
+    "attempted_candidates": 32,
+    "completed_q3_evaluations": 32,
+    "rejected_candidates": 0,
+    "single_bomb_evaluator_calls": 96,
+    "system_error_count": 0,
+    "unique_q3_evaluation_ids": 32
+  },
+  "current_process_elapsed_seconds": 290.5430561999674,
+  "identity": {
+    "candidate_schema_version": 1,
+    "checkpoint_path": "work/q3_candidate_closure/checkpoint.json",
+    "checkpoint_schema_version": 4,
+    "closure_config_sha256": "bb14372513b1f719b03e4070101506765d3549c16dad02c7448a41894cbebc52",
+    "closure_run_identity_sha256": "e063f7caa7b0f8c9d64a0f4411da90efc4512ffcde1770125841bd698cd2152c",
+    "closure_schedule_sha256": "f895842bb07d9b2b6f8f2269729a9b86c4d32955cfc6fafc1c5521147b2fda63",
+    "contract_snapshot_sha256": "689ddbcdc9688dffde0e914f507da3c2e2efa14ae9b5390dc7b1730d78b89291",
+    "execution_head_sha": "def084d9bc38bf92cd714d24676016fa8911a83c",
+    "q2_single_bomb_code_sha256": "b3ee61216a996404e76d4fc361d0adfe84cd5c76847746062e01a3acda7dd75a",
+    "q3_search_code_sha256": "b814f0fe53c7bb8741b8a942302aac6ad6e3e0e512dd58430c848acaca179b3c",
+    "q3_three_bombs_code_sha256": "eb79963906bc68f7ace568ae14b8bf71d60666d3f561e287039c2acc47462fd3"
+  },
+  "incumbent_high_resolution": {
+    "candidate": {
+      "_reference_duration_s": 4.469013137817385,
+      "delay_1_s": 3.720360704323356,
+      "delay_2_s": 3.7704749980723404,
+      "delay_3_s": 3.7180978311642083,
+      "heading_rad": 3.127613485137657,
+      "release_time_1_s": 0.993241052387636,
+      "release_time_2_s": 4.88566490244013,
+      "release_time_3_s": 10.157737577136487,
+      "speed_mps": 116.62799297398149
+    },
+    "p2_evidence_commit": "dc970a483ab9e05d76467decf63f61dff70f0862",
+    "p2_execution_head": "70a4dd767f057edded65bd2011ac544347f661dc",
+    "reference_total_union_duration_s": 4.469013137817385,
+    "source": "TASK_006-P2 stage_E_high_resolution_verification_rank_1"
+  },
+  "original_p2_evidence_preservation": {
+    "original_512_evaluations_preserved": true,
+    "original_834_07s_wall_clock_preserved": true,
+    "original_p2_evidence_commit": "dc970a483ab9e05d76467decf63f61dff70f0862",
+    "original_p2_execution_head": "70a4dd767f057edded65bd2011ac544347f661dc",
+    "p2_search_rerun_performed": false
+  },
+  "p2c_contract_snapshot_path": "work/task_contracts/TASK_006-P2C-v4.json",
+  "phase_id": "TASK_006-P2C",
+  "previous_elapsed_seconds_total": 0.0,
+  "result_level": {
+    "declared_level": "BUDGET_LIMITED_BEST_KNOWN",
+    "local_convergence_established": false,
+    "not_a_formal_q3_result": true,
+    "not_a_proven_global_optimum": true,
+    "result1_xlsx_generated": false
+  },
+  "stage_counts": {
+    "A": 0,
+    "B": 0,
+    "C": 0,
+    "D": 0,
+    "E": 0,
+    "F1": 16,
+    "F2": 8,
+    "F3": 4,
+    "F4": 2,
+    "F5": 2,
+    "total": 32
+  },
+  "status": {
+    "checkpoint_load_error": false,
+    "evaluation_budget_exhausted": false,
+    "pilot_complete": true,
+    "raw_status": "pilot_complete",
+    "resume_identity_mismatch": false,
+    "run_system_error": false,
+    "wall_clock_gate_hit": false
+  },
+  "timing": {
+    "coarse": {
+      "count": 24,
+      "median_seconds": 0.5643875999958254,
+      "p90_seconds": 0.6515669000218622
+    },
+    "fine": {
+      "count": 4,
+      "median_seconds": 63.68500580001273,
+      "p90_seconds": 84.78621170000406
+    },
+    "medium": {
+      "count": 4,
+      "median_seconds": 5.452447849995224,
+      "p90_seconds": 5.470999899960589
+    }
+  },
+  "total_wall_clock_seconds": 290.5430561999674,
+  "profile_provenance_correction": {
+    "closure_selection_profile": "coarse",
+    "closure_selection_scan_step_s": 0.05,
+    "closure_selection_score_s": 4.478218820691105,
+    "canonical_high_resolution_profile": "fine",
+    "canonical_high_resolution_scan_step_s": 0.005,
+    "canonical_high_resolution_duration_s": 4.478204178810118,
+    "absolute_profile_difference_s": 1.4641880987653622e-05,
+    "decision_variables_changed": false,
+    "search_rerun_performed": false,
+    "explanation": "The P2C selection score came from a coarse-profile record. P3 reports the same frozen candidate under fine 0.005 reconstruction."
+  }
+}

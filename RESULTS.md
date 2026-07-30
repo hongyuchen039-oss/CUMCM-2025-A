@@ -1064,3 +1064,118 @@ speed_mps 单步扰动大小）。F5 high-resolution 复评后该候选以 ε=1e
 - 不冒充 P2 512 evals 被重跑（P2 evidence commit `dc970a48` + HEAD `70a4dd7` 完整保留）
 - P2 stage E top-1 candidate (4.469013137817385 s) 不冒充 Q3 全局最优
 - P2C closure canonical candidate (4.478218820691105 s) 不冒充 Q3 全局最优
+- P3 fine canonical reconstruction (4.478204178810118 s) 不冒充 Q3 全局最优
+
+## TASK_006-P3 Q3 RESULT1.XLSX Artifact Generation (BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE WITH GENERATED AND ROUND-TRIP-VERIFIED RESULT1.XLSX / NOT A PROVEN GLOBAL OPTIMUM)
+
+> 已在 `scripts/build_result1.py` 实现；通过 `tests/test_q3.py` 新增 55 个 P3 单元测试
+> （FakeEvaluator + temporary workbook，**不**调用真实 Q3 evaluator）验证。
+> 本节固定 Q3 result1.xlsx 生成的实测结果，**双数值 + profile provenance**，
+> 不混用 fine / 0.005 与 coarse / 0.05 的精度差异。
+> 等级: **BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE WITH GENERATED AND ROUND-TRIP-VERIFIED
+> RESULT1.XLSX / LOCAL CONVERGENCE NOT ESTABLISHED / NOT A PROVEN GLOBAL OPTIMUM**。
+> 独立 Final Audit (Audit CC) + Hermes 签字后才能正式合并。
+
+### 1. 双数值证据（必须区分 profile 来源）
+
+| 数值 | profile | scan_step | 来源 |
+|---|---|---|---|
+| **4.478218820691105 s** | coarse | 0.05 | P2C closure selection score (32 evals argmax; argmax record = F1 perturb_speed_mps-) |
+| **4.478204178810118 s** | fine | 0.005 | P3 canonical reconstruction (1 real Q3 call, formal gate) |
+| 1.4641880987653622e-05 s | — | — | absolute_profile_difference_s (10^-5 量级) |
+
+- 4.478218820691105 s 是 P2C 32 evals 搜索阶段的历史证据，**不冒充** high-resolution reconstruction；
+- 4.478204178810118 s 是 P3 唯一一次 fine / 0.005 高精度重建结果，**用于** result1.xlsx 填写；
+- 两数值各自保留，profile 来源明确；不得混用、不得放宽 tolerance 至 1e-5 假装相等。
+
+### 2. P3 重建实测
+
+| 维度 | 上限 | 实测 |
+|---|---|---|
+| 顶层 Q3 canonical reconstruction | 1 | 1 |
+| Real single-bomb evaluator calls | 3 (1 × 3) | 3 |
+| Run wall-clock | 300 s | 81.66 s |
+| system_error_count | 0 | 0 |
+| reconstruction_gate abs_diff | 0 | 0 |
+| reconstruction_gate passed | true | true |
+
+P3 重建调用：
+- 同一 8 维 candidate, 同一 `sample_level='fine'`, 同一 `scan_step=0.005`,
+  同一 `src/q3_three_bombs.evaluate_three_bomb_strategy`;
+- 期望 `total_union_duration_s ≈ 4.478204178810118`（PASS, abs_diff=0）；
+- single_bomb_evaluator_calls = 3；elapsed_s = 81.66 s。
+
+### 3. result1.xlsx 写入合同（P3）
+
+| 列 | 写入值 (rounded to display precision) |
+|---|---|
+| A | `179.1990526465902` (= degrees(3.127613485137657) % 360, **三行相同**) |
+| B | `116.1279929739815` (**三行相同**) |
+| C | `1, 2, 3` (顺序) |
+| D-F | release_point i xyz (bomb i 投放点) |
+| G-I | detonation_point i xyz (bomb i 起爆点) |
+| J | bomb i own `total_duration_s` (**逐弹自身 duration**，**不是 union**) |
+
+- bomb 1: total_duration_s = 4.478204178810118（仅 bomb 1 有效）
+- bomb 2: total_duration_s = 0（无有效区间）
+- bomb 3: total_duration_s = 0（无有效区间）
+- 三弹 union 总时长 4.478204178810118（P3 fine / 0.005）**不**写入 J 列
+- 三弹 union 总时长 4.478218820691105（P2C coarse / 0.05）**不**写入 J 列
+- 两个 union 数值均仅写入 `q3_result1_artifact_summary.json` / `RESULTS.md` / PR body
+- 表头、附注 (A6 "注：以x轴为正向...")、sheet 结构全部保留原样
+- 所有 Excel 单元格均为数值类型
+
+### 4. result1.xlsx 回读核验（P3）
+
+- save → 关闭 workbook → 从磁盘重新打开 → 逐格读取三行 A:J
+- abs_tol = 1e-10；rel_tol = 1e-12
+- 全部 30 个 cell 通过；template fingerprint 保留
+- round-trip PASS
+
+### 5. improvement 链
+
+- P2 stage E top-1 → 4.469013137817385 s
+- P2C closure selection (coarse / 0.05) → 4.478218820691105 s
+  (P2 → P2C: +0.009205682873719923 s, +0.21%)
+- P3 canonical reconstruction (fine / 0.005) → 4.478204178810118 s
+  (P3 - P2: +0.009191040992732269 s, +0.20566%, 与 P2C coarse 数值 1.4641880987653622e-05 差)
+
+注：P3 fine 与 P2C coarse 差来自离散 scan_step 不同，**不**重新定义 improvement。
+
+### 6. P3 Resume identity (7 字段, checkpoint_schema_version=5)
+
+`work/q3_result1/checkpoint.json` 7 字段（任一 mismatch → BLOCKED, exit 2）：
+1. `execution_head_sha` — 当前 commit HEAD
+2. `contract_snapshot_sha256` — `work/task_contracts/TASK_006-P3-v5.json` SHA-256
+3. `q2_single_bomb_code_sha256` — `src/q2_single_bomb.py` SHA-256
+4. `q3_three_bombs_code_sha256` — `src/q3_three_bombs.py` SHA-256
+5. `result1_builder_code_sha256` — `scripts/build_result1.py` SHA-256
+6. `canonical_candidate_sha256` — 冻结 8 维 candidate SHA-256
+7. `official_template_sha256` — `题目及模板/..._结果模板.zip` SHA-256
+
+### 7. 测试（172 / 172 PASS，55 P3 新增）
+
+- 52 P0/P1 tests (closure v2) — unchanged
+- 29 P2 tests — unchanged
+- 36 P2C tests — unchanged
+- **55 P3 tests** (FakeEvaluator + temporary workbook, 0 real Q3 evaluation)
+- real Q3 evaluator call budget in tests = 1 (setUpClass) + 2 (TestRepeatedDeterminismRealReeval) = **3** (unchanged)
+- P3 tests **不**消耗真实 Q3 evaluator
+
+### 8. 局限
+
+- 不重跑 Pilot / P2 512 / P2C 32（实测保留不变）；
+- 不创建 challenger / 不调整决策变量；
+- shared heading / speed / interval union 来自 P2C 合同，本阶段不改写；
+- 不声称 Q3 全局最优 / VERIFIED / FINAL / 官方答案 / 解析极值；
+- **不**声称 local convergence；
+- 等级仅 BUDGET_LIMITED_BEST_KNOWN；Final Audit + Hermes 签字后才能升 VERIFIED 或
+  进一步生成 result2.xlsx / result3.xlsx / 启动 Q4 / Q5；
+- 之前 fine / 0.005 调用为诊断调用，不计入 P3 正式 reconstruction count。
+
+### 9. 输出文件
+
+- `outputs/submission/result1.xlsx` — 官方模板 in-memory edit + 写入
+- `outputs/q3/q3_result1_artifact_summary.json` — P3 artifact summary（含双数值 + profile provenance + fingerprint + 7 字段 identity）
+- `outputs/q3/q3_candidate_closure_summary.json` — 增加 `profile_provenance_correction` 块，**不**篡改 P2C 原始 32 计数
+- `work/q3_result1/checkpoint.json` — checkpoint_schema_version=5, 7 字段 identity + reconstruction result
