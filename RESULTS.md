@@ -681,7 +681,7 @@ DOC-ONLY P2 CLOSED BY CURRENT COMMIT
 
 > 本节为 Q3 三弹 evaluator + bounded pilot 的实测记录。
 > 等级: **EXPERIMENTAL Q3 PILOT / NOT A FORMAL Q3 RESULT / RESULT1.XLSX NOT GENERATED**。
-> Pilot 完成后写入；本轮填写前为占位骨架。
+> Pilot 在 clean-HEAD `4d442a7a16127ca0166d1114656b5fe4d5546b4d` 上完成。
 > 独立审查签字 + MAIN 显式立项 TASK_006-P2 后才能升 `BUDGET_LIMITED_BEST_KNOWN`
 > 或进一步生成 result1.xlsx。
 
@@ -691,29 +691,103 @@ DOC-ONLY P2 CLOSED BY CURRENT COMMIT
 - `LOCAL CONVERGENCE NOT ESTABLISHED`
 - `NOT A PROVEN GLOBAL OPTIMUM`
 - `RESULT1.XLSX NOT GENERATED`
-- 实际 Q3 evaluation count：待 Pilot 完成后回填
-- 实际 single-bomb evaluator calls：待 Pilot 完成后回填
-- best Pilot candidate：待 Pilot 完成后回填
-- actual wall-clock：待 Pilot 完成后回填
+- 实际 Q3 evaluation count: **94** / cap 96
+- 实际 single-bomb evaluator calls: **282** (= 94 × 3)
+- 实际 wall-clock: **243.124 s** / cap 900 s
+- system_error_count: **0**
+- unique_q3_evaluation_ids: **86** (Stage C/D 决赛阶段重评引入 8 个重复 ID)
+- 执行 HEAD: `4d442a7a16127ca0166d1114656b5fe4d5546b4d` (WORKING commit)
+- base SHA: `007b93d301db73c9a73904337de34d1b4e13467e`
 
-### 1. Pilot 维度实测
+### 1. Pilot 阶段分配（实测）
 
-待 Pilot 完成后回填：
+| 阶段 | 候选来源 | 评估数 | profile |
+|---|---|---|---|
+| Stage A profile calibration | profile_calibration (q2_canonical_seed_family) | 6 | 2 cands × coarse/medium/fine |
+| Stage B deterministic coarse exploration | deterministic_random_seed_2025 + _2026 | 80 | coarse |
+| Stage C medium finalist recheck | finalist_medium_recheck | 6 | medium |
+| Stage D fine spot-check | finalist_fine_spotcheck | 2 | fine |
+| **合计** | | **94** | |
 
-- median Q3 evaluation seconds by profile
-- p90 Q3 evaluation seconds by profile
-- median single-bomb seconds
-- p90 single-bomb seconds
+- Stage D 的 `top-2 fine finalists` 来自 finalist_medium_recheck 排序后 top-2 (medium 评估过后的候选)
+- 仅 best candidate 在 Stage A 由 profile_calibration 进入 (coarse profile dur=3.788 s, medium dur=3.784 s, fine dur=3.782 s)
 
-### 2. Budget recommendation（向 MAIN 提交）
+### 2. Pilot 维度实测
 
-待 Pilot 完成后回填：
-- recommended_formal_q3_evaluations
-- recommended_seed_count
-- recommended_formal_wall_clock_seconds
-- recommended_refinement_evaluations
-- recommended_verification_q3_calls
-- calculation_basis
-- safety_factor
+| profile | count | median Q3 (s) | p90 Q3 (s) | median single-bomb (s) | p90 single-bomb (s) |
+|---|---|---|---|---|---|
+| coarse | 82 | 0.5227 | 0.5750 | 0.1742 | 0.1917 |
+| medium | 8 | 5.3604 | 5.5935 | 1.7868 | 1.8645 |
+| fine | 4 | 41.2872 | 41.5400 | 13.7624 | 13.8467 |
 
-预算建议必须来自实测 median / p90，不得照抄 TASK_005 的 3×1000 / 32 / 5 / 6。
+- 观察: fine 单次 Q3 evaluation 约 41 s（≈ 3 × 13.8 s），与 medium/coarse 拉开数量级差；stage B coarse 阶段 80 个候选只用 ~30 s
+- 总 wall-clock 243 s (cap 900 s 充足预算), 主要消耗在 Stage A fine profile calibration (~150 s) 与 Stage D 决赛 fine spot-check (~80 s)
+- 全程 0 system_error, 全部 evaluation 走完单弹 evaluator 三次调用
+
+### 3. Best Pilot candidate
+
+| 字段 | 值 |
+|---|---|
+| heading_rad | 3.129077304371891 |
+| speed_mps | 116.7252038036431 |
+| release_time_1_s | 1.2583116888277712 |
+| delay_1_s | 3.7238593454001645 |
+| release_time_2_s | 2.2592064941885104 |
+| delay_2_s | 3.7378011061070766 |
+| release_time_3_s | 5.205790545673161 |
+| delay_3_s | 3.637016476748259 |
+| per_bomb_duration_s | [3.788169, 0, 0] |
+| total_union_duration_s | 3.7881687521934495 |
+| union_intervals | [(5.551472308646765, 9.339641060840215)] |
+| evaluation_id | f98d28e99c3901be135a9d2a25b93849ad19e7391a10846431ca6138f51478ff |
+| sample_level | coarse |
+| scan_step | 0.05 |
+
+- **重要观察**: Pilot best candidate 仅 bomb 1 贡献非零 duration (3.788 s); bomb 2 与 bomb 3 各自总时长 0
+- 原因: pilot 候选生成采用 `q2_canonical_seed_family` 锚点 + 随机扰动, 三枚弹的 release_time 间隔较大 (≥1 s), 后两枚弹的 detonate 时刻常落入 t_arrival 之后或严格遮蔽时间窗外, 贡献空 union
+- 该观察仅为 Pilot 阶段粗扫结果, 不构成 Q3 真实最优; 真实 Q3 形式搜索可能产生非平凡 union (三枚弹均贡献), 需要 bounded formal search 评估
+
+### 4. Budget recommendation（向 MAIN 提交）
+
+| 字段 | 值 |
+|---|---|
+| recommended_formal_q3_evaluations | 528 |
+| recommended_seed_count | 3 |
+| recommended_formal_wall_clock_seconds | 16557 |
+| recommended_refinement_evaluations | 32 |
+| recommended_verification_q3_calls | 5 |
+| safety_factor | 1.5 |
+
+calculation_basis:
+- coarse median = 0.5227 s, coarse p90 = 0.5750 s
+- fine median = 41.2872 s, fine p90 = 41.5400 s
+- safety_factor = 1.5
+- pilot completed 94 evals
+
+推算逻辑:
+```
+estimated_evals = 3 seeds × (160 coarse + 8 medium + 8 fine) = 528
+per_eval_est = (coarse_median + fine_median) / 2 ≈ 20.9 s
+recommended_wall = 528 × 20.9 × 1.5 ≈ 16557 s
+```
+
+### 5. MAIN 决策建议（不冒充）
+
+预算推荐来自实测 median / p90，未照抄 TASK_005 的 3×1000 / 32 / 5 / 6。
+
+考虑到 fine profile 单次 ~41 s 远高于 coarse (~0.5 s)，MAIN 在 TASK_006-P2 立项前可考虑：
+1. **优先 coarse 阶段大量采样**: fine 只用于 finalist 重评;
+2. **降低 fine 阶段比例**: 若非必要可只对 top-2 而非 top-8 做 fine 复评;
+3. **取消 Stage A 中 fine profile calibration**: Stage A 已有 coarse+medium，fine 耗时占 60% 但对 Stage B/C/D 决策不直接参与;
+4. **三 seed × 160 coarse + 8 medium + 4 fine**: 若只对 top-4 做 fine 复评，可将 recommended_wall 从 16557 s 降至 ~10000 s.
+
+本轮仅交付实测与建议，不冒充 Q3 Formal Search 的最优预算。
+
+### 6. 不冒充
+
+- 不冒充 VERIFIED GLOBAL OPTIMUM
+- 不冒充 FINAL OFFICIAL ANSWER
+- 不冒充 LOCAL CONVERGENCE ESTABLISHED
+- 不冒充 16557 s 必须是真实 wall-clock 上限（仅基于 Pilot 实测 + safety_factor 推导）
+- 不冒充 Pilot best candidate (3.788 s) 是 Q3 全局最优
+- 不冒充 Pilot 中发现的"单弹贡献"模式是 Q3 真实最优结构
