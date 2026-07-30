@@ -2220,7 +2220,10 @@ def run_candidate_closure(
                 pilot_config_sha256=PILOT_CONFIG_SHA256,
             )
 
-    incumbent_candidate = _dict_to_candidate(incumbent_payload)
+    incumbent_candidate = _dict_to_candidate({
+        k: v for k, v in incumbent_payload.items()
+        if not k.startswith("_")
+    })
     ok, reason = validate_candidate(incumbent_candidate)
     if not ok:
         raise ValueError(

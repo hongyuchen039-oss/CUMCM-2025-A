@@ -1408,8 +1408,230 @@ run wall-clock ≤ 1200 s；任一上限达到不自动延长。
 - 候选 generation 是 deterministic uniform pseudorandom + scheduled perturbation；
   **不是**全局最优证明，**不是**解析极值，**不是**官方答案。
 - Stage B/C/D/E 的 refinement scope 受 5 阶段预算硬约束，未穷尽搜索空间；
-  16 项 one-var perturbation + coordinate descent 未启动（留给后续 TASK）。
+  16 项 one-var perturbation + coordinate descent 未启动（留给 TASK_006-P2C）。
 - multi-seed 仅 3 seeds；统计意义有限。
+- 不声称 Q3 全局最优 / VERIFIED / FINAL / 官方答案 / 解析极值；
+  **不**声称 local convergence。
+- 等级仅 BUDGET_LIMITED_BEST_KNOWN；独立审查签字后才能升 VERIFIED 或进一步
+  生成 result1.xlsx（TASK_006-P3）。
+
+---
+
+## Q3 Candidate Closure (TASK_006-P2C / BUDGET_LIMITED_BEST_KNOWN / NOT A PROVEN GLOBAL OPTIMUM)
+
+> 已在 `src/q3_search.py` 追加 `run_candidate_closure(...)` 函数，通过
+> `tests/test_q3.py` 新增 36 个 P2C 单元测试（FakeEvaluator only）验证。
+> 本节固定 Q3 candidate closure 的方法、预算、F1-F5 顺序传播、累计 resume 语义、
+> schedule SHA、checkpoint v4、selection rule 与局限。
+> 等级: **BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE / LOCAL CONVERGENCE NOT ESTABLISHED
+> / NOT A PROVEN GLOBAL OPTIMUM / RESULT1.XLSX NOT GENERATED**。
+> 不得冒充 Q3 VERIFIED / FINAL / 官方答案 / 解析极值 / 全局最优 / local convergence。
+> 独立审查 (Audit CC / Hermes) 签字后才能立项 TASK_006-P3 (result1.xlsx)。
+
+### 1. 前驱与基础约束
+
+- 严格基于 P2 冻结结果：`outputs/q3/q3_formal_search_summary.json` 的
+  `best_candidate` (8 维) + `best_total_union_duration_s = 4.469013137817385 s`。
+- 严格复用 Q2 single-bomb evaluator + Q3 three-bomb evaluator
+  (via `src/q3_three_bombs.evaluate_three_bomb_strategy`)。
+- Foundation 文件（P0/P1/P2）冻结：不得修改 q3_three_bombs.py / q1 / q2 / q3_search core。
+- **不**重跑 P2 512-evaluation 正式搜索。
+
+### 2. Pre-closure limitation（合同级声明）
+
+P2 阶段的 B/C/D/E schedule 是从 Stage A result pool 一次性 pre-constructed 的；
+该实现正确性已由 P2 实证（512/834.07 s/0 system_error）保证，但其 schedule 不能
+反映"前驱阶段实际产生哪些 candidates"的真实约束。P2C 阶段必须改为 sequential
+propagation：
+
+> B/C/D/E schedules are preconstructed from the Stage A result pool rather than
+> propagated sequentially after each preceding stage completed.
+> (TASK_006-P2C-v4 contract, `pre_closure_stage_selection_limitation` 字段)
+
+P2C closure 必须：
+
+- sequential_propagation: true
+- build_per_stage_only_after_predecessor_complete: true
+- schedule_immutable_after_construction: true
+- closure_schedule_sha256_in_resume_identity: true
+
+### 3. 预算分配（hard cap, F1-F5 严格总和 = 32）
+
+| 阶段 | 预算 | Profile | 说明 |
+|---|---|---|---|
+| F1 — one-variable perturbation | **16** | coarse (0.05) | 8 vars × 2 directions（+/-） |
+| F2 — coordinate combinations | **8** | coarse (0.05) | 8 fixed combinations |
+| F3 — medium recheck | **4** | medium (0.02) | parents = incumbent + top-3 challengers |
+| F4 — fine recheck | **2** | fine (0.01) | parents = F3 top-k |
+| F5 — high-resolution verification | **2** | fine (0.005) | final canonical selection |
+| **总计** | **32** | | |
+| **single_bomb_evaluator_calls** | 96 | | 32 × 3 = 96 |
+
+Run wall-clock ≤ **600 s**；任一上限达到不自动延长。
+
+### 4. F1 one-variable perturbation 步长
+
+| 变量 | 步长（rad/m/s） |
+|---|---|
+| heading_rad | 0.002 |
+| speed_mps | 0.5 |
+| release_time_1_s | 0.10 |
+| delay_1_s | 0.05 |
+| release_time_2_s | 0.10 |
+| delay_2_s | 0.05 |
+| release_time_3_s | 0.10 |
+| delay_3_s | 0.05 |
+
+- 8 变量 × 2 方向 = **16 records**
+- 每 record 复制 incumbent，扰动单变量单方向，其余 7 变量保持 incumbent 值。
+- Fallback scales: `[0.5, 0.25]`；当扰动后 candidate 不满足 `validate_candidate`
+  （release spacing ≥ 1 s 等）时，按 [0.5, 0.25] 缩放步长重试；仍失败则丢弃该 record。
+- Records 在 closure 启动前 pre-built（确定性、seed-locked）。
+
+### 5. F2 coordinate combinations
+
+8 fixed combinations（每个 combination 用 ±1 方向 × main step × combination size）：
+
+| # | combo | 说明 |
+|---|---|---|
+| 1 | heading+speed | 2 变量 |
+| 2 | release_time_1+delay_1 | 2 变量 |
+| 3 | release_time_2+delay_2 | 2 变量 |
+| 4 | release_time_3+delay_3 | 2 变量 |
+| 5 | heading+speed+release_time_1+delay_1 | 4 变量 |
+| 6 | release_time_2+delay_2+release_time_3+delay_3 | 4 变量 |
+| 7 | all_release_delay | 6 变量（release_1/2/3 + delay_1/2/3） |
+| 8 | all_eight | 8 变量 |
+
+- F2 records 与 F1 records 同时 pre-build（不依赖 F1 执行结果；只依赖 incumbent）。
+- Records 在 closure 启动前 pre-built（确定性、seed-locked）。
+
+### 6. F3 / F4 / F5 sequential propagation
+
+| 阶段 | parents | records | profile |
+|---|---|---|---|
+| F3 | incumbent ∪ best-of-(F1+F2) up to top_k=3 | 4 | medium (0.02) |
+| F4 | F3 完成后 top-k | 2 | fine (0.01) |
+| F5 | F4 完成后 top-k | 2 | fine (0.005) |
+
+- F3/F4/F5 records **不能**pre-build；必须在前驱阶段执行完成后才构建。
+- 每阶段记录其 predecessor 结果，按 `total_union_duration_s desc` 排序，
+  取 top-3（含 incumbent）+ pre-defined perturbation patterns 生成下一阶段 records。
+- top_k 默认 = 3；F4/F5 top_k 由合同固定 = 2。
+- per-stage schedule immutable after construction。
+
+### 7. Selection rule
+
+```
+canonical_closure_candidate = argmax total_union_duration_s over all 32 records
+if abs(duration_a - duration_b) <= 1e-12:
+    tie-break on evaluation_id lexicographic
+```
+
+- ε = 1e-12 s（固定、极小）。
+- 仅在 ε 内才有 tie-break；超过 ε 的差异视为 strict improvement。
+
+### 8. Cumulative Wall-Clock
+
+```
+current_process_elapsed = time.perf_counter() - start_time
+cumulative_elapsed = previous_elapsed_seconds_total + current_process_elapsed
+if cumulative_elapsed >= wall_clock_cap_seconds:
+    stop, write checkpoint, status = WALL_CLOCK_GATE_HIT, no auto extension
+```
+
+- On resume: previous_elapsed_seconds_total 从 checkpoint 加载，**不**reset to 0。
+- heartbeat 输出 cumulative elapsed + remaining budget。
+
+### 9. Schedule SHA256
+
+```
+closure_schedule_sha256 = sha256(canonical_json({
+  "F1_records": [...16 deterministic candidate dicts...],
+  "F2_records": [...8 deterministic candidate dicts...]
+}))
+```
+
+- F3/F4/F5 records 不进入 schedule SHA（运行时动态生成）。
+- 同一 incumbent + 同一 f1_steps + 同一 f2_combinations 必须产生同一 schedule SHA。
+- schedule SHA 作为 8-field resume identity 第 8 字段。
+
+### 10. Checkpoint v4 / Resume identity (8 fields)
+
+- 路径：`work/q3_candidate_closure/checkpoint.json`
+- **checkpoint_schema_version = 4**
+- resume 强制校验 **8 字段**（任一 mismatch → BLOCKED, exit 2）：
+  1. `execution_head_sha`
+  2. `contract_snapshot_sha256`
+  3. `q2_single_bomb_code_sha256`
+  4. `q3_three_bombs_code_sha256`
+  5. `q3_search_code_sha256`
+  6. `closure_config_sha256`
+  7. `candidate_schema_version`
+  8. `closure_schedule_sha256`
+- atomic write：temp + flush + fsync + os.replace。
+- corrupt / load error → `status = CHECKPOINT_LOAD_ERROR`, exit 2。
+- identity mismatch → `status = RESUME_IDENTITY_MISMATCH`, exit 2。
+- cumulative wall-clock fields persisted：`previous_elapsed_seconds_total`,
+  `current_process_elapsed_seconds`, `elapsed_seconds_total`。
+
+### 11. CLI 与退出码
+
+- 默认 `python -m src.q3_search` 仅打印 banner。
+- P2 正式搜索：`python -u -m src.q3_search --formal-search --budget 512
+  --wall-clock-cap 1200 --seeds 2025 2026 2027`。
+- P2C candidate closure：`python -u -m src.q3_search --candidate-closure
+  --budget 32 --wall-clock-cap 600 --snapshot-path work/task_contracts/TASK_006-P2C-v4.json`。
+- `--dry-run` / `--fake-evaluator` 用于本地调度 / 测试（不消耗 real eval）。
+- 退出码：0 无 system_error + F5 完成；1 system_error；2 arg / config 错误
+  / dirty worktree / fail-closed / 预算耗尽 / wall-clock hit；3 controlled
+  interruption。
+
+### 12. P2C 输出 summary JSON schema (canonical)
+
+`outputs/q3/q3_candidate_closure_summary.json` 至少含以下字段：
+
+- `phase_id = "TASK_006-P2C"`
+- `contract_version = 4`
+- `result_level.declared_level = "BUDGET_LIMITED_BEST_KNOWN"`
+- `result_level.not_a_proven_global_optimum = true`
+- `result_level.local_convergence_established = false`
+- `result_level.not_a_formal_q3_result = true`
+- `result_level.result1_xlsx_generated = false`
+- `stage_counts`: {A=0, B=0, C=0, D=0, E=0, F1=16, F2=8, F3=4, F4=2, F5=2, total=32}
+- `counts`: {completed_q3_evaluations=32, single_bomb_evaluator_calls=96,
+   system_error_count=0, unique_q3_evaluation_ids=32}
+- `canonical_q3_candidate`: 8 维 canonical candidate
+- `canonical_q3_evidence`: {rehydrated_from_completed_records: true, total_union_duration_s}
+- `canonical_total_union_duration_s`: 4.478218820691105
+- `comparison`: {incumbent_reference_total_union_duration_s=4.469013137817385,
+   absolute_improvement_s=0.009205682873719923, relative_improvement=0.0020598916561287784}
+- `incumbent_high_resolution`: {candidate (8 维), p2_evidence_commit,
+   p2_execution_head, reference_total_union_duration_s, source}
+- `original_p2_evidence_preservation`: {original_p2_execution_head,
+   original_p2_evidence_commit, original_512_evaluations_preserved=true,
+   original_834_07s_wall_clock_preserved=true, p2_search_rerun_performed=false}
+- `identity`: 8-field resume identity SHAs + closure_run_identity_sha256
+- `timing`: per-stage wall-clock / median / p90
+- `status`: pilot_complete / wall_clock_gate_hit / evaluation_budget_exhausted
+  / run_system_error / checkpoint_load_error / resume_identity_mismatch
+- `p2c_contract_snapshot_path`: `work/task_contracts/TASK_006-P2C-v4.json`
+
+P2 summary 同步修正：
+`outputs/q3/q3_formal_search_summary.json` 增加 `evidence_closure` 块 +
+`formal_schedule_complete: true` + `pilot_complete_legacy_field: true`。
+原始 P2 512/834.07 s/HEAD=70a4dd7 事实保留不变。
+
+### 13. 局限
+
+- F1-F5 closure 是 bounded refinement over P2 stage E top-1 incumbent；
+  **不是**全局最优证明，**不是**解析极值，**不是**官方答案。
+- F1/F2 步长固定（heading ±0.002 rad / speed ±0.5 m/s / release ±0.10 s / delay ±0.05 s），
+  F1 fallback scales [0.5, 0.25]；未做 Pareto frontier / 多起点 / 自适应步长。
+- F3/F4/F5 top-k 选择固定（top_k=3 / 2 / 2）；未做 cross-stage 双向传播。
+- selection rule 仅在 ε=1e-12 s 内有 tie-break；超过 ε 视为 strict improvement。
+- F5 high-resolution 复评后 canonical 总时长相对 P2 incumbent 仅 +0.21%，
+  表明 P2 stage E 局部收敛近似完成；不构成"局部极值证明"。
 - 不声称 Q3 全局最优 / VERIFIED / FINAL / 官方答案 / 解析极值；
   **不**声称 local convergence。
 - 等级仅 BUDGET_LIMITED_BEST_KNOWN；独立审查签字后才能升 VERIFIED 或进一步

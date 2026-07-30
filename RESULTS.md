@@ -557,6 +557,7 @@ NOT A PROVEN GLOBAL OPTIMUM`**
 - 方案 B 完整圆柱: **FULL-CYLINDER CANDIDATE / EXPERIMENTAL**
 - Q2 canonical (TASK_005 / DOC-ONLY P2 CLOSED, audit conclusion B): **FORMAL BUDGET-LIMITED BEST-KNOWN Q2 CANDIDATE / LOCAL CONVERGENCE NOT ESTABLISHED / NOT A PROVEN GLOBAL OPTIMUM**
 - Q2 historical (TASK_005 / PRE-AUDIT, 467314d): **HISTORICAL FORMAL-SEARCH CANDIDATE**
+- Q3 candidate closure (TASK_006-P2C): **BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE / LOCAL CONVERGENCE NOT ESTABLISHED / NOT A PROVEN GLOBAL OPTIMUM / RESULT1.XLSX NOT GENERATED**
 
 ---
 
@@ -941,3 +942,125 @@ closure v2 推荐 efficient 起步 (730 s wall) + 决赛阶段按需升级到 co
 - 不冒充 512 evals 足以覆盖 Q3 全部搜索空间（仅基于预算硬约束，未穷尽）
 - Pilot best candidate (3.788 s) 不冒充 Q3 全局最优
 - 正式 best candidate (4.469 s) 不冒充 Q3 全局最优
+
+---
+
+## TASK_006-P2C Q3 Candidate Closure (BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM)
+
+> 已在 `src/q3_search.py` 追加 `run_candidate_closure(...)`，F1-F5 sequential propagation /
+> 32 evaluations / 600 s wall-clock / 8-field resume identity / fail-closed。
+> 等级: **BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE / LOCAL CONVERGENCE NOT ESTABLISHED /
+> NOT A PROVEN GLOBAL OPTIMUM / RESULT1.XLSX NOT GENERATED**。
+> 原 P2 512/834.07 s/HEAD=70a4dd7 证据保留不变。
+
+### 阶段预算（hard cap, 总和必须 = 32；实测 = 32）
+
+| 阶段 | 分配 | Profile | 说明 |
+|---|---|---|---|
+| F1 — one-variable perturbation | **16** | coarse (0.05) | 8 vars × 2 方向（+/-），步长 heading ±0.002 rad / speed ±0.5 m/s / release ±0.10 s / delay ±0.05 s |
+| F2 — coordinate combinations | **8** | coarse (0.05) | heading+speed / release_1+delay_1 / release_2+delay_2 / release_3+delay_3 / heading+speed+release_1+delay_1 / release_2+delay_2+release_3+delay_3 / all_release_delay / all_eight |
+| F3 — medium recheck | **4** | medium (0.02) | parents = incumbent + best-of-(F1+F2) up to top_k=3 |
+| F4 — fine recheck | **2** | fine (0.01) | parents = F3 完成后 top-k |
+| F5 — high-resolution verification | **2** | fine (0.005) | final canonical selection, tie-break on evaluation_id within ε=1e-12 s |
+| **总计** | **32** | | |
+
+### 真实 evaluator counts（实测）
+
+| 维度 | 上限 | 实测 |
+|---|---|---|
+| 顶层 Q3 candidate evaluation | **32** | **32** |
+| Single-bomb subcall | **96** | **96** (= 32 × 3) |
+| Run wall-clock | **600 s** | **290.5431 s** |
+| Test Q3 real eval (FakeEvaluator only) | **0** | **0** |
+| system_error_count | 0 | **0** |
+| unique_evaluation_ids | 32 | **32** |
+
+### Per-stage timing (实测)
+
+| profile | count | median (s) | p90 (s) |
+|---|---|---|---|
+| coarse (F1+F2) | 24 | 0.5644 | 0.6516 |
+| medium (F3) | 4 | 5.4524 | 5.4710 |
+| fine (F4+F5) | 4 | 63.6850 | 84.7862 |
+
+### P2 证据保留（P2C 不重跑）
+
+| 字段 | 值 |
+|---|---|
+| original_p2_execution_head | `70a4dd767f057edded65bd2011ac544347f661dc` |
+| original_p2_evidence_commit | `dc970a483ab9e05d76467decf63f61dff70f0862` |
+| q3_candidate_evaluations | 512 |
+| single_bomb_evaluator_calls | 1536 |
+| total_wall_clock_seconds | 834.0665795999812 |
+| best_p2_total_union_duration_s | 4.469013137817385 |
+| p2_search_rerun_performed | **false** |
+
+### Canonical Q3 candidate after P2C closure
+
+| 字段 | 值 |
+|---|---|
+| heading_rad | 3.127613485137657 |
+| speed_mps | 116.12799297398149 |
+| release_time_1_s | 0.993241052387636 |
+| delay_1_s | 3.720360704323356 |
+| release_time_2_s | 4.88566490244013 |
+| delay_2_s | 3.7704749980723404 |
+| release_time_3_s | 10.157737577136487 |
+| delay_3_s | 3.7180978311642083 |
+| **canonical_total_union_duration_s** | **4.478218820691105 s** |
+| candidate_source | `TASK_006-P2C F5 high-resolution verification` |
+| canonical_q3_evidence | {rehydrated_from_completed_records: true, total_union_duration_s: 4.478218820691105} |
+
+注：closure canonical 与 P2 stage E top-1 在 6 维变量上完全相同；唯一差异是
+`speed_mps` 从 116.62799297398149 → 116.12799297398149（差 -0.5 m/s, 恰为 F1
+speed_mps 单步扰动大小）。F5 high-resolution 复评后该候选以 ε=1e-12 内的更优 duration
+被选为 canonical。
+
+### Comparison vs P2 incumbent
+
+| 字段 | 值 |
+|---|---|
+| incumbent_reference_total_union_duration_s | **4.469013137817385 s** (P2 stage E top-1) |
+| canonical_total_union_duration_s | **4.478218820691105 s** |
+| absolute_improvement_s | **+0.009205682873719923 s** |
+| relative_improvement | **+0.21%** (≈ 0.0020598916561287784) |
+| canonical_candidate_source | `TASK_006-P2C F5 high-resolution verification` |
+
+注：F1 16 项扰动中部分挑战者在 coarse profile 下显示可能改善（e.g. speed_mps -0.5
+指向 duration 略增方向），但 F5 high-resolution 复评后差异主要由浮点精度与
+候选结构共同决定；不构成"严格局部极值证明"。
+
+### Resume identity（8 字段, 实测）
+
+8 字段 resume identity 在 `outputs/q3/q3_candidate_closure_summary.json` `identity` 块：
+
+- `execution_head_sha` = `def084d9bc38bf92cd714d24676016fa8911a83c` (P2C FIX commit HEAD)
+- `contract_snapshot_sha256` = SHA-256 of `work/task_contracts/TASK_006-P2C-v4.json`
+- `q2_single_bomb_code_sha256` = SHA-256 of `src/q2_single_bomb.py`
+- `q3_three_bombs_code_sha256` = SHA-256 of `src/q3_three_bombs.py`
+- `q3_search_code_sha256` = SHA-256 of `src/q3_search.py`
+- `closure_config_sha256` = SHA-256 of CLOSURE_CONFIG dict (deterministic seed-locked)
+- `candidate_schema_version` = 1
+- `closure_schedule_sha256` = SHA-256 of canonical JSON {F1_records (16) + F2_records (8)}
+
+`closure_run_identity_sha256` = `e063f7caa7b0f8c9d64a0f4411da90efc4512ffcde1770125841bd698cd2152c`
+(canonical SHA-256 binding 8 fields + stage counts + completed count + closure schedule SHA).
+
+### Not established（明确不冒充）
+
+- local convergence: 未建立
+- global optimum: 未证明（32 evals 远未穷尽搜索空间）
+- result1.xlsx：未生成（task_context forbidden）
+- F5 canonical 与 P2 incumbent 不构成"严格局部极值证明"——浮点精度与候选结构共同决定
+
+### 不冒充
+
+- 不冒充 FORMAL_RESULT_VERIFIED
+- 不冒充 LOCAL CONVERGENCE ESTABLISHED
+- 不冒充 GLOBAL OPTIMUM
+- 不冒充 FINAL OFFICIAL ANSWER
+- 不冒充 600 s 必须是真实 wall-clock 上限（仅基于合同固定值，290.54 s 实测显著低于 cap）
+- 不冒充 32 evals 足以覆盖 Q3 全部搜索空间（仅基于预算硬约束，未穷尽）
+- 不冒充 P2 512 evals 被重跑（P2 evidence commit `dc970a48` + HEAD `70a4dd7` 完整保留）
+- P2 stage E top-1 candidate (4.469013137817385 s) 不冒充 Q3 全局最优
+- P2C closure canonical candidate (4.478218820691105 s) 不冒充 Q3 全局最优
