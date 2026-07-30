@@ -848,30 +848,32 @@ closure v2 推荐 efficient 起步 (730 s wall) + 决赛阶段按需升级到 co
 
 ---
 
-## TASK_006-P2 Q3 正式 Bounded Search (PENDING — 当前阶段目标)
+## TASK_006-P2 Q3 正式 Bounded Search (BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM)
 
-> 本节为 TASK_006-P2 阶段目标，最终数值待正式搜索完成后填入。
+> 已在 `src/q3_search.py` 实现，5 阶段 / 512 顶层 Q3 evaluation / 1200 s wall-clock / 3 seeds (2025/2026/2027) / 7-field resume identity / fail-closed。
 > 等级：`BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE / LOCAL CONVERGENCE NOT ESTABLISHED / NOT A PROVEN GLOBAL OPTIMUM / RESULT1.XLSX NOT GENERATED`。
 
-### 阶段预算（hard cap, 总和必须 = 512）
+### 阶段预算（hard cap, 总和必须 = 512；实测 = 512）
 
-| 阶段 | 分配 | Profile |
+| 阶段 | 分配 | 实测 | Profile |
+|---|---|---|---|
+| Stage A — structured coarse exploration | 360 | 360 | coarse (0.05) |
+| Stage B — bounded coarse refinement | 120 | 120 | coarse (0.05) |
+| Stage C — medium finalist recheck | 24 | 24 | medium (0.02) |
+| Stage D — fine finalist recheck | 6 | 6 | fine (0.01) |
+| Stage E — high-resolution verification | 2 | 2 | fine (0.005) |
+| **总计** | **512** | **512** | |
+
+### 真实 evaluator counts（实测）
+
+| 维度 | 上限 | 实测 |
 |---|---|---|
-| Stage A — structured coarse exploration | 360 | coarse (0.05) |
-| Stage B — bounded coarse refinement | 120 | coarse (0.05) |
-| Stage C — medium finalist recheck | 24 | medium (0.02) |
-| Stage D — fine finalist recheck | 6 | fine (0.01) |
-| Stage E — high-resolution verification | 2 | fine (0.005) |
-| **总计** | **512** | |
-
-### 真实 evaluator counts
-
-| 维度 | 上限 |
-|---|---|
-| 顶层 Q3 candidate evaluation | 512 |
-| Single-bomb subcall | 512 × 3 = 1536 |
-| Run wall-clock | 1200 s |
-| Test Q3 real eval (FakeEvaluator only) | 0 |
+| 顶层 Q3 candidate evaluation | 512 | **512** |
+| Single-bomb subcall | 1536 | **1536** (= 512 × 3) |
+| Run wall-clock | 1200 s | **834.0666 s** |
+| Test Q3 real eval (FakeEvaluator only) | 0 | **0** |
+| system_error_count | 0 | **0** |
+| unique_evaluation_ids | 512 | **512** |
 
 ### Pilot 证据保留（P2 不重跑）
 
@@ -886,9 +888,48 @@ closure v2 推荐 efficient 起步 (730 s wall) + 决赛阶段按需升级到 co
 | total_wall_clock_seconds | 243.124 |
 | best_pilot_total_union_duration_s | 3.7881687521934495 |
 
-### 最终 Q3 candidate（PENDING）
+### 最终 Q3 candidate（实测）
 
-最终数值待正式搜索完成后填入 `outputs/q3/q3_formal_search_summary.json` 并在此节同步。
+| 字段 | 值 |
+|---|---|
+| heading_rad | 3.127613485137657 |
+| speed_mps | 116.62799297398149 |
+| release_time_1_s | 0.993241052387636 |
+| delay_1_s | 3.720360704323356 |
+| release_time_2_s | 4.88566490244013 |
+| delay_2_s | 3.7704749980723404 |
+| release_time_3_s | 10.157737577136487 |
+| delay_3_s | 3.7180978311642083 |
+| **total_union_duration_s** | **4.469013137817385** |
+| candidate_source | `stage_E_high_resolution_verification_rank_1` (Stage E top-1, scan_step=0.005) |
+| q3_evaluation_id | (见 `outputs/q3/q3_formal_search_summary.json` `best_candidate`) |
+
+改善幅度（相对 Pilot best）：
+
+- duration 改善 = 4.469013137817385 − 3.7881687521934495 ≈ **0.680844** s
+- 相对改善 ≈ **17.97%**
+
+### Resume identity（实测）
+
+7 字段 resume identity 在 `outputs/q3/q3_formal_search_summary.json` `identity` 块：
+
+- `execution_head_sha` = `70a4dd767f057edded65bd2011ac544347f661dc` (P2 WORKING commit HEAD)
+- `contract_snapshot_sha256` = SHA-256 of `work/task_contracts/TASK_006-P2-v3.json`
+- `q2_single_bomb_code_sha256` = SHA-256 of `src/q2_single_bomb.py`
+- `q3_three_bombs_code_sha256` = SHA-256 of `src/q3_three_bombs.py`
+- `q3_search_code_sha256` = SHA-256 of `src/q3_search.py`
+- `formal_config_sha256` = `dca59f258f16...` (FORMAL_CONFIG SHA-256)
+- `candidate_schema_version` = 1
+
+`formal_run_identity_sha256` = `230f21f081b1...` (canonical SHA-256 binding 7 fields + stage counts + completed count)。
+
+### Not established（明确不冒充）
+
+- local convergence: 未建立
+- global optimum: 未证明（512 evals 远未穷尽搜索空间）
+- 16 项 one-var 扰动：未启动（留给 TASK_006-P3）
+- coordinate refinement：未启动（留给 TASK_006-P3）
+- result1.xlsx：未生成（task_context forbidden）
 
 ### 不冒充
 
@@ -899,4 +940,4 @@ closure v2 推荐 efficient 起步 (730 s wall) + 决赛阶段按需升级到 co
 - 不冒充 1200 s 必须是真实 wall-clock 上限（仅基于 Pilot p90 + safety_factor 推导）
 - 不冒充 512 evals 足以覆盖 Q3 全部搜索空间（仅基于预算硬约束，未穷尽）
 - Pilot best candidate (3.788 s) 不冒充 Q3 全局最优
-- Stage A / B 候选不冒充已覆盖多 seed 全局最优解
+- 正式 best candidate (4.469 s) 不冒充 Q3 全局最优

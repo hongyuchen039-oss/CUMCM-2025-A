@@ -1,29 +1,17 @@
-# TASK_006 — Q3 THREE-BOMB FORMAL BOUNDED SEARCH — P2
+# TASK_006 — Q3 THREE-BOMB FORMAL BOUNDED SEARCH — P2 (COMPLETE)
 
-> 本轮是 TASK_006 的 **P2** 阶段，仅完成：
+> 本轮 (TASK_006-P2) 已完成。
 >
-> 1. **不重跑** 94-evaluation Pilot；
-> 2. **不修改** Q1 / Q2 / q3_three_bombs foundation；
-> 3. 实现 `src/q3_search.py` Q3 正式 bounded search 模块；
-> 4. 5 阶段正式搜索：Stage A 360 / B 120 / C 24 / D 6 / E 2 = **512** Q3 evaluations；
-> 5. **wall-clock ≤ 1200 s**；
-> 6. Multi-seed deterministic：`[2025, 2026, 2027]`；
-> 7. Checkpoint / resume（7-field identity，fail-closed）；
-> 8. 输出 `outputs/q3/q3_formal_search_summary.json`（BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE）；
-> 9. 单元测试 ≥ 20 cases（FakeEvaluator + dry-run + scheduler + resume identity）；
-> 10. 同步 PR #13 body（保留 P0/P1 identity + 追加 P2 identity）。
->
-> 本轮**不得**：
-> - 启动 TASK_006-P3；
-> - 重跑完整 Pilot；
-> - 生成 result1.xlsx；
-> - 修改 Q1 / Q2 / q3_three_bombs 任何文件；
-> - amend / force push；
-> - 删除或覆盖 v1 / v2 contract snapshot；
-> - 删除原 Pilot log / checkpoint；
-> - 启动 Audit / Hermes；
-> - 自动 Ready / merge；
-> - 声称 FORMAL_RESULT_VERIFIED / local convergence / global optimum。
+> 1. ✅ **不重跑** 94-evaluation Pilot；
+> 2. ✅ **不修改** Q1 / Q2 / q3_three_bombs foundation；
+> 3. ✅ 实现 `src/q3_search.py` Q3 正式 bounded search 模块；
+> 4. ✅ 5 阶段正式搜索：Stage A 360 / B 120 / C 24 / D 6 / E 2 = **512** Q3 evaluations（实测 = 512）；
+> 5. ✅ **wall-clock 834.0666 s ≤ 1200 s**；
+> 6. ✅ Multi-seed deterministic：`[2025, 2026, 2027]`；
+> 7. ✅ Checkpoint / resume（7-field identity，fail-closed）；
+> 8. ✅ 输出 `outputs/q3/q3_formal_search_summary.json`（BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE）；
+> 9. ✅ 单元测试 81/81 PASS（52 P0/P1 + 29 P2 search，含 FakeEvaluator + dry-run + scheduler + resume identity）；
+> 10. ✅ PR #13 body 同步（保留 P0/P1 identity + 追加 P2 identity）。
 >
 > 最终结果等级只能是：`BUDGET_LIMITED_BEST_KNOWN`。
 

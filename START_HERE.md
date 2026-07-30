@@ -74,26 +74,29 @@ Q1 / Q2 / q3_three_bombs 单元测试、Pilot 已有日志 / checkpoint。
 | total_wall_clock_seconds | 243.124 |
 | best_pilot_total_union_duration_s | 3.7881687521934495 |
 
-## 当前正式搜索预算（P2 冻结）
+## 当前正式搜索预算（P2 实测）
 
-| 维度 | 上限 |
-|---|---|
-| 顶层 Q3 candidate evaluation | **512** |
-| Run wall-clock | **1200 s** |
-| Test wall-clock | 300 s |
-| Test Q3 evaluation 数（fake eval only, 不计 real eval） | ≤ 20 |
-| Single-bomb subcall 上限 | 512 × 3 = 1536 |
-
-| 阶段 | 分配 | Profile |
+| 维度 | 上限 | 实测 |
 |---|---|---|
-| Stage A — structured coarse exploration | 360 | coarse (0.05) |
-| Stage B — bounded coarse refinement | 120 | coarse (0.05) |
-| Stage C — medium finalist recheck | 24 | medium (0.02) |
-| Stage D — fine finalist recheck | 6 | fine (0.01) |
-| Stage E — high-resolution verification | 2 | fine (0.005) |
-| **总计** | **512** | |
+| 顶层 Q3 candidate evaluation | **512** | **512** |
+| Run wall-clock | **1200 s** | **834.07 s** |
+| Test wall-clock | 300 s | ≤ 60 s (dry-run) |
+| Test Q3 evaluation 数（fake eval only） | ≤ 20 | **0** (real eval) |
+| Single-bomb subcall | 1536 | **1536** |
 
-seeds = `[2025, 2026, 2027]`。任一达到上限不自动延长。
+| 阶段 | 分配 | 实测 | Profile |
+|---|---|---|---|
+| Stage A — structured coarse exploration | 360 | 360 | coarse (0.05) |
+| Stage B — bounded coarse refinement | 120 | 120 | coarse (0.05) |
+| Stage C — medium finalist recheck | 24 | 24 | medium (0.02) |
+| Stage D — fine finalist recheck | 6 | 6 | fine (0.01) |
+| Stage E — high-resolution verification | 2 | 2 | fine (0.005) |
+| **总计** | **512** | **512** | |
+
+seeds = `[2025, 2026, 2027]`。任一达到上限不自动延长。**结果**：
+- best_total_union_duration_s = **4.469013137817385 s**
+- best candidate source = `stage_E_high_resolution_verification_rank_1` (Stage E top-1, scan_step=0.005)
+- 改善 (相对 Pilot 3.788169 s) = **+0.680844 s (+17.97%)**
 
 ## 当前阻断
 无。Pilot 已 closure；P2 立项已 MAIN 显式批准；Audit PASS 已获。

@@ -13,19 +13,20 @@
 
 ## 当前状态
 
-TASK_006-P2 Q3 THREE-BOMB FORMAL BOUNDED SEARCH 立项：5 阶段 / 512 evals / 1200 s / 3 seeds。
+TASK_006-P2 Q3 THREE-BOMB FORMAL BOUNDED SEARCH 已完成：5 阶段 / **512 evals 实测** / **834.07 s 实测 wall-clock** / 3 seeds (2025/2026/2027) / 0 system_error。
 
-- **Q3 candidate generation**: Stage A 360 / B 120 / C 24 / D 6 / E 2 = 512
-- **Q3 real evaluator calls**: 512（每条 schedule record 一次 top-level Q3 evaluation）
-- **Q3 single-bomb subcalls**: 512 × 3 = 1536
-- **Q3 wall-clock**: ≤ 1200 s
-- **P2 foundation frozen**: q3_three_bombs / q2 / q1 全部不允许修改
+- **Q3 candidate generation**: Stage A 360 / B 120 / C 24 / D 6 / E 2 = **512 实测 = 512**
+- **Q3 real evaluator calls**: **512**（每条 schedule record 一次 top-level Q3 evaluation）
+- **Q3 single-bomb subcalls**: **1536** (= 512 × 3)
+- **Q3 wall-clock**: **834.07 s** (≤ 1200 s hard cap)
+- **Q3 best total_union_duration_s**: **4.469013137817385 s** (相对 Pilot 3.788169 s, **+17.97%**)
+- **P2 foundation frozen**: q3_three_bombs / q2 / q1 全部不允许修改（实测未修改）
 - **P0/P1 evidence**: 94-evaluation Pilot (commit `59999f9a`) + closure v2 (FIX `a139988`, VERIFIED `31ddb7b`) 保留
 - **等级**: `BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE / LOCAL CONVERGENCE NOT ESTABLISHED / NOT A PROVEN GLOBAL OPTIMUM / RESULT1.XLSX NOT GENERATED`
 - **禁止**: 重跑 Pilot / 修改 foundation / 生成 result1.xlsx / 启动 P3 / Q4 / Q5 / 自动 Audit / Hermes / Ready / merge
 
 详见 [MODEL.md §"Q3 正式 bounded search (TASK_006-P2 / BUDGET_LIMITED_BEST_KNOWN)"] 与
-[START_HERE.md](./START_HERE.md) / [NEXT_TASK.md](./NEXT_TASK.md)。
+[START_HERE.md](./START_HERE.md) / [NEXT_TASK.md](./NEXT_TASK.md) / [RESULTS.md](./RESULTS.md)。
 
 TASK_005 Q2 FORMAL SEARCH + BOUNDED REFINEMENT + CLEAN-HEAD VERIFICATION IDENTITY CLOSURE + INDEPENDENT AUDIT 已收口，canonical Q2 result 已晋升：
 
