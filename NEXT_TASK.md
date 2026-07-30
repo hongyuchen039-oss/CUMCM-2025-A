@@ -1,34 +1,170 @@
-# TASK_006 — Q3 THREE-BOMB FORMAL BOUNDED SEARCH — P2C (CANDIDATE CLOSURE COMPLETE)
+# TASK_006 — Q3 THREE-BOMB FORMAL BOUNDED SEARCH — P3 (RESULT1.XLSX ARTIFACT GENERATION)
 
-> 本轮 (TASK_006-P2C) 已完成。
->
-> P2 阶段已完成（512 evals / 834.07 s / 7-field identity）。
-> 本轮 P2C 在 P2 基础上做 candidate closure：
+> 本轮 (TASK_006-P3) 目标:
 >
 > 1. ✅ **不重跑** 94-evaluation Pilot；
 > 2. ✅ **不重跑** P2 512-evaluation 正式搜索；
-> 3. ✅ **不修改** Q1 / Q2 / q3_three_bombs foundation；
-> 4. ✅ **修复** sequential stage propagation（Stage A → build B → execute → build C → execute → ... → build E → execute）；
-> 5. ✅ **修复** cumulative wall-clock accounting（previous_elapsed + current_process_elapsed = elapsed_total，不 reset to 0）；
-> 6. ✅ **新增** 8-field resume identity（含 `closure_schedule_sha256`）；
-> 7. ✅ 32 evaluation candidate closure：F1=16 / F2=8 / F3=4 / F4=2 / F5=2 = **32** Q3 evaluations（实测 = 32）；
-> 8. ✅ **wall-clock 290.54 s ≤ 600 s**；
-> 9. ✅ 输出 `outputs/q3/q3_candidate_closure_summary.json`（BUDGET_LIMITED_BEST_KNOWN）；
-> 10. ✅ **修正** `outputs/q3/q3_formal_search_summary.json`（增加 `evidence_closure` 块 + `formal_schedule_complete: true` + `pilot_complete_legacy_field: true`）；
-> 11. ✅ 单元测试 117/117 PASS（52 P0/P1 + 29 P2 + 36 P2C，含 FakeEvaluator，0 real Q3 eval in tests）；
-> 12. ✅ `git rm --cached work/task_contracts/TASK_006-P2-v3.json`（local file preserved）。
+> 3. ✅ **不重跑** P2C 32-evaluation candidate closure；
+> 4. ✅ **不修改** Q1 / Q2 / q3_three_bombs foundation；
+> 5. ✅ **不修改** 官方空白模板 ZIP 与内含 result1.xlsx；
+> 6. ✅ 对 P2C 冻结候选执行一次 high-resolution canonical reconstruction（fine / scan_step=0.005）；
+> 7. ✅ 重建后核验 `abs(reconstructed - 4.478218820691105) <= 1e-12`；
+> 8. ✅ 从官方模板生成 `outputs/submission/result1.xlsx`；
+> 9. ✅ 程序从磁盘回读 + 逐格核验 A:J；
+> 10. ✅ 输出 `outputs/q3/q3_result1_artifact_summary.json`；
+> 11. ✅ 5 docs 同步；
+> 12. ✅ 等待 Final Audit + Hermes。
 >
-> 最终结果等级只能是：`BUDGET_LIMITED_BEST_KNOWN`。
+> 最终结果等级：`BUDGET_LIMITED_BEST_KNOWN`（沿用 P2C 等级，result1.xlsx 生成 + 回读 PASS 后冻结）。
 
-## 当前任务边界 (P2C)
+## P3 重建 profile
+
+| 维度 | 值 |
+|---|---|
+| sample_level | **fine** |
+| scan_step_s | **0.005** |
+| Q3 evaluation 数 | 1 |
+| Single-bomb evaluator calls | 3 (1 × 3) |
+| Wall-clock cap | 300 s |
+| Wall-clock gate | elapsed >= 300 → stop |
+
+## P3 result1.xlsx 写入合同
+
+| 列 | 写入值 | 说明 |
+|---|---|---|
+| A | heading_deg | degrees(heading_rad) modulo 360, 0 <= heading_deg < 360, 三行相同 |
+| B | speed_mps | 三行相同 |
+| C | i ∈ {1, 2, 3} | 烟幕干扰弹编号 |
+| D-F | release_point i xyz | bomb i 投放点 |
+| G-I | detonation_point i xyz | bomb i 起爆点 |
+| J | bomb i own total_duration_s | **逐弹自身有效干扰时长**（**不是 union**） |
+
+- 所有 Excel 单元格必须为数值类型，不得写带单位字符串、公式、JSON、NaN、Inf、None。
+- 三弹 union 总时长 4.478218820691105 **不**写入 J 列；仅写入 `q3_result1_artifact_summary.json` 与 RESULTS.md 与 PR body。
+- 表头、附注、sheet 结构、merged-cell、freeze panes 全部保留原样。
+
+## P3 回读核验
+
+- 关闭 workbook 后从磁盘重新打开；
+- 逐格读取三行 A:J；
+- abs_tol = 1e-10；rel_tol = 1e-12；
+- 必须验证：workbook 可打开、sheet 正确、10 列、3 行、A/B 三行相同、C = [1, 2, 3]、D-F 与 release_points 对应、G-I 与 detonation_points 对应、J 与 per_bomb_duration_s 对应、所有数据均有限数值、无第四条意外 Q3 数据、表头未改、附注未改、原模板文件 SHA 不变、输出文件 SHA-256 已记录。
+
+## P3 Resume identity (7 fields)
+
+- 路径：`work/q3_result1/checkpoint.json`
+- **checkpoint_schema_version = 5**
+- 7 字段（任一 mismatch → BLOCKED）：
+  1. `execution_head_sha`
+  2. `contract_snapshot_sha256`
+  3. `q2_single_bomb_code_sha256`
+  4. `q3_three_bombs_code_sha256`
+  5. `result1_builder_code_sha256`
+  6. `canonical_candidate_sha256`
+  7. `official_template_sha256`
+
+## 停止条件
+
+本轮（TASK_006-P3）完成后立即停止。
+
+不自动：
+- 启动 Audit CC；
+- 启动 Hermes；
+- 开始 Q4 / Q5；
+- Ready；
+- merge。
+
+由 MAIN / 用户显式决定 Final Audit + Hermes 启动与是否进入 Q4 / Q5。
+
+## 验收 Gate (P3 必须全部满足)
+
+- [ ] 冻结的 8 维变量未改变；
+- [ ] real Q3 calls = exactly 1；
+- [ ] reconstructed duration 与 4.478218820691105 在 1e-12 内一致；
+- [ ] 三枚逐弹证据完整（intervals / duration / release_point / detonation_point）；
+- [ ] union 测度一致；
+- [ ] official template 原件未改（SHA 不变）；
+- [ ] result1.xlsx 来自官方模板（basename = `result1.xlsx`）；
+- [ ] A/B/C/D/E/F/G/H/I/J 映射正确；
+- [ ] J 为逐弹 duration（非 union）；
+- [ ] workbook 可重新打开；
+- [ ] round-trip PASS；
+- [ ] workbook SHA recorded；
+- [ ] FAST PASS；
+- [ ] TASK PASS（117 P0/P1/P2 + ≥ 22 P3 = ≥ 139 tests）；
+- [ ] milestone regression PASS（tests.test_q1_baseline + tests.test_q1_cylinder + tests.test_q2_search + tests.test_q3）；
+- [ ] result1.xlsx tracked；
+- [ ] result2.xlsx / result3.xlsx 不存在；
+- [ ] Q1/Q2/Q3 evaluator 未改；
+- [ ] PR #13 保持 Draft / unmerged；
+- [ ] Audit / Hermes 未启动；
+- [ ] Q4 / Q5 未启动。
+
+## 当前任务边界 (P3)
 
 - Base: `main` = `007b93d301db73c9a73904337de34d1b4e13467e`
 - Branch: `task/TASK_006-q3-three-bombs`
-- Phase: `TASK_006-P2C`（CANDIDATE CLOSURE）
-- Contract version: 4 (v4 snapshot: `work/task_contracts/TASK_006-P2C-v4.json`;
-  v3 snapshot: `work/task_contracts/TASK_006-P2-v3.json` 已 git rm --cached 但本地保留)
-- 启动 Harness `work/task_context.json` (gitignored, expected_head = `def084d9bc38bf92cd714d24676016fa8911a83c` FIX commit)
-- P2 evidence commit (predecessor): `dc970a483ab9e05d76467decf63f61dff70f0862` (HEAD=70a4dd7, 512 evals / 834.07 s, preserved)
+- Phase: `TASK_006-P3`（RESULT1.XLSX ARTIFACT GENERATION）
+- Contract version: 5 (v5 snapshot: `work/task_contracts/TASK_006-P3-v5.json`, untracked)
+  - previous: TASK_006-P2C v4 (`work/task_contracts/TASK_006-P2C-v4.json`, untracked)
+  - previous: TASK_006-P2 v3 (`work/task_contracts/TASK_006-P2-v3.json`, untracked)
+- 启动 Harness `work/task_context.json` (gitignored)
+  - expected_head = `843b4a1e5791e67a09c377c2173f16a1105ab944` (P2C VERIFIED commit)
+  - HEAD on PLAN commit will become `PLAN: freeze Q3 result1 artifact contract` SHA
+- P2C evidence commit (predecessor): `843b4a1e5791e67a09c377c2173f16a1105ab944` (32 evals / 290.54 s, preserved)
+- P2 evidence commit (predecessor): `dc970a483ab9e05d76467decf63f61dff70f0862` (512 evals / 834.07 s, preserved)
+
+### 冻结的 8 维 candidate (本轮不得改变)
+
+| 变量 | 值 |
+|---|---|
+| heading_rad | 3.127613485137657 |
+| speed_mps | 116.12799297398149 |
+| release_time_1_s | 0.993241052387636 |
+| delay_1_s | 3.720360704323356 |
+| release_time_2_s | 4.88566490244013 |
+| delay_2_s | 3.7704749980723404 |
+| release_time_3_s | 10.157737577136487 |
+| delay_3_s | 3.7180978311642083 |
+| reference_total_union_duration_s | **4.478218820691105** |
+
+### 本轮允许修改（仅 5 个 tracked 路径 + PR body + work/）
+
+| 路径 | 用途 |
+|---|---|
+| `scripts/build_result1.py` (NEW) | Q3 result1 模板加载 / 表头识别 / 写入 / 回读核验 / fingerprint |
+| `outputs/q3/q3_result1_artifact_summary.json` (NEW) | P3 artifact 摘要 |
+| `outputs/q3/q3_candidate_closure_summary.json` | 仅允许增加 P3 reconstruction pointer，不得篡改 P2C 原始计数或结果 |
+| `outputs/submission/result1.xlsx` (NEW) | 从官方模板生成 |
+| `tests/test_q3.py` | 增加 P3 测试（fake evaluator + temporary workbook，0 real Q3 eval in tests） |
+| `START_HERE.md` / `NEXT_TASK.md` / `MODEL.md` / `RESULTS.md` / `README.md` | P3 sync |
+| `work/` | gitignored — checkpoint / contract snapshot / logs |
+
+### 禁止修改 (P3)
+
+`src/q1_baseline.py`、`src/q1_cylinder.py`、`src/q2_single_bomb.py`、`src/q2_search.py`、
+`src/q3_three_bombs.py`、`src/q3_search.py`、`problem/`、`scripts/`（除 `scripts/build_result1.py`）、
+`configs/`、`CLAUDE.md`、`.claude/`、`.gitignore`、
+`outputs/q2/`、`outputs/submission/result2.xlsx`、`outputs/submission/result3.xlsx`、
+`题目及模板/`（含 ZIP 内文件）。
+
+### 禁止动作 (P3)
+
+- 重跑 P2 512-evaluation 正式搜索
+- 重跑 P2C 32-evaluation candidate closure
+- 产生 challenger
+- 调整 speed / heading / release / delay 任一变量
+- 自动修正候选
+- 启动 Q4 / Q5
+- 生成 result2.xlsx / result3.xlsx
+- 修改官方空白模板原件
+- 覆盖模板 ZIP
+- 启动 Audit CC
+- 启动 Hermes
+- Ready
+- merge
+- 修改 main
+- 声称全局最优 / 局部收敛 / 官方答案 / FORMAL_RESULT_VERIFIED
 
 ### 本轮允许修改（仅 5 个 tracked 路径 + PR body + work/）
 

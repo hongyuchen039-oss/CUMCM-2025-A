@@ -13,41 +13,44 @@
 
 ## 当前状态
 
-TASK_006-P2C Q3 THREE-BOMB CANDIDATE CLOSURE 已闭合：F1-F5 sequential propagation /
-**32 evals 实测** / **290.54 s 实测 wall-clock**（≤ 600 s hard cap）/ 0 system_error。
-P2 5 阶段 / **512 evals 实测** / **834.07 s 实测 wall-clock** 已完成。
+TASK_006-P3 Q3 RESULT1.XLSX ARTIFACT GENERATION（PLAN 已冻结）。
+本轮对 P2C 冻结的 8 维 candidate 执行一次高精度重建，并从官方空白模板生成、
+回读和核验 `outputs/submission/result1.xlsx`。
 
-- **P2 Q3 candidate generation**: Stage A 360 / B 120 / C 24 / D 6 / E 2 = **512 实测 = 512**
-- **P2 Q3 real evaluator calls**: **512**（每条 schedule record 一次 top-level Q3 evaluation）
-- **P2 Q3 single-bomb subcalls**: **1536** (= 512 × 3)
-- **P2 Q3 wall-clock**: **834.07 s** (≤ 1200 s hard cap)
-- **P2 best total_union_duration_s**: **4.469013137817385 s** (相对 Pilot 3.788169 s, **+17.97%**)
-- **P2C Q3 closure**: F1=16 / F2=8 / F3=4 / F4=2 / F5=2 = **32 实测 = 32**
-- **P2C Q3 single-bomb subcalls**: **96** (= 32 × 3)
-- **P2C Q3 wall-clock**: **290.54 s** (≤ 600 s hard cap)
-- **P2C closure best total_union_duration_s**: **4.478218820691105 s**
-  (vs P2 incumbent 4.469013137817385 s, **+0.21%**)
-- **P2C 8-field resume identity**: execution_head_sha + contract_snapshot_sha256 +
-  q2/q3 code SHAs + closure_config_sha256 + candidate_schema_version +
-  closure_schedule_sha256（新增）
-- **P2C sequential stage propagation**: F1+F2 pre-build → execute F1+F2 →
-  build F3 from real results → execute F3 → build F4 → execute F4 →
-  build F5 → execute F5（不再 pre-construct 全部）
-- **P2C cumulative wall-clock**: previous_elapsed + current_process_elapsed =
-  elapsed_total，on resume 不 reset to 0
-- **P2 evidence preservation**: HEAD=`70a4dd767f057edded65bd2011ac544347f661dc`、
-  evidence=`dc970a483ab9e05d76467decf63f61dff70f0862`、512 evals / 834.07 s /
-  0 system_error 完整保留；P2 summary 增加 `evidence_closure` 块 +
-  `formal_schedule_complete: true` + `pilot_complete_legacy_field: true`
-- **foundation frozen**: q3_three_bombs / q2 / q1 全部不允许修改（实测未修改）
-- **P0/P1 evidence**: 94-evaluation Pilot (commit `59999f9a`) + closure v2 (FIX `a139988`, VERIFIED `31ddb7b`) 保留
-- **等级**: `BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE / LOCAL CONVERGENCE NOT ESTABLISHED / NOT A PROVEN GLOBAL OPTIMUM / RESULT1.XLSX NOT GENERATED`
-- **禁止**: 重跑 Pilot / 重跑 P2 512 / 修改 foundation / 生成 result1.xlsx /
-  启动 P3 / Q4 / Q5 / 自动 Audit / Hermes / Ready / merge
+- **P2 已完成**：Q3 三弹正式 bounded search（512 evaluations / 834.07 s）；
+  best `total_union_duration_s = 4.469013137817385 s`，HEAD `70a4dd7`、evidence `dc970a48` 完整保留。
+- **P2C 已闭合（CANDIDATE CLOSURE）**：32-evaluation bounded closure（F1=16 / F2=8 / F3=4 / F4=2 / F5=2），
+  wall-clock 290.54 s ≤ 600 s。closure canonical candidate 与 P2 共享 7 维，仅
+  `speed_mps` 从 116.62799297398149 → 116.12799297398149（差 −0.5 m/s）。
+- **P2C closure canonical**:
+  `heading_rad=3.127613485137657, speed_mps=116.12799297398149, release_time_1_s=0.993241052387636, delay_1_s=3.720360704323356, release_time_2_s=4.88566490244013, delay_2_s=3.7704749980723404, release_time_3_s=10.157737577136487, delay_3_s=3.7180978311642083`
+  `canonical_total_union_duration_s = 4.478218820691105 s`
+  `source = TASK_006-P2C F5 high-resolution verification`
+- **P3 当前阶段（PLAN 冻结，WORKING 待启动）**:
+  - 1 次 fine / scan_step=0.005 高精度重建；
+  - 期望 `abs(reconstructed - 4.478218820691105) ≤ 1e-12`；
+  - 从官方模板 ZIP `题目及模板/2025高教社杯数学建模A题_结果模板.zip`
+    读取 `result1.xlsx` → in-memory edit → 写 `outputs/submission/result1.xlsx`；
+  - 模板指纹保留（sheet names / merged cells / freeze panes / header / 附注等）；
+  - 程序从磁盘回读，逐格核验 10 列 × 3 行；
+  - 7 字段 resume identity（含 `canonical_candidate_sha256` + `official_template_sha256`，新增）；
+  - 输出 `outputs/q3/q3_result1_artifact_summary.json`；
+  - ≥ 22 个新 result1 模块单元测试（FakeEvaluator + temporary workbook，**不**调用真实 Q3 evaluator）；
+  - PR #13 保持 Draft / unmerged。
+- **P3 严禁**:
+  - 重跑 P2C 32 / P2 512 / Pilot；
+  - 调整任何决策变量 / 产生 challenger；
+  - 修改 foundation（Q1 / Q2 / q3_three_bombs）；
+  - 修改官方模板 ZIP；
+  - 生成 result2.xlsx / result3.xlsx；
+  - 启动 Final Audit CC / Hermes（MAIN 决定）；
+  - 启动 Q4 / Q5（MAIN 决定）；
+  - 自动 Ready / merge；
+  - 声称 FORMAL_RESULT_VERIFIED / local convergence / global optimum / 官方答案。
 
-详见 [MODEL.md §"Q3 正式 bounded search (TASK_006-P2 / BUDGET_LIMITED_BEST_KNOWN)"] /
-[MODEL.md §"Q3 Candidate Closure (TASK_006-P2C / BUDGET_LIMITED_BEST_KNOWN)"] 与
-[START_HERE.md](./START_HERE.md) / [NEXT_TASK.md](./NEXT_TASK.md) / [RESULTS.md](./RESULTS.md)。
+P2C 详细结果见 [RESULTS.md](./RESULTS.md) / [MODEL.md §"Q3 Candidate Closure"]；
+P3 详细合同见 [MODEL.md §"Q3 result1 artifact generation (TASK_006-P3)"] /
+[NEXT_TASK.md](./NEXT_TASK.md)。
 
 TASK_005 Q2 FORMAL SEARCH + BOUNDED REFINEMENT + CLEAN-HEAD VERIFICATION IDENTITY CLOSURE + INDEPENDENT AUDIT 已收口，canonical Q2 result 已晋升：
 
@@ -111,35 +114,35 @@ TASK_005 canonical Q2 output 是 **FORMAL BUDGET-LIMITED BEST-KNOWN**，
 **NOT A PROVEN GLOBAL OPTIMUM**，**LOCAL CONVERGENCE NOT ESTABLISHED**。
 PR #12（TASK_GOV_003 bounded verification Skill v0.1）已 merged；TASK_006 启动。
 
-## TASK_006 当前阶段（Q3 三弹 evaluator + bounded pilot + candidate closure）
+## TASK_006 当前阶段（Q3 三弹 evaluator + bounded pilot + candidate closure + result1.xlsx artifact generation）
 
 - branch: `task/TASK_006-q3-three-bombs`（基于 `main` = `007b93d3…`）
-- P2 phase: `TASK_006-P2`（Q3 THREE-BOMB FORMAL BOUNDED SEARCH）— **已完成**
-- P2C phase: `TASK_006-P2C`（Q3 CANDIDATE CLOSURE）— **已完成**
-- P2 contract_version: 3（P2 v3 snapshot: `work/task_contracts/TASK_006-P2-v3.json`,
-  git rm --cached 但本地保留）
-- P2C contract_version: 4（P2C v4 snapshot: `work/task_contracts/TASK_006-P2C-v4.json`）
-- 本轮 P2C 目标：
-  - 修复 P2 sequential stage propagation 缺陷（B/C/D/E schedule 必须按前驱阶段实际产生 candidates 实时构建）；
-  - 修复 resume cumulative wall-clock accounting（previous + current_process = elapsed_total, on resume 不 reset to 0）；
-  - 新增 8-field resume identity（含 `closure_schedule_sha256`）；
-  - 32 evaluation candidate closure：F1=16 / F2=8 / F3=4 / F4=2 / F5=2 = **32** Q3 evaluations；
-  - **wall-clock ≤ 600 s**（hard cap）；
-  - 单弹 evaluator calls = 32 × 3 = 96；
-  - sequential propagation + atomic checkpoint（schema v4）+ 8-field identity fail-closed；
-  - 输出 `outputs/q3/q3_candidate_closure_summary.json`（BUDGET_LIMITED_BEST_KNOWN）；
-  - 修正 `outputs/q3/q3_formal_search_summary.json`（增加 `evidence_closure` 块 +
-    `formal_schedule_complete: true` + `pilot_complete_legacy_field: true`）；
-  - 单元测试 ≥ 117 cases（52 P0/P1 + 29 P2 + 36 P2C，FakeEvaluator only，**不**调用真实 Q3 evaluator）。
+- P0/P1 phase: `TASK_006-P0P1`（PILOT 94 evals evidence commit `59999f9a`）— **完成，保留**
+- P2 phase: `TASK_006-P2`（Q3 THREE-BOMB FORMAL BOUNDED SEARCH 512 evals / 834.07 s）— **完成**
+- P2C phase: `TASK_006-P2C`（Q3 CANDIDATE CLOSURE 32 evals / 290.54 s）— **完成**
+- P3 phase: `TASK_006-P3`（Q3 RESULT1.XLSX ARTIFACT GENERATION，1 fine / 0.005 reconstruction + 官方模板生成 + 回读）— **PLAN 已冻结，WORKING 待启动**
+- P0/P1 contract_version: —（P0/P1 evidence commit `59999f9a`）
+- P2 contract_version: 3（P2 v3 snapshot: `work/task_contracts/TASK_006-P2-v3.json`, locally preserved NOT committed）
+- P2C contract_version: 4（P2C v4 snapshot: `work/task_contracts/TASK_006-P2C-v4.json`, locally preserved NOT committed）
+- P3 contract_version: 5（P3 v5 snapshot: `work/task_contracts/TASK_006-P3-v5.json`, locally preserved NOT committed）
+- 本轮 P3 目标：
+  - 1 次 fine / scan_step=0.005 高精度重建；
+  - `abs(reconstructed - 4.478218820691105) ≤ 1e-12`；
+  - 7 字段 resume identity（含 `canonical_candidate_sha256` + `official_template_sha256`，新增）；
+  - 官方模板 ZIP in-memory edit（不修改原 ZIP 字节）→ 写 `outputs/submission/result1.xlsx`；
+  - 程序从磁盘回读，逐格核验 10 列 × 3 行（abs_tol=1e-10, rel_tol=1e-12）；
+  - 模板指纹保留（sheet names / merged cells / freeze panes / header / 附注等）；
+  - 输出 `outputs/q3/q3_result1_artifact_summary.json`；
+  - ≥ 22 个新 result1 模块单元测试（FakeEvaluator + temporary workbook，**不**调用真实 Q3 evaluator）；
+  - 3 个 commit：PLAN (本文档同步) → WORKING (scripts/build_result1.py + tests) → VERIFIED (artifact + result1.xlsx + 5 docs 同步)。
 - 本轮**不**执行：
-  - 重跑 Pilot（94 evals evidence commit `59999f9a` 保留）；
-  - 重跑 P2 512-evaluation 正式搜索（P2 evidence commit `dc970a48` + HEAD `70a4dd7` 保留）；
+  - 重跑 Pilot / P2 / P2C（实测保留不变）；
   - 修改 Q1 / Q2 / q3_three_bombs 任何实现；
-  - 生成 result1.xlsx；
-  - 启动 TASK_006-P3 / Q4 / Q5；
-  - 启动 Audit CC / Hermes（MAIN 决定）；
+  - 修改官方模板 ZIP 或其成员字节；
+  - 生成 result2.xlsx / result3.xlsx；
+  - 启动 Q4 / Q5；
+  - 启动 Final Audit CC / Hermes（MAIN 决定）；
   - 自动 Ready / merge；
-  - 声称 FORMAL_RESULT_VERIFIED / local convergence / global optimum。
-- 最终等级只能是 `BUDGET_LIMITED_BEST_KNOWN`。
-- 详细任务边界见 [NEXT_TASK.md](./NEXT_TASK.md)；模型合同见 [MODEL.md](./MODEL.md) §"Q3 正式 bounded search"
-  + §"Q3 Candidate Closure (TASK_006-P2C)"；预算见 [bounded_verification/templates/task-contract.md](./.claude/skills/bounded-verification/templates/task-contract.md) Phase contract lifecycle。
+  - 声称 FORMAL_RESULT_VERIFIED / local convergence / global optimum / 官方答案。
+- 最终等级只能是 `BUDGET_LIMITED_BEST_KNOWN`（沿用 P2C 等级，P3 不升 VERIFIED）。
+- 详细任务边界见 [NEXT_TASK.md](./NEXT_TASK.md)；模型合同见 [MODEL.md](./MODEL.md) §"Q3 result1 artifact generation (TASK_006-P3)"；预算见 [bounded_verification/templates/task-contract.md](./.claude/skills/bounded-verification/templates/task-contract.md) Phase contract lifecycle。

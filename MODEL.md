@@ -1636,3 +1636,214 @@ P2 summary 同步修正：
   **不**声称 local convergence。
 - 等级仅 BUDGET_LIMITED_BEST_KNOWN；独立审查签字后才能升 VERIFIED 或进一步
   生成 result1.xlsx（TASK_006-P3）。
+
+---
+
+## Q3 result1 artifact generation (TASK_006-P3 / BUDGET_LIMITED_BEST_KNOWN / NOT A PROVEN GLOBAL OPTIMUM)
+
+> 将在 `scripts/build_result1.py` 实现；通过 `tests/test_q3.py` 新增 ≥ 22 个
+> result1 模块单元测试（FakeEvaluator + temporary workbook，**不**调用真实
+> Q3 evaluator）验证。本节固定 Q3 result1.xlsx 生成的官方模板处理、列写入合同、
+> heading conversion、J 列约定、reconstruction gate、template preservation contract、
+> workbook round-trip 与局限。
+> 等级: **BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE WITH GENERATED AND ROUND-TRIP-VERIFIED
+> RESULT1.XLSX / LOCAL CONVERGENCE NOT ESTABLISHED / NOT A PROVEN GLOBAL OPTIMUM**。
+> 不得冒充 Q3 VERIFIED / FINAL / 官方答案 / 解析极值 / 全局最优 / local convergence。
+> 独立 Final Audit (Audit CC) + Hermes 签字后才能正式合并。
+
+### 1. 官方模板处理
+
+- 源：`题目及模板/2025高教社杯数学建模A题_结果模板.zip`。
+- 仅以 read-only ZIP 打开（`zipfile.ZipFile(..., mode="r")`，**不得**写入或覆盖）。
+- 成员 basename 必须正好为 `result1.xlsx`（唯一）。
+- 通过 `io.BytesIO` 加载到内存；openpyxl 打开 in-memory bytes。
+- **不得**修改原 ZIP、原成员字节；模板 SHA-256 记录在 resume identity 中。
+- `outputs/submission/result1.xlsx` 必须由官方模板 in-memory edit 后另存得到。
+
+### 2. 模板结构识别（10 列 × 3 数据行）
+
+- 头 10 列必须严格 contiguous 且按下列顺序出现：
+  1. `无人机运动方向`
+  2. `无人机运动速度`
+  3. `烟幕干扰弹编号`
+  4. `烟幕干扰弹投放点的x坐标`
+  5. `烟幕干扰弹投放点的y坐标`
+  6. `烟幕干扰弹投放点的z坐标`
+  7. `烟幕干扰弹起爆点的x坐标`
+  8. `烟幕干扰弹起爆点的y坐标`
+  9. `烟幕干扰弹起爆点的z坐标`
+  10. `有效干扰时长`
+- 缺失 / 重复 / 顺序错 / 任意列多 / 任意列少 → BLOCKED, exit 2。
+- 数据行必须严格 3 行（与官方模板一致）。
+
+### 3. 行写入映射
+
+| 列 | 内容 | 行重复规则 |
+|---|---|---|
+| A | heading_deg | 三行相同（继承共享 heading） |
+| B | speed_mps | 三行相同（继承共享 speed） |
+| C | 1, 2, 3 | 顺序炸弹编号 |
+| D-F | release_point i xyz | 逐弹独立 |
+| G-I | detonation_point i xyz | 逐弹独立 |
+| J | bomb i own total_duration_s | 逐弹自身 duration，**不是 union** |
+
+### 4. Heading conversion（[约定]）
+
+- `heading_rad ∈ [0, 2π)` → `heading_deg = degrees(heading_rad) % 360`,
+  保证 `0 ≤ heading_deg < 360`。
+- 继承 FACTS.md §13.4 [官]：+x = 0°，逆时针为正，范围 0~360°。
+- 三行 A 列写入相同 heading_deg 值；不做四舍五入（保留浮点精度，仅做模 360）。
+- 测试覆盖：heading_rad = 0, π/2, π, 3π/2, 2π, 2π+0.001,
+  -0.001, 6.2831853 都应输出合法 [0, 360) 度数。
+
+### 5. J 列逐弹 duration 约定（[约定]）
+
+- J 列 = bomb i own `total_duration_s`（来自 `SingleBombEvaluation.total_duration_s`）。
+- 三弹 union 总时长 4.478218820691105 **不**写入 J 列。
+- 仅写入 `q3_result1_artifact_summary.json` 的 `union_total_union_duration_s` 字段、
+  `RESULTS.md` 与 PR body。
+- 写入顺序：C=1 对应 bomb 1 的 total_duration_s；C=2 对应 bomb 2 的；
+  C=3 对应 bomb 3 的。
+
+### 6. Canonical reconstruction gate（1 次真实 Q3 调用）
+
+- 输入：冻结的 8 维 candidate。
+- 调用：`src/q3_three_bombs.evaluate_three_bomb_strategy(candidate,
+  sample_level="fine", scan_step=0.005)`（exactly 1 次）。
+- 期望 `total_union_duration_s ≈ 4.478218820691105`。
+- 验收：`abs(reconstructed - 4.478218820691105) <= 1e-12`。
+- 不通过 → BLOCKED, exit 2；不写入 `outputs/submission/result1.xlsx`；不冒充
+  RESULT1.XLSX GENERATED。
+- 预算：max_expensive_evaluations = 1；max_run_wall_clock_seconds = 300；
+  max_test_wall_clock_seconds = 300。任一上限达到 → BLOCKED。
+
+### 7. Template preservation contract
+
+下列任一改变 → FAIL：
+
+- workbook sheet names（含 case）
+- active sheet
+- sheet dimensions
+- merged-cell ranges
+- freeze panes
+- header row values（10 个 canonical header）
+- annotation / footer text
+- row heights
+- column widths
+- non-data cell values / formulas / style_id
+- number formats
+- print settings（当可读时）
+
+模板 fingerprint 必须在 in-memory edit 前后 / save → reopen 后均一致。
+
+### 8. 所有单元格类型合同
+
+- 全部 A:J 数据 cell 必须为数值类型（`int` / `float`）。
+- **不得**写带单位字符串（如 `"120 m/s"`），不得写公式（`=...`），不得写
+  JSON 字符串，不得写 `NaN` / `Inf` / `None`。
+- 非数值 cell 写入 → BLOCKED, exit 2。
+- 数据 cell 类型检查：`isinstance(cell.value, (int, float)) and
+  math.isfinite(cell.value)`。
+
+### 9. Round-trip 核验
+
+- save → 关闭 workbook → 从磁盘重新打开（`load_workbook(output_path)`）→
+  逐格读取三行 A:J。
+- 数值比较：abs_tol = 1e-10；rel_tol = 1e-12。
+- 模板 fingerprint 二次核验（同 §7）。
+- 任意不通过 → FAIL, exit 2；不得伪造 PASS。
+
+### 10. Resume identity (7 字段, checkpoint_schema_version=5)
+
+- 路径：`work/q3_result1/checkpoint.json`。
+- 7 字段（任一 mismatch → BLOCKED, exit 2）：
+  1. `execution_head_sha` — 当前 commit HEAD
+  2. `contract_snapshot_sha256` — `work/task_contracts/TASK_006-P3-v5.json` 的 SHA-256
+  3. `q2_single_bomb_code_sha256` — `src/q2_single_bomb.py` 的 SHA-256
+  4. `q3_three_bombs_code_sha256` — `src/q3_three_bombs.py` 的 SHA-256
+  5. `result1_builder_code_sha256` — `scripts/build_result1.py` 的 SHA-256
+  6. `canonical_candidate_sha256` — 冻结 8 维 candidate 的 SHA-256
+  7. `official_template_sha256` — `题目及模板/..._结果模板.zip` 的 SHA-256
+- atomic write：temp + flush + fsync + os.replace。
+- corrupt / load error → `status = CHECKPOINT_LOAD_ERROR`, exit 2。
+- identity mismatch → `status = RESUME_IDENTITY_MISMATCH`, exit 2。
+
+### 11. Artifact summary JSON schema
+
+`outputs/q3/q3_result1_artifact_summary.json` 至少含：
+
+- `phase_id = "TASK_006-P3"`
+- `contract_version = 5`
+- `result_level.declared_level = "BUDGET_LIMITED_BEST_KNOWN"` + `result1_xlsx_generated`
+- `identity`: 7 字段 SHA + `result1_run_identity_sha256`
+- `canonical_candidate`: 8 维 frozen candidate
+- `canonical_reconstruction`: 1 call 的真实输出（含 bomb_evaluations, union_intervals,
+  total_union_duration_s, sample_level=fine, scan_step=0.005, q3_evaluation_id,
+  elapsed_s, single_bomb_evaluator_calls=3）
+- `reconstruction_gate`: abs(reconstructed - reference) ≤ 1e-12 ✓
+- `workbook`: official_template_sha256, output_path, output_sha256,
+  template_member_basename, sheet_names, active_sheet, header_names,
+  column_mapping, three_rows_written, all_cells_numeric, union_duration_written_to_j
+  (必须为 false), round_trip_status
+- `template_fingerprint`: 保存前后 + save→reopen 后均一致的所有非数据 cell 元数据
+- `status`: result1_xlsx_generated / template_mismatch / round_trip_fail /
+  checkpoint_load_error / resume_identity_mismatch
+- `output_path`: `outputs/submission/result1.xlsx`
+
+### 12. 测试（≥ 22 新增，0 real Q3 evaluation in tests）
+
+`tests/test_q3.py` 新增至少 22 个 result1 模块测试（全部用 FakeEvaluator 或
+temporary workbook，**不**调用真实 Q3 evaluator）：
+
+1. heading rad → degree（含 wrap-around / 负值 / 2π+ 等）
+2. header detection（10 列 contiguous + canonical 顺序）
+3. 缺失 header blocked
+4. 重复 header blocked
+5. workbook creation（from ZIP, read-only）
+6. 三行严格 3 行（C=1, 2, 3）
+7. C 列 bomb index 顺序 [1, 2, 3]
+8. A / B 列三行相同
+9. D-F 与 release_points 对应
+10. G-I 与 detonation_points 对应
+11. J 列 per-bomb duration（非 union）
+12. union NOT written into J cells（写入 4.47821… 必须 BLOCKED）
+13. NaN / Inf 写入 BLOCKED
+14. 字符串 / 公式 / JSON 写入 BLOCKED
+15. structural fingerprint preserved（headers, freeze panes, merged cells, etc.）
+16. non-data formula preserved
+17. styles preserved
+18. round-trip read（save → reopen → verify 全部 10×3 cell）
+19. official template unchanged（SHA-256 不变）
+20. output SHA-256 recorded
+21. summary JSON round-trip（artifact summary 可读回 / 字段完整）
+22. reconstruction mismatch fail-closed（mock evaluator 输出 4.4782189 → fail）
+
+### 13. CLI 与退出码
+
+- 默认 `python -m scripts.build_result1` 执行 P3 流程：
+  1. 验证 7 字段 resume identity（start from clean HEAD）；
+  2. 从官方 ZIP 加载 result1.xlsx 到内存；
+  3. 验证 10 列 contiguous + 3 行；
+  4. 调用 `evaluate_three_bomb_strategy(candidate, sample_level="fine",
+     scan_step=0.005)` 一次；
+  5. 验证 reconstruction gate（abs diff ≤ 1e-12）；
+  6. 写入 A:J 三行；
+  7. 保存到 `outputs/submission/result1.xlsx`；
+  8. 关闭并重新打开，round-trip 核验；
+  9. 写 `q3_result1_artifact_summary.json`。
+- `--dry-run`：跳过步骤 4-7，仅做结构识别与 resume identity 校验。
+- 退出码：0 PASS；1 system_error；2 arg / identity mismatch / reconstruction
+  gate fail / round-trip fail / template fingerprint mismatch。
+
+### 14. 局限
+
+- 不重跑 Pilot / P2 / P2C；冻结的 8 维 candidate 是 P3 唯一输入。
+- 一次 fine / 0.005 重建是 deterministic re-evaluation，**不是**新的搜索、
+  **不是** challenger、**不是** refinement。
+- shared heading / speed / interval union 来自 P2C 合同，不在本阶段改写。
+- 不声称 Q3 全局最优 / VERIFIED / FINAL / 官方答案 / 解析极值；
+  **不**声称 local convergence。
+- 等级仅 BUDGET_LIMITED_BEST_KNOWN；Final Audit + Hermes 签字后才能升
+  VERIFIED 或进一步生成 result2.xlsx / result3.xlsx / 启动 Q4 / Q5。
+- 模板 fingerprint 校验保证官方模板未被破坏，但**不**验证模板本身的数学正确性。
+- 不引入 openpyxl 之外的新依赖；仅 openpyxl + zipfile + stdlib。
