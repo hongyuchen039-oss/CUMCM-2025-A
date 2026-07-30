@@ -20,8 +20,9 @@ restore / rebase / 改写 context 绕过。
 在创建新分支、worktree、专用 Agent 或下游任务前，必须先阅读并执行：
 
 - `.claude/skills/project-mainline-governance/SKILL.md`
+- `.claude/skills/bounded-verification/SKILL.md`（仅当任务包含 expensive evaluator / optimization / 长时间搜索 / 预算约束运行时）
 
-该 Skill 固化本项目已经付出代价得到的流程教训，尤其用于防止：
+project-mainline-governance 固化本项目已经付出代价得到的流程教训，尤其用于防止：
 
 - 当前阶段未关闭就提前启动下游阶段；
 - 把“未来阶段”错误拆成多个长期并行角色；
@@ -32,8 +33,14 @@ restore / rebase / 改写 context 绕过。
 - 多个写入者同时操作同一 worktree；
 - 任务结束后自动进入下一阶段。
 
-每个新项目必须把该 Skill 复制到同一路径，并在根级 Agent 规则中引用。
-若本文件与该 Skill 在流程细节上冲突，以更严格且更接近用户当前明确指令的一项为准。
+bounded-verification 固化 numerical-evaluation / optimization 任务的预算冻结、
+clean-HEAD 验证、checkpoint/resume 身份链、失败 / 停止分类、可信等级与
+Builder / Audit / Hermes 边界。任何 expensive task 启动前必须按本 Skill 填写
+`work/task_context.json`，并在过程中遵守 §4 FAST / TASK / FULL 分层与 §10
+heartbeat / pipefail 规范。
+
+每个新项目必须把上述 Skill 复制到同一路径，并在根级 Agent 规则中引用。
+若本文件与上述任一 Skill 在流程细节上冲突，以更严格且更接近用户当前明确指令的一项为准。
 
 ## 0.1 建模产出优先，CI 默认非必要
 

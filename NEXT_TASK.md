@@ -1,106 +1,74 @@
-# 当前唯一任务
+# TASK_GOV_003 — BOUNDED VERIFICATION SKILL v0.1 — HERMES HANDOFF
 
-## 任务标题
-TASK_005 FINAL GIT / PR VERIFICATION — HERMES HANDOFF
+> 本任务在 `task/TASK_GOV_003-bounded-verification` 分支上完成 doc-only commit，
+> 内容仅限 `.claude/skills/bounded-verification/SKILL.md` + 两个 templates +
+> `CLAUDE.md` + `START_HERE.md` + `NEXT_TASK.md`。
+> 不修改任何代码 / 测试 / 结果文件；不启动 Q3；不合并 PR；不进入下一任务。
 
-## 已完成
-- independent Audit passed
-- no P0 / no P1
-- doc-only P2 closed by current commit
-- canonical Q2 result promoted: 4.260970878601073 s
+## 当前任务边界
 
-## 状态声明（不变）
+- Base: `main` = `5604bb086668ac6a857fc2c5ad86b0b8eb2713ae`
+- Branch: `task/TASK_GOV_003-bounded-verification`
+- Head: 当前 commit （待 DOCS commit 后回填）
 
-```
-FORMAL BUDGET-LIMITED BEST-KNOWN Q2 CANDIDATE /
-LOCAL CONVERGENCE NOT ESTABLISHED /
-NOT A PROVEN GLOBAL OPTIMUM
-```
+### 允许的修改
 
-## Canonical Q2 result
+| 路径 | 用途 |
+|---|---|
+| `.claude/skills/bounded-verification/SKILL.md` | 新增 |
+| `.claude/skills/bounded-verification/templates/task-contract.md` | 新增 |
+| `.claude/skills/bounded-verification/templates/final-report.md` | 新增 |
+| `CLAUDE.md` | 在 §0 必读 Skill 列表中追加 bounded-verification 引用 |
+| `START_HERE.md` | 替换为 TASK_GOV_003 阶段说明 |
+| `NEXT_TASK.md` | 替换为本文件 |
 
-```
-heading_rad     = 3.126767217560497
-speed_mps       = 116.43351397802584
-release_time_s  = 1.2672692031529031
-delay_s         = 3.789202402720746
-total_duration_s = 4.260970878601073
-interval (s)    = (5.089825368500298, 9.350796247101371)
-```
+### 禁止的修改
 
-旧候选 `(3.121767217560497, 115.43351397802584, 1.7672692031529031, 3.889202402720746)` dur `2.48275905609131 s` 已降级为 `HISTORICAL FORMAL-SEARCH CANDIDATE`。
+`src/`、`tests/`、`scripts/`、`configs/`、`outputs/`、`problem/`、
+`MODEL.md`、`RESULTS.md`、`README.md`、`.gitignore`、
+任何 `result*.xlsx`、任何 `work/*.json` 的 tracked 化。
 
-## 当前唯一任务（read-only）
+## Hermes 必须核验的事实
 
-Hermes 只读核验最终仓库和 PR 事实，不修改任何文件。
+只读核验本任务 PR `#<TBD>` 的 Git 状态；不得 commit / push / amend：
 
-### Hermes 应核验
+1. `git rev-parse HEAD` 与 PR head 一致；与本分支最新 commit SHA 一致。
+2. `git status --porcelain` 只允许 `.claude/skills/bounded-verification/`、
+   `CLAUDE.md`、`START_HERE.md`、`NEXT_TASK.md`、`work/` 的 untracked 出现；
+   tracked 不允许有修改。
+3. `git diff main --stat` 显示的变更文件列表 = 上述允许列表。
+4. `git log main..HEAD --oneline` 仅包含 1 个 `DOCS:` commit，prefix 正确。
+5. `git push` 状态：`local = remote = PR head`。尚未 force-push。
+6. PR 状态：Open / Draft / unmerged；base 分支 = `main`。
+7. PR 描述必须包含：3 stress scenarios（A / B / C）说明 + 不冒充声明 +
+   HEAD / base / changed files 列表。
+8. `outputs/submission/result*.xlsx` 不在变更中。
+9. `work/` 仍是 untracked / gitignored，未被误提交。
+10. SKILL.md 第 §17 引用 `templates/final-report.md` 的路径在仓库
+    `.claude/skills/bounded-verification/templates/final-report.md` 实际存在。
 
-- current PR head after DOCS promotion commit（占位标记：`FINAL_DOC_HEAD_TO_BE_FILLED_AFTER_COMMIT`；实际 SHA 在 PR body / final report 中给出，避免自引用循环）
-- branch = `task/TASK_005-q2-formal-search`
-- base = `9ea31890c22b11089f9d224c0e90f1a0cab8fde8`
-- commit count、push status
-- PR Open / Draft / unmerged
-- changed files 仅落在允许范围：START_HERE.md / NEXT_TASK.md / README.md / MODEL.md / RESULTS.md
-- no Q3 启动
-- no result*.xlsx
-- no src / tests / scripts / configs / outputs JSON / problem / CLAUDE / .claude / Harness / .gitignore 改动
-- 任务上下文 verify_task_context 状态有效
+## Hermes 输出
 
-### Hermes 禁止
+返回四项之一：
 
-- 修改任何文件
-- commit / push
-- 转 Ready / merge
-- 启动 TASK_006
+| 输出 | 含义 | 后续 |
+|---|---|---|
+| **PASS** | 1–10 全部通过 | MAIN / 用户决定 Ready / merge |
+| **PASS WITH P2** | 仅文档细节需微调 | 仅文档层二次 commit；不改 Skill 主体 |
+| **P1 BLOCK** | 范围 / allow-list / SKILL 内容错 | 阻塞，等 MAIN / 用户修正 |
+| **INCOMPLETE** | 数据未齐全 | 等回填后再核 |
 
-### Hermes 输出（四选一）
+## Hermes 禁止
 
-- `PASS`
-- `PASS WITH P2`
-- `P1 BLOCK`
-- `INCOMPLETE`
+- 修改任何 Skill / template / CLAUDE.md / START_HERE.md / NEXT_TASK.md；
+- 触发 commit / push / amend / rebase / merge；
+- 把 PR 标记为 Ready / merge / close；
+- 启动 TASK_006 / Q3 / result1.xlsx 生成；
+- 触碰到任何 result*.xlsx 模板。
 
-### Hermes 完成后
+## STOP CONDITION（任务终止）
 
-MAIN / 用户授权 Ready 或 merge。
+- Hermes 输出 PASS / PASS WITH P2，由 MAIN / 用户显式决定 Ready / merge；
+- 合并后由 MAIN 显式立项 TASK_006。
 
-## 绝对禁止（已在本轮执行过的不重复）
-
-- 重跑 evaluator
-- 重跑 formal / refinement / verification runner
-- 重跑 3×1000
-- 重跑完整 16 项扰动
-- 运行 tests.test_q2_search
-- 运行 unittest discover
-- 自动 merge
-- 自动 Ready
-- 启动 Audit CC / Hermes（仅 MAIN 可启动）
-- 修改 src / tests / scripts / configs / outputs JSON / problem / CLAUDE / .claude / Harness / .gitignore
-- 修改原始 checkpoint / work/q2_formal_refinement/checkpoint.json
-
-## 验证内容（已在本轮执行）
-
-- `git diff --check`
-- 文本一致性 grep
-- harness: `python scripts/verify_task_context.py --context work/task_context.json`
-  → `CONTEXT_VALID_AUTHORIZED_DIRTY` 或 `CONTEXT_VALID_CLEAN`
-
-## 跟踪证据
-
-- `outputs/q2/q2_verify_summary.json` (tracked)
-  - `verification_run_head_sha = 4a1cbd9520d1a62eeeb4cb91180e989c91dcf036`
-  - `verification_script_sha256 = 53e37211c50bdd5395c3fa22dcf9c77a71df5be975fa0803e478a2dfaea28b66`
-  - `q2_search_code_identity    = 3b90accd0ca7695fe8a56e9044fac5fefe8119cfb8ba72d857327ac1e5877ac7`
-  - `checkpoint_source_head_sha = ac97a38c7564c9d7f2c0793c935eeb27bbd1fa90`
-  - `refinement_config_sha256   = 6f9cb503397996b788d0edfc6491b5a4425dd6e4a784f7ad82f8616acfd65a3d`
-  - `evaluator_call_count       = 5`
-  - `stability_evaluation_id    = c19c1eaddffdb8567f4053c118c4a1ed`
-  - `checkpoint_identity_validation = True`
-  - `stability_ok = True`
-  - `physical_validity.ok = True`
-  - `local_convergence_established = False`
-
-## 提交后停止条件
-
-DOCS commit + push + PR #11 body 更新后立即停止；不自动 merge；不进入 Q3 / TASK_006；不启动 Audit CC / Hermes（仅 MAIN 决定）。
+本任务不自动进入下一阶段；不擅自扩大任务；不冒充 TASK_006 已启动。
