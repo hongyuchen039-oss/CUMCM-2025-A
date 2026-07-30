@@ -1286,3 +1286,131 @@ delay_s    = 3.789202402720746
   不启动 multi-seed 调度；不写 result1.xlsx。
 - 候选生成与 budget 都按 Pilot 固定上限；不冒充正式 Q3 结果。
 - 共享 heading / speed 是项目约定，不是官方物理常量；Q4 / Q5 不复用本合同的共享规则。
+
+---
+
+## Q3 正式 bounded search (TASK_006-P2 / BUDGET_LIMITED_BEST_KNOWN / NOT A PROVEN GLOBAL OPTIMUM)
+
+> 已在 `src/q3_search.py` 实现，通过 `tests/test_q3.py` 新增 ≥ 20 个搜索单元测试
+> （FakeEvaluator only, 不调用真实 Q3 evaluator）验证。
+> 本节固定 Q3 Formal Bounded Search v3 的方法、预算、5 阶段、multi-seed 聚合、
+> checkpoint / resume、stage 优先级、合法性与局限。
+> 等级: **BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE / LOCAL CONVERGENCE NOT ESTABLISHED
+> / NOT A PROVEN GLOBAL OPTIMUM / RESULT1.XLSX NOT GENERATED**。
+> 不得冒充 Q3 VERIFIED / FINAL / 官方答案 / 解析极值 / 全局最优。
+> 独立审查 (Audit CC / Hermes) 签字后才能立项 TASK_006-P3 (result1.xlsx)。
+
+### 1. 基础约束
+
+- 严格基于冻结的 `src/q3_three_bombs.py` (ThreeBombCandidate /
+  validate_candidate / evaluate_three_bomb_strategy / normalize_intervals /
+  union_intervals / total_union_duration / ThreeBombEvaluation)。
+- 严格复用 Q2 single-bomb evaluator（不复制、不绕过）。
+- 候选 generation **仅**是 deterministic uniform pseudorandom + scheduled
+  perturbation；不依赖第三方优化库（不引入 scipy.optimize / 贝叶斯 / NSGA）。
+- Foundation 文件（P0/P1）冻结：不得修改 q3_three_bombs.py / q1 / q2 任何
+  实现文件；不得 modify pilot log / checkpoint。
+
+### 2. 预算分配（hard cap, 5 阶段严格总和 = 512）
+
+| 阶段 | 预算 | Profile | 说明 |
+|---|---|---|---|
+| Stage A — structured coarse exploration | **360** | coarse (0.05) | 3 seeds × 120 = 360 |
+| Stage B — bounded coarse refinement | **120** | coarse (0.05) | 12 parents × 10 perturbations = 120 |
+| Stage C — medium finalist recheck | **24** | medium (0.02) | 12 parents × 2 perturbation sets |
+| Stage D — fine finalist recheck | **6** | fine (0.01) | top-6 finalists |
+| Stage E — high-resolution verification | **2** | fine (0.005) | final top-2 验证 / tie-break |
+| **总计** | **512** | | |
+
+run wall-clock ≤ 1200 s；任一上限达到不自动延长。
+
+### 3. Stage A 子分配（每 seed 120 = 60 + 40 + 20）
+
+| 子块 | 每 seed | 总 | 合同 |
+|---|---|---|---|
+| A1 staggered canonical family | 20 | 60 | release_time_i ∈ {best_pilot_r1 + δ_2, best_pilot_r1 + δ_3}, δ_2 ∈ [3, 5], δ_3 ∈ [δ_2 + 1, 9]; delay_i = best_pilot_delay_i + η_i, η_i ∈ [-0.1, 0.1] |
+| A2 compensated release chain | 13 | 40 | release_time_1 = best_pilot_r1; release_time_2 = release_time_1 + delay_1/2; release_time_3 = release_time_2 + delay_2/2 + 1; delay_i = best_pilot_delay_i + η_i, η_i ∈ [-0.05, 0.05] |
+| A3 bounded directional diversity | 7 | 20 | heading ∈ {best_pilot_h - 0.05, best_pilot_h, best_pilot_h + 0.05}; speed ∈ {best_pilot_s - 2, best_pilot_s, best_pilot_s + 2}; release/delay 沿用 A1 |
+
+每个 seed 独立 random.Random(seed) 实例；同一 (seed, subblock, candidate_source)
+必须产生完全一致的候选顺序。
+
+### 4. Stage B bounded coarse refinement
+
+- parents = Stage A top-12 candidates（按 total_union_duration_s desc 去重）。
+- 每 parent 派生 10 perturbations（heading ±0.02 / speed ±1.0 / release ±0.2 /
+  delay ±0.1 中任选 1-2 个变量）。
+- 同一 parent 多次扰动；同一 candidate 多次被命中时按 schedule 顺序
+  evaluation_id 重复但 status 计为 completed；不重复占用预算。
+- 仅在 coarse (0.05) profile 下评估。
+
+### 5. Stage C / D / E finalist 复评
+
+- Stage C：从 Stage A + B 合并后去重的 top-12 中，每 parent 选 2 组（release
+  微调 + delay 微调）共 24 候选，medium (0.02) 复评。
+- Stage D：从 Stage C 完成后 top-6，fine (0.01) 复评。
+- Stage E：从 Stage D 完成后 top-2，fine (0.005) 复评，最终 tie-break
+  on total_union_duration_s。
+
+### 6. Multi-seed 聚合
+
+- seeds = `[2025, 2026, 2027]`（formal config 强制断言）。
+- 每 seed 独立 dispatch；任一 seed 触发 RUN_SYSTEM_ERROR 或 fail-closed
+  → 整体 BLOCKED，不写 summary。
+- final winner = Stage E top-1 candidate。
+
+### 7. Checkpoint v3 / Resume identity
+
+- 路径：`work/q3_formal/checkpoint.json`。
+- schema_version = 3。
+- 7 字段 resume identity（任一 mismatch → BLOCKED, exit 2）：
+  1. `execution_head_sha`
+  2. `contract_snapshot_sha256`
+  3. `q2_single_bomb_code_sha256`
+  4. `q3_three_bombs_code_sha256`
+  5. `q3_search_code_sha256`
+  6. `formal_config_sha256`
+  7. `candidate_schema_version`
+- atomic write：temp + flush + fsync + os.replace。
+- corrupt / load error → `status = CHECKPOINT_LOAD_ERROR`, exit 2。
+
+### 8. CLI 与退出码
+
+- 默认 `python -m src.q3_search` 仅打印 banner。
+- 正式搜索：`python -u -m src.q3_search --formal-search --budget 512
+  --wall-clock-cap 1200 --seeds 2025 2026 2027`。
+- `--dry-run` / `--fake-evaluator` 用于本地调度 / 测试（不消耗 real eval）。
+- 退出码：0 无 system_error + Stage E 完成；1 system_error；2 arg / config 错误
+  / dirty worktree / fail-closed / 预算耗尽 / wall-clock hit；3 controlled
+  interruption。
+
+### 9. 输出 summary JSON schema (canonical)
+
+`outputs/q3/q3_formal_search_summary.json` 至少含以下字段：
+
+- `phase_id = "TASK_006-P2"`
+- `contract_version = 3`
+- `result_level.declared_level = "BUDGET_LIMITED_BEST_KNOWN"`
+- `result_level.not_a_proven_global_optimum = true`
+- `result_level.local_convergence_established = false`
+- `result_level.result1_xlsx_generated = false`
+- `stage_counts`: {A, B, C, D, E, total} 必须总和 = 512
+- `best_candidate`: 8 维 + `total_union_duration_s` + `union_intervals` +
+  `per_bomb_intervals` (3 items) + `per_bomb_duration_s` (3 items)
+- `identity`: 7-field resume identity SHAs + `formal_run_identity_sha256`
+- `timing`: per-stage wall-clock / median / p90
+- `counts`: completed / system_error / unique_evaluation_ids / single_bomb_calls
+- `status`: pilot_complete / wall_clock_gate_hit / evaluation_budget_exhausted
+  / run_system_error / checkpoint_load_error / resume_identity_mismatch
+
+### 10. 局限
+
+- 候选 generation 是 deterministic uniform pseudorandom + scheduled perturbation；
+  **不是**全局最优证明，**不是**解析极值，**不是**官方答案。
+- Stage B/C/D/E 的 refinement scope 受 5 阶段预算硬约束，未穷尽搜索空间；
+  16 项 one-var perturbation + coordinate descent 未启动（留给后续 TASK）。
+- multi-seed 仅 3 seeds；统计意义有限。
+- 不声称 Q3 全局最优 / VERIFIED / FINAL / 官方答案 / 解析极值；
+  **不**声称 local convergence。
+- 等级仅 BUDGET_LIMITED_BEST_KNOWN；独立审查签字后才能升 VERIFIED 或进一步
+  生成 result1.xlsx（TASK_006-P3）。

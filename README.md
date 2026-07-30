@@ -13,6 +13,20 @@
 
 ## 当前状态
 
+TASK_006-P2 Q3 THREE-BOMB FORMAL BOUNDED SEARCH 立项：5 阶段 / 512 evals / 1200 s / 3 seeds。
+
+- **Q3 candidate generation**: Stage A 360 / B 120 / C 24 / D 6 / E 2 = 512
+- **Q3 real evaluator calls**: 512（每条 schedule record 一次 top-level Q3 evaluation）
+- **Q3 single-bomb subcalls**: 512 × 3 = 1536
+- **Q3 wall-clock**: ≤ 1200 s
+- **P2 foundation frozen**: q3_three_bombs / q2 / q1 全部不允许修改
+- **P0/P1 evidence**: 94-evaluation Pilot (commit `59999f9a`) + closure v2 (FIX `a139988`, VERIFIED `31ddb7b`) 保留
+- **等级**: `BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE / LOCAL CONVERGENCE NOT ESTABLISHED / NOT A PROVEN GLOBAL OPTIMUM / RESULT1.XLSX NOT GENERATED`
+- **禁止**: 重跑 Pilot / 修改 foundation / 生成 result1.xlsx / 启动 P3 / Q4 / Q5 / 自动 Audit / Hermes / Ready / merge
+
+详见 [MODEL.md §"Q3 正式 bounded search (TASK_006-P2 / BUDGET_LIMITED_BEST_KNOWN)"] 与
+[START_HERE.md](./START_HERE.md) / [NEXT_TASK.md](./NEXT_TASK.md)。
+
 TASK_005 Q2 FORMAL SEARCH + BOUNDED REFINEMENT + CLEAN-HEAD VERIFICATION IDENTITY CLOSURE + INDEPENDENT AUDIT 已收口，canonical Q2 result 已晋升：
 
 - **Q2 canonical candidate**:
@@ -78,20 +92,23 @@ PR #12（TASK_GOV_003 bounded verification Skill v0.1）已 merged；TASK_006 �
 ## TASK_006 当前阶段（Q3 三弹 evaluator + bounded pilot）
 
 - branch: `task/TASK_006-q3-three-bombs`（基于 `main` = `007b93d3…`）
-- phase: `TASK_006-P0P1`
+- phase: `TASK_006-P2`（Q3 THREE-BOMB FORMAL BOUNDED SEARCH）
+- contract_version: 3
 - 本轮目标：
-  - 冻结 Q3 三弹数学与工程合同（8 维决策变量 + 共享 heading/speed + 投放间隔 ≥ 1 s + union 目标）；
-  - 实现真实三弹 evaluator（必须复用 `src.q2_single_bomb.evaluate_single_bomb_strategy`，不得复制）；
-  - bounded pilot（96 Q3 evaluations / 900 s wall-clock / 3 真实 TASK 测试）；
-  - checkpoint / resume + identity binding；
-  - 实测 evaluator 成本；
-  - 向 MAIN 提交正式搜索预算建议。
+  - 在冻结的 Q1 / Q2 / q3_three_bombs foundation 上实现 `src/q3_search.py`；
+  - 5 阶段 formal bounded search：Stage A 360 / B 120 / C 24 / D 6 / E 2 = **512** Q3 evaluations；
+  - **wall-clock ≤ 1200 s**（hard cap）；
+  - multi-seed deterministic：`[2025, 2026, 2027]`；
+  - checkpoint / resume（7-field identity，fail-closed）；
+  - 输出 `outputs/q3/q3_formal_search_summary.json`（BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE）；
+  - 单元测试 ≥ 20 cases（FakeEvaluator only，**不**调用真实 Q3 evaluator）。
 - 本轮**不**执行：
-  - Q3 Formal Search；
+  - 重跑 Pilot；
+  - 修改 Q1 / Q2 / q3_three_bombs 任何实现；
   - 生成 result1.xlsx；
-  - 修改官方空白模板；
+  - 启动 TASK_006-P3 / Q4 / Q5；
   - 启动 Audit CC / Hermes（MAIN 决定）；
   - 自动 Ready / merge；
-  - 进入 TASK_006-P2 / Q4 / Q5 / 论文。
-- 最终等级只能是 `EXPERIMENTAL`。
-- 详细任务边界见 [NEXT_TASK.md](./NEXT_TASK.md)；模型合同见 [MODEL.md](./MODEL.md) §"Q3 三弹串接评估合同"；Pilot 预算见 [bounded_verification/templates/task-contract.md](./.claude/skills/bounded-verification/templates/task-contract.md) Phase contract lifecycle。
+  - 声称 FORMAL_RESULT_VERIFIED / local convergence / global optimum。
+- 最终等级只能是 `BUDGET_LIMITED_BEST_KNOWN`。
+- 详细任务边界见 [NEXT_TASK.md](./NEXT_TASK.md)；模型合同见 [MODEL.md](./MODEL.md) §"Q3 正式 bounded search"；预算见 [bounded_verification/templates/task-contract.md](./.claude/skills/bounded-verification/templates/task-contract.md) Phase contract lifecycle。

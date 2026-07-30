@@ -1,198 +1,211 @@
-# TASK_006 — Q3 THREE-BOMB MODEL CONTRACT + REAL EVALUATOR + BOUNDED PILOT — P0/P1 CLOSURE
+# TASK_006 — Q3 THREE-BOMB FORMAL BOUNDED SEARCH — P2
 
-> 本轮是 TASK_006 的 **P0/P1 CLOSURE** 阶段，**仅**完成：
+> 本轮是 TASK_006 的 **P2** 阶段，仅完成：
 >
 > 1. **不重跑** 94-evaluation Pilot；
-> 2. 修复 7 个 closure v2 缺陷（heading_rad 原始范围判定、per_bomb_intervals
->    恰好 3 项、stage_counts 显式 schedule-based、resume identity 加
->    schedule_sha256 + fail-closed、budget_recommendation stage-weighted
->    算术 + MAIN_DECISION_REQUIRED、Q2 degeneration direct vs sequence、
->    repeated determinism 真实 re-eval）；
-> 3. 1 次 targeted reconstruction Q3 call（复评 best pilot candidate,
->    coarse profile, scan_step=0.05）；
-> 4. 更新 pilot summary + RESULTS.md + NEXT_TASK.md；
-> 5. 同步 PR #13 body 6 字段 identity 拆分。
+> 2. **不修改** Q1 / Q2 / q3_three_bombs foundation；
+> 3. 实现 `src/q3_search.py` Q3 正式 bounded search 模块；
+> 4. 5 阶段正式搜索：Stage A 360 / B 120 / C 24 / D 6 / E 2 = **512** Q3 evaluations；
+> 5. **wall-clock ≤ 1200 s**；
+> 6. Multi-seed deterministic：`[2025, 2026, 2027]`；
+> 7. Checkpoint / resume（7-field identity，fail-closed）；
+> 8. 输出 `outputs/q3/q3_formal_search_summary.json`（BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE）；
+> 9. 单元测试 ≥ 20 cases（FakeEvaluator + dry-run + scheduler + resume identity）；
+> 10. 同步 PR #13 body（保留 P0/P1 identity + 追加 P2 identity）。
 >
 > 本轮**不得**：
-> - 启动 TASK_006-P2；
-> - 重跑完整 94-evaluation Pilot；
+> - 启动 TASK_006-P3；
+> - 重跑完整 Pilot；
 > - 生成 result1.xlsx；
-> - 扩大正式预算；
-> - 修改 Q1 / Q2 核心；
+> - 修改 Q1 / Q2 / q3_three_bombs 任何文件；
 > - amend / force push；
-> - 删除或覆盖 v1 contract snapshot；
+> - 删除或覆盖 v1 / v2 contract snapshot；
 > - 删除原 Pilot log / checkpoint；
 > - 启动 Audit / Hermes；
-> - 自动 Ready / merge。
+> - 自动 Ready / merge；
+> - 声称 FORMAL_RESULT_VERIFIED / local convergence / global optimum。
 >
-> 最终结果等级只能是：`EXPERIMENTAL`。
+> 最终结果等级只能是：`BUDGET_LIMITED_BEST_KNOWN`。
 
-## 当前任务边界 (closure v2)
+## 当前任务边界 (P2)
 
 - Base: `main` = `007b93d301db73c9a73904337de34d1b4e13467e`
 - Branch: `task/TASK_006-q3-three-bombs`
-- Phase: `TASK_006-P0P1-CLOSURE`
-- Contract version: 2 (v2 snapshot: `work/task_contracts/TASK_006-P0P1-v2.json`)
-- 启动 Harness `work/task_context.json`（gitignored, expected_head = `59999f9aba063e90d8428f5f783d8cc4abf10d62`）
+- Phase: `TASK_006-P2`
+- Contract version: 3 (v3 snapshot: `work/task_contracts/TASK_006-P2-v3.json`)
+- 启动 Harness `work/task_context.json` (gitignored, expected_head = `31ddb7b516e05eb6c20ac465e13b339b6ab70dbc`)
 
-### 本轮允许修改（仅 4 个 tracked 路径 + PR body）
+### 本轮允许修改（仅 5 个 tracked 路径 + PR body + work/）
 
 | 路径 | 用途 |
 |---|---|
-| `src/q3_three_bombs.py` | closure v2 修复 (heading / serialize / schedule / fail-closed / budget / Q2-deg / repeat-determinism) + `--targeted-reconstruction` CLI |
-| `tests/test_q3.py` | 5 组新测试 (heading strict bounds / Q2-deg direct vs seq / repeat real re-eval / budget arith / resume schedule synthetic) |
-| `outputs/q3/q3_pilot_summary.json` | stage_counts 修正 / per_bomb_intervals 3 项 / budget_recommendation stage-weighted / evidence_corrections block |
-| `outputs/q3/q3_targeted_reconstruction.json` | 1 次 Q3 call 复评 best pilot candidate |
-| `RESULTS.md` | Q3 Pilot 章节 closure v2 同步 |
-| `NEXT_TASK.md` | 本文（任务边界） |
-| `START_HERE.md` | 最小阶段身份同步 (允许) |
-| `README.md` | 最小阶段身份同步 (允许) |
+| `src/q3_search.py` (NEW) | Q3 正式 bounded search 模块（5 阶段 / 512 evals） |
+| `outputs/q3/q3_formal_search_summary.json` (NEW) | 正式搜索最终摘要 |
+| `tests/test_q3.py` | 搜索模块测试（≥ 20 cases，含 FakeEvaluator） |
+| `START_HERE.md` | 当前页（本文） |
+| `NEXT_TASK.md` | 当前唯一任务边界 |
+| `MODEL.md` | Q3 正式搜索合同 |
+| `RESULTS.md` | Q3 正式搜索结果（BUDGET_LIMITED_BEST_KNOWN） |
+| `README.md` | 当前阶段同步 |
+| `work/` | gitignored — checkpoint / contract snapshot / logs |
 
-### 禁止修改 (closure v2)
+### 禁止修改 (P2)
 
 `src/q1_baseline.py`、`src/q1_cylinder.py`、`src/q2_single_bomb.py`、`src/q2_search.py`、
-`outputs/q2/`、`outputs/submission/`、`problem/`、`scripts/`、`configs/`、`CLAUDE.md`、
-`.claude/`、`.gitignore`、`MODEL.md`、任何 `result*.xlsx`、Q1/Q2 单元测试、tracked `work/` 文件、
-search module `src/q3_search.py`（TASK_006-P2 才允许新增）。
+`src/q3_three_bombs.py`、`outputs/q2/`、`outputs/submission/`、`problem/`、`scripts/`、
+`configs/`、`CLAUDE.md`、`.claude/`、`.gitignore`、任何 `result*.xlsx`、
+Q1 / Q2 / q3_three_bombs 单元测试、Pilot 已有日志 / checkpoint。
 
-### Pilot 证据保留（closure v2 锁定）
+### Pilot 证据保留（P2 锁定）
 
 | 字段 | 值 |
 |---|---|
 | original_pilot_execution_head | `4d442a7a16127ca0166d1114656b5fe4d5546b4d` |
 | original_evidence_commit | `59999f9aba063e90d8428f5f783d8cc4abf10d62` |
+| closure_code_head | `a139988` |
+| closure_evidence_head | `31ddb7b516e05eb6c20ac465e13b339b6ab70dbc` |
 | q3_candidate_evaluations | 94 |
 | single_bomb_evaluator_calls | 282 |
-| total_wall_clock_seconds | 243.1241612000158 |
+| total_wall_clock_seconds | 243.124 |
 | best_pilot_total_union_duration_s | 3.7881687521934495 |
-| corrected_stage_counts | {calibration: 6, coarse_exploration: 80, medium_recheck: 6, fine_spotcheck: 2, total: 94} |
-| targeted_reconstruction_q3_calls | 1 |
 
-## Closure v2 预算 (与 P0P1 不同的预算上限)
+## P2 预算（精确分配，512 Q3 evaluations / 1200 s wall-clock）
 
 | 维度 | 上限 |
 |---|---|
-| 顶层 Q3 candidate evaluation（本轮总开销） | **4** |
-| Run wall-clock | **600 s** |
-| Test wall-clock | 600 s |
-| 真实 TASK 测试 Q3 evaluation 数 | **3** |
-| Targeted reconstruction Q3 calls | **1** |
+| 顶层 Q3 candidate evaluation（总开销） | **512** |
+| Run wall-clock | **1200 s** |
+| Test wall-clock | 300 s |
+| Single-bomb subcall 上限 | 512 × 3 = 1536 |
+| Test 阶段 real Q3 evaluation 数 | 0（FakeEvaluator only） |
 
-## Checkpoint / Resume (closure v2)
+### 阶段分配（必须总和 = 512）
 
-- 路径：`work/q3_pilot/checkpoint.json`
-- **checkpoint_schema_version = 2**
-- 每个 Q3 candidate evaluation 后原子写入（temp + flush + fsync + os.replace）
-- resume 强制校验 6 字段（任一不匹配立即停止，exit 2，**不静默 fallback**）：
-  - `execution_head_sha`
-  - `contract_snapshot_sha256`
-  - `q2_single_bomb_code_sha256`
-  - `candidate_schema_version`
-  - `pilot_config_sha256`
-  - **`schedule_sha256`**（新增, SHA-256 of schedule record list）
+| 阶段 | 分配 | Profile | 解释 |
+|---|---|---|---|
+| Stage A — structured coarse exploration | **360** | coarse (0.05) | 3 seeds × 120 = 360 |
+| Stage B — bounded coarse refinement | **120** | coarse (0.05) | 12 parents × 10 perturbations = 120 |
+| Stage C — medium finalist recheck | **24** | medium (0.02) | 12 parents × 2 perturbation sets |
+| Stage D — fine finalist recheck | **6** | fine (0.01) | top-6 finalists |
+| Stage E — high-resolution verification | **2** | fine (0.005) | final top-2 验证 / tie-break |
+| **总计** | **512** | | |
+
+### Stage A 子分配（每 seed 120 = 60 + 40 + 20）
+
+| 子块 | 每 seed | 总 | 说明 |
+|---|---|---|---|
+| A1 staggered canonical family | 20 | 60 | 三枚弹在 r1 ~ best_pilot_r1 + 4s / 8s；delay near best_pilot ± small noise |
+| A2 compensated release chain | 13 | 40 | release_time_i = best_pilot_r1 + sum(j<i, best_pilot_delay_j / 2) |
+| A3 bounded directional diversity | 7 | 20 | heading ± 0.05 rad / speed ± 2 m/s 围绕 best_pilot |
+
+## Checkpoint / Resume (P2)
+
+- 路径：`work/q3_formal/checkpoint.json`
+- **checkpoint_schema_version = 3**
+- 每 Q3 candidate evaluation 后原子写入（temp + flush + fsync + os.replace）
+- resume 强制校验 **7 字段**（任一不匹配立即停止，exit 2，**不静默 fallback**）：
+  1. `execution_head_sha`
+  2. `contract_snapshot_sha256`
+  3. `q2_single_bomb_code_sha256`
+  4. `q3_three_bombs_code_sha256`
+  5. `q3_search_code_sha256`
+  6. `formal_config_sha256`
+  7. `candidate_schema_version`
 - corrupt / load error → `status = CHECKPOINT_LOAD_ERROR`, exit 2
 - identity mismatch → `status = RESUME_IDENTITY_MISMATCH`, exit 2
 
-## 测试分级 (closure v2)
+## 测试分级 (P2)
 
 ### FAST（≤30 s）
-- py_compile
-- interval union (overlapping / disjoint / touching / nested / empty)
-- non-finite inputs
-- speed bounds
-- release spacing (exactly 1 s accepted / below 1 s rejected)
-- deterministic evaluation ID
-- candidate serialization
-- checkpoint atomic write
-- pilot config caps
-- **heading_rad strict raw bounds (新增 5 cases: 0 accepted / nextafter(2π,0) accepted / -1e-12 rejected / 2π rejected / 4π rejected)**
-- **budget_recommendation arithmetic (新增: efficient / conservative scenarios / MAIN_DECISION_REQUIRED / null refinement/verification fields)**
-- **resume schedule synthetic (新增: schedule_sha / stage_counts / fail-closed paths)**
+- py_compile (q3_search, tests)
+- candidate generation (A1 / A2 / A3 deterministic, seed-locked)
+- budget arithmetic (Stage A + B + C + D + E = 512)
+- resume identity 7 fields presence
+- FakeEvaluator + dry-run path
+- empty / single-result selection logic
 
-### TASK（≤600 s, 真实 Q3 evaluation ≤ 3）
-- setUpClass 共享 1 次 Q3 eval (anchor coarse)
-- 已有 6 个 setUpClass 复用 + invalid fail-closed + system_error raises
-- test_evaluation_id_uniqueness (ID-only, 0 extra real eval)
-- **TestQ2DegenerationDirectVsSequence (新增: direct vs sequence, 0 Q3 eval)**
-- **TestRepeatedDeterminismRealReeval (新增: 2 Q3 eval, full payload exact match)**
+### TASK（≤300 s, 真实 Q3 evaluation = 0）
+- 仅 FakeEvaluator 测试；**不**调用 `src.q3_three_bombs.evaluate_three_bomb_strategy`
+- scheduler, parent selection, perturbation generation, stage budget enforcement
+- checkpoint / resume path synthetic
+- search summary JSON schema validation
 
-Q3 evaluator real-call budget = 1 (setUpClass) + 2 (repeated determinism) = **3**, 严格 ≤ cap.
+Q3 real-eval budget in tests = 0, ≤ cap.
 
 ### FULL
 
-**SKIPPED**. MAIN 未授权 FULL; Q3 Pilot is bounded only; closure v2 禁止 full rerun.
+**SKIPPED**. MAIN 未授权 FULL；Q3 Formal Search is bounded only.
 
-## 提交序列 (closure v2)
+## 提交序列 (P2)
 
-1. **FIX**: `src/q3_three_bombs.py` (closure v2 实现) + `tests/test_q3.py` (5 组新测试). 不 amend, 不 force push.
-2. **VERIFIED**: `outputs/q3/q3_pilot_summary.json` (corrected stage_counts / per_bomb_intervals / budget_recommendation / evidence_corrections) + `outputs/q3/q3_targeted_reconstruction.json` (1 Q3 call) + `RESULTS.md` (Q3 Pilot 章节 closure v2 同步) + `NEXT_TASK.md` (本文) + 必要时 `START_HERE.md` / `README.md` 最小身份同步.
-3. **Push + PR body**: `task/TASK_006-q3-three-bombs`, push 后更新 PR #13 body 6 字段 identity.
+1. **PLAN**: `work/task_contracts/TASK_006-P2-v3.json` + `work/task_context.json` + 4 docs (`START_HERE.md` / `NEXT_TASK.md` / `MODEL.md` / `RESULTS.md` / `README.md`)。不 amend, 不 force push.
+2. **WORKING**: `src/q3_search.py` (NEW) + `tests/test_q3.py` (search tests)。Harness + FAST + TASK pass.
+3. **VERIFIED**: `outputs/q3/q3_formal_search_summary.json` (after formal search) + 5 docs sync.
+4. **Push + PR body**: `task/TASK_006-q3-three-bombs`, push 后更新 PR #13 body 保留 P0/P1 identity + 追加 P2 identity.
 
-## Draft PR (closure v2)
+## Draft PR (P2)
 
-- Title: `TASK_006: build Q3 three-bomb evaluator and pilot (P0/P1 closure v2)`
+- Title: `TASK_006: Q3 three-bomb formal bounded search (P2)`
 - base: `main`
-- PR body 必须包含 6 字段 identity 拆分：
-  - **base_sha** = `007b93d301db73c9a73904337de34d1b4e13467e`
-  - **original_pilot_execution_head** = `4d442a7a16127ca0166d1114656b5fe4d5546b4d`
-  - **original_pilot_evidence_commit** = `59999f9aba063e90d8428f5f783d8cc4abf10d62`
-  - **closure_code_head** = FIX commit SHA
-  - **closure_evidence_head** = VERIFIED commit SHA
-  - **current_pr_head** = current PR head SHA (after push)
-- PR body 还需包含：
-  - 8 维合同 / 三弹 union 目标 / Q2 reuse
-  - tests 分级 (52 / 52 PASS)
-  - 真实 evaluator counts: pilot 94 + reconstruction 1 + 测试 3 = 98 (≤ 99 max_expensive_evaluations)
-  - single-bomb subcall counts: pilot 282 + reconstruction 3 + 测试 9 (3 real × 3 bombs) = 294
-  - actual wall-clock: pilot 243.124 s + reconstruction 0.536 s + 测试 ~2 s
-  - corrected stage_counts: {calibration: 6, coarse_exploration: 80, medium_recheck: 6, fine_spotcheck: 2, total: 94}
-  - corrected per_bomb_intervals: `[[[5.551...]], [], []]`
-  - budget_recommendation: stage-weighted + MAIN_DECISION_REQUIRED + efficient 730 s + conservative 1114 s
-  - 1 targeted reconstruction Q3 call = 3.788169 s (复评 = 原 3.788169 s)
-  - declared_level = EXPERIMENTAL
-  - NOT A FORMAL Q3 RESULT
-  - RESULT1.XLSX NOT GENERATED
-  - LOCAL CONVERGENCE NOT ESTABLISHED
-  - NOT A PROVEN GLOBAL OPTIMUM
-  - TASK_006-P2 NOT STARTED
-  - Q1 / Q2 files NOT modified
-  - v1 contract snapshot preserved (NOT overwritten)
-  - original Pilot log / checkpoint preserved (NOT deleted)
-  - audit / hermes / p2 NOT STARTED
+- PR body 必须包含：
+  - **6-field P0/P1 identity 拆分**（保留）
+  - **P2 identity 拆分**（新增）：
+    - **p2_base_sha** = `007b93d301db73c9a73904337de34d1b4e13467e`
+    - **p2_closure_evidence_head** = `31ddb7b516e05eb6c20ac465e13b339b6ab70dbc`
+    - **p2_plan_commit** = PLAN SHA
+    - **p2_working_commit** = WORKING SHA
+    - **p2_verified_commit** = VERIFIED SHA
+    - **p2_current_pr_head** = current PR head SHA (after push)
+  - 5 阶段 / 512 evals / 1200 s 严格说明
+  - 测试分级（≥ 20 tests，0 real Q3 eval in tests）
+  - 真实 evaluator counts: search 512 + tests 0 = 512
+  - single-bomb subcall counts: 512 × 3 = 1536
+  - declared_level = `BUDGET_LIMITED_BEST_KNOWN`
+  - **NOT** FORMAL_RESULT_VERIFIED
+  - **NOT** local convergence established
+  - **NOT** global optimum
+  - result1.xlsx NOT generated
+  - Pilot NOT rerun
+  - Q1 / Q2 / q3_three_bombs NOT modified
+  - v1 / v2 contract snapshots preserved
+  - original Pilot log / checkpoint preserved
+  - audit / hermes / P3 / Q4 / Q5 NOT STARTED
 
 PR 保持 Draft. 不 Ready. 不 merge.
 
-## 验收 Gate (closure v2 必须全部满足)
+## 验收 Gate (P2 必须全部满足)
 
-- [x] validate_candidate 原始 heading_rad 严格 [0, 2π) 判定（5 个新测试 PASS）
-- [x] per_bomb_intervals 序列化恰好 3 项（test_serialize_best_candidate_exactly_three_bomb_intervals PASS）
-- [x] PilotStats.stage_counts 显式 schedule-based, {calibration: 6, coarse_exploration: 80, medium_recheck: 6, fine_spotcheck: 2, total: 94}（test_stage_counts_increment_via_schedule_records PASS）
-- [x] resume identity 6 字段（含 schedule_sha256）+ fail-closed（test_fail_closed_on_checkpoint_load_error / test_fail_closed_on_identity_mismatch PASS）
-- [x] budget_recommendation stage-weighted + MAIN_DECISION_REQUIRED + efficient / conservative + null refinement / verification（test_efficient_conservative_scenarios_with_timing / test_no_timing_returns_decision_required PASS）
-- [x] Q2 degeneration direct vs sequence exact comparison (test_direct_vs_sequence_anchor_first_bomb PASS)
-- [x] repeated determinism 真实 re-eval full payload match (test_same_anchor_evaluated_twice_full_payload_match PASS)
-- [x] 1 次 targeted reconstruction Q3 call = 3.788169 s (复评 matches 原始 3.788169 s)
-- [x] 52 / 52 tests pass
-- [x] outputs/q3/q3_pilot_summary.json 含 evidence_corrections block + 6 字段 identity 拆分
-- [x] RESULT1.XLSX NOT GENERATED
-- [x] Q1/Q2 files NOT modified
-- [x] v1 contract snapshot preserved
-- [x] original Pilot log / checkpoint preserved
-- [x] TASK_006-P2 NOT STARTED
-- [x] result1.xlsx 不存在
-- [x] outputs/submission/ 未改
+- [ ] `src/q3_search.py` 实现：5 阶段 / 512 evals / 1200 s gate
+- [ ] `build_formal_schedule(seeds=[2025,2026,2027])` 产出 **360 + 120 + 24 + 6 + 2 = 512** records
+- [ ] 每 record 含 `schedule_index / stage / profile / candidate_source / candidate / expected_q3_evaluation_id`
+- [ ] 每 Q3 evaluation 后原子写 `work/q3_formal/checkpoint.json`
+- [ ] Resume 校验 7 字段（任一 mismatch → fail-closed, exit 2）
+- [ ] 真实 Q3 evaluation 数 ≤ 512（hard cap）
+- [ ] Real run wall-clock ≤ 1200 s（hard cap）
+- [ ] Wall-clock gate hit → 原子写 checkpoint + 不自动延长 + 状态 `WALL_CLOCK_GATE_HIT`
+- [ ] Evaluation budget exhausted → 原子写 checkpoint + 状态 `EVALUATION_BUDGET_EXHAUSTED`
+- [ ] System error → 状态 `RUN_SYSTEM_ERROR` + 不冒充 0
+- [ ] Stage A / B / C / D / E selection rules 正确实现
+- [ ] Stage E 复评 top-2 finalists；tie-break on union duration
+- [ ] Multi-seed：每 seed 独立 dispatch，结果聚合
+- [ ] 输出 `outputs/q3/q3_formal_search_summary.json` 含全部 canonical 字段
+- [ ] 单元测试 ≥ 20 cases，全部 PASS
+- [ ] RESULT1.XLSX NOT GENERATED
+- [ ] Q1 / Q2 / q3_three_bombs NOT modified
+- [ ] v1 / v2 contract snapshots preserved
+- [ ] original Pilot log / checkpoint preserved
+- [ ] TASK_006-P3 / Q4 / Q5 NOT STARTED
+- [ ] audit / hermes NOT STARTED
 
 ## 停止条件
 
-本轮（`TASK_006-P0P1-CLOSURE`）完成后立即停止。
+本轮（`TASK_006-P2`）完成后立即停止。
 
 不自动：
 - 启动 Audit CC；
 - 启动 Hermes；
-- 开始 TASK_006-P2 / Formal Search；
-- 生成 result1.xlsx；
-- 进入 Q4；
+- 开始 TASK_006-P3 / result1.xlsx / Q4 / Q5；
 - Ready；
 - merge。
 
-由 MAIN / 用户显式决定 TASK_006-P2 立项、result1.xlsx 启动、budget 选定 (efficient 730 s vs conservative 1114 s).
+由 MAIN / 用户显式决定 TASK_006-P3 立项、result1.xlsx 启动、P3 预算选定。

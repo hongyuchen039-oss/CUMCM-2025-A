@@ -845,3 +845,58 @@ closure v2 推荐 efficient 起步 (730 s wall) + 决赛阶段按需升级到 co
 
 - closure v2 evidence commit HEAD (FIX commit) 与 original_pilot_evidence_commit (`59999f9a`) 不同; PR body 用 base_sha / original_pilot_execution_head (`4d442a7a`) / original_evidence_commit (`59999f9a`) / closure_code_head / closure_evidence_head / current_pr_head 6 个独立字段区分.
 - 1 次 targeted reconstruction Q3 call = `python -m src.q3_three_bombs --targeted-reconstruction --profile coarse --scan-step 0.05`, 输出 `outputs/q3/q3_targeted_reconstruction.json`.
+
+---
+
+## TASK_006-P2 Q3 正式 Bounded Search (PENDING — 当前阶段目标)
+
+> 本节为 TASK_006-P2 阶段目标，最终数值待正式搜索完成后填入。
+> 等级：`BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE / LOCAL CONVERGENCE NOT ESTABLISHED / NOT A PROVEN GLOBAL OPTIMUM / RESULT1.XLSX NOT GENERATED`。
+
+### 阶段预算（hard cap, 总和必须 = 512）
+
+| 阶段 | 分配 | Profile |
+|---|---|---|
+| Stage A — structured coarse exploration | 360 | coarse (0.05) |
+| Stage B — bounded coarse refinement | 120 | coarse (0.05) |
+| Stage C — medium finalist recheck | 24 | medium (0.02) |
+| Stage D — fine finalist recheck | 6 | fine (0.01) |
+| Stage E — high-resolution verification | 2 | fine (0.005) |
+| **总计** | **512** | |
+
+### 真实 evaluator counts
+
+| 维度 | 上限 |
+|---|---|
+| 顶层 Q3 candidate evaluation | 512 |
+| Single-bomb subcall | 512 × 3 = 1536 |
+| Run wall-clock | 1200 s |
+| Test Q3 real eval (FakeEvaluator only) | 0 |
+
+### Pilot 证据保留（P2 不重跑）
+
+| 字段 | 值 |
+|---|---|
+| original_pilot_execution_head | `4d442a7a16127ca0166d1114656b5fe4d5546b4d` |
+| original_evidence_commit | `59999f9aba063e90d8428f5f783d8cc4abf10d62` |
+| closure_code_head | `a139988` |
+| closure_evidence_head | `31ddb7b516e05eb6c20ac465e13b339b6ab70dbc` |
+| q3_candidate_evaluations | 94 |
+| single_bomb_evaluator_calls | 282 |
+| total_wall_clock_seconds | 243.124 |
+| best_pilot_total_union_duration_s | 3.7881687521934495 |
+
+### 最终 Q3 candidate（PENDING）
+
+最终数值待正式搜索完成后填入 `outputs/q3/q3_formal_search_summary.json` 并在此节同步。
+
+### 不冒充
+
+- 不冒充 FORMAL_RESULT_VERIFIED
+- 不冒充 LOCAL CONVERGENCE ESTABLISHED
+- 不冒充 GLOBAL OPTIMUM
+- 不冒充 FINAL OFFICIAL ANSWER
+- 不冒充 1200 s 必须是真实 wall-clock 上限（仅基于 Pilot p90 + safety_factor 推导）
+- 不冒充 512 evals 足以覆盖 Q3 全部搜索空间（仅基于预算硬约束，未穷尽）
+- Pilot best candidate (3.788 s) 不冒充 Q3 全局最优
+- Stage A / B 候选不冒充已覆盖多 seed 全局最优解
