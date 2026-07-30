@@ -117,6 +117,63 @@ DEFAULT_TEST_WALL_CLOCK_SECONDS = 300.0
 
 # Checkpoint schema version (P2)
 CHECKPOINT_SCHEMA_VERSION = 3
+# Candidate closure checkpoint schema version (P2C, contract_version=4)
+CLOSURE_CHECKPOINT_SCHEMA_VERSION = 4
+
+# Candidate closure budget (TASK_006-P2C). Must sum to 32.
+CLOSURE_F1_BUDGET = 16   # one-variable perturbation
+CLOSURE_F2_BUDGET = 8    # coordinate combinations
+CLOSURE_F3_BUDGET = 4    # medium recheck
+CLOSURE_F4_BUDGET = 2    # fine recheck
+CLOSURE_F5_BUDGET = 2    # high-resolution verification
+CLOSURE_TOTAL_BUDGET = (CLOSURE_F1_BUDGET + CLOSURE_F2_BUDGET
+                        + CLOSURE_F3_BUDGET + CLOSURE_F4_BUDGET
+                        + CLOSURE_F5_BUDGET)
+assert CLOSURE_TOTAL_BUDGET == 32, (
+    f"closure budgets must sum to 32, got {CLOSURE_TOTAL_BUDGET}")
+
+# Closure wall-clock cap (TASK_006-P2C)
+CLOSURE_WALL_CLOCK_CAP_SECONDS = 600.0
+
+# F1 one-variable perturbation scales per variable
+CLOSURE_F1_SCALES = dict(
+    heading_rad=0.002,
+    speed_mps=0.5,
+    release_time_1_s=0.10,
+    delay_1_s=0.05,
+    release_time_2_s=0.10,
+    delay_2_s=0.05,
+    release_time_3_s=0.10,
+    delay_3_s=0.05,
+)
+CLOSURE_F1_FALLBACK_SCALES = (0.5, 0.25)
+CLOSURE_F1_VAR_NAMES = tuple(CLOSURE_F1_SCALES.keys())
+assert len(CLOSURE_F1_VAR_NAMES) == 8
+assert CLOSURE_F1_BUDGET == 2 * len(CLOSURE_F1_VAR_NAMES)
+
+# F2 coordinate combinations (each combo = 1 evaluation)
+CLOSURE_F2_COMBINATIONS = (
+    ("heading_rad", "speed_mps"),
+    ("release_time_1_s", "delay_1_s"),
+    ("release_time_2_s", "delay_2_s"),
+    ("release_time_3_s", "delay_3_s"),
+    ("heading_rad", "speed_mps", "release_time_1_s", "delay_1_s"),
+    ("release_time_2_s", "delay_2_s", "release_time_3_s", "delay_3_s"),
+    ("release_time_1_s", "delay_1_s", "release_time_2_s", "delay_2_s",
+     "release_time_3_s", "delay_3_s"),
+    ("heading_rad", "speed_mps", "release_time_1_s", "delay_1_s",
+     "release_time_2_s", "delay_2_s", "release_time_3_s", "delay_3_s"),
+)
+assert len(CLOSURE_F2_COMBINATIONS) == CLOSURE_F2_BUDGET
+
+# F3 / F4 / F5 profiles (multipliers of base step)
+CLOSURE_F3_PROFILE = "medium"   # 0.02
+CLOSURE_F4_PROFILE = "fine"     # 0.01
+CLOSURE_F5_PROFILE = "fine"     # 0.005 (high-resolution)
+CLOSURE_F5_SCAN_STEP = 0.005
+
+# Tie-break epsilon for selection rule
+CLOSURE_TIE_BREAK_EPSILON_S = 1e-12
 
 # Pilot best-known anchor (P0/P1 evidence) — used to seed A1/A2/A3
 PILOT_BEST_TOTAL_UNION_DURATION_S = 3.7881687521934495
@@ -153,6 +210,30 @@ FORMAL_CONFIG = dict(
     pilot_config_sha256=PILOT_CONFIG_SHA256,
     candidate_schema_version=CANDIDATE_SCHEMA_VERSION,
 )
+
+
+CLOSURE_CONFIG = dict(
+    f1_budget=CLOSURE_F1_BUDGET,
+    f2_budget=CLOSURE_F2_BUDGET,
+    f3_budget=CLOSURE_F3_BUDGET,
+    f4_budget=CLOSURE_F4_BUDGET,
+    f5_budget=CLOSURE_F5_BUDGET,
+    total_budget=CLOSURE_TOTAL_BUDGET,
+    f1_scales=dict(CLOSURE_F1_SCALES),
+    f1_fallback_scales=list(CLOSURE_F1_FALLBACK_SCALES),
+    f2_combinations=[list(c) for c in CLOSURE_F2_COMBINATIONS],
+    f3_profile=CLOSURE_F3_PROFILE,
+    f4_profile=CLOSURE_F4_PROFILE,
+    f5_profile=CLOSURE_F5_PROFILE,
+    f5_scan_step=CLOSURE_F5_SCAN_STEP,
+    tie_break_epsilon_s=CLOSURE_TIE_BREAK_EPSILON_S,
+    wall_clock_cap_seconds=CLOSURE_WALL_CLOCK_CAP_SECONDS,
+    pilot_config_sha256=PILOT_CONFIG_SHA256,
+    candidate_schema_version=CANDIDATE_SCHEMA_VERSION,
+)
+CLOSURE_CONFIG_SHA256 = hashlib.sha256(
+    json.dumps(CLOSURE_CONFIG, sort_keys=True).encode("utf-8")
+).hexdigest()
 FORMAL_CONFIG_SHA256 = hashlib.sha256(
     json.dumps(FORMAL_CONFIG, sort_keys=True).encode("utf-8")
 ).hexdigest()
@@ -441,6 +522,467 @@ def _build_stage_e(
         key=lambda e: e.total_union_duration_s, reverse=True,
     )[:E_TOP_K]
     return [e.candidate for e in parents]
+
+
+# === Closure schedule helpers (TASK_006-P2C, contract_version=4) ===
+
+def _candidate_to_dict(c: ThreeBombCandidate) -> dict:
+    return dict(
+        heading_rad=c.heading_rad, speed_mps=c.speed_mps,
+        release_time_1_s=c.release_time_1_s, delay_1_s=c.delay_1_s,
+        release_time_2_s=c.release_time_2_s, delay_2_s=c.delay_2_s,
+        release_time_3_s=c.release_time_3_s, delay_3_s=c.delay_3_s,
+    )
+
+
+def _dict_to_candidate(d: dict) -> ThreeBombCandidate:
+    return ThreeBombCandidate(**d)
+
+
+def _make_closure_candidate(
+    parent: ThreeBombCandidate,
+    var_deltas: dict,
+) -> Optional[ThreeBombCandidate]:
+    """Apply var_deltas (each ±step) on parent. Returns candidate or None
+    if validate_candidate fails."""
+    cand = ThreeBombCandidate(
+        heading_rad=parent.heading_rad + var_deltas.get("heading_rad", 0.0),
+        speed_mps=parent.speed_mps + var_deltas.get("speed_mps", 0.0),
+        release_time_1_s=max(
+            0.0,
+            parent.release_time_1_s + var_deltas.get("release_time_1_s", 0.0),
+        ),
+        delay_1_s=max(
+            0.0,
+            parent.delay_1_s + var_deltas.get("delay_1_s", 0.0),
+        ),
+        release_time_2_s=max(
+            0.0,
+            parent.release_time_2_s + var_deltas.get("release_time_2_s", 0.0),
+        ),
+        delay_2_s=max(
+            0.0,
+            parent.delay_2_s + var_deltas.get("delay_2_s", 0.0),
+        ),
+        release_time_3_s=max(
+            0.0,
+            parent.release_time_3_s + var_deltas.get("release_time_3_s", 0.0),
+        ),
+        delay_3_s=max(
+            0.0,
+            parent.delay_3_s + var_deltas.get("delay_3_s", 0.0),
+        ),
+    )
+    ok, _ = validate_candidate(cand)
+    return cand if ok else None
+
+
+def _make_f1_perturbations(
+    parent: ThreeBombCandidate,
+    seed: int,
+) -> List[ThreeBombCandidate]:
+    """F1: one-variable perturbation. 8 vars × 2 directions = 16 cands.
+
+    For each variable, attempt +step and -step in order. If validate_candidate
+    fails, fall back to ±step * CLOSURE_F1_FALLBACK_SCALES[0] then
+    ±step * CLOSURE_F1_FALLBACK_SCALES[1]. If all three fail for that
+    direction, skip (no candidate produced for that slot).
+    """
+    rng = random.Random(seed * 1009 + 1)
+    out: List[ThreeBombCandidate] = []
+    for var in CLOSURE_F1_VAR_NAMES:
+        step = CLOSURE_F1_SCALES[var]
+        for sign in (+1.0, -1.0):
+            produced = None
+            for scale in (1.0, *CLOSURE_F1_FALLBACK_SCALES):
+                deltas = {v: 0.0 for v in CLOSURE_F1_VAR_NAMES}
+                deltas[var] = sign * step * scale
+                cand = _make_closure_candidate(parent, deltas)
+                if cand is not None:
+                    produced = cand
+                    break
+            if produced is not None:
+                out.append(produced)
+    return out
+
+
+def _make_f2_combinations(
+    parent: ThreeBombCandidate,
+    seed: int,
+) -> List[ThreeBombCandidate]:
+    """F2: 8 coordinate combinations. Each combo applies +step on every
+    member variable simultaneously. direction is + (uniform)."""
+    rng = random.Random(seed * 1009 + 2)
+    out: List[ThreeBombCandidate] = []
+    for combo in CLOSURE_F2_COMBINATIONS:
+        deltas = {v: 0.0 for v in CLOSURE_F1_VAR_NAMES}
+        for v in combo:
+            deltas[v] = CLOSURE_F1_SCALES[v]  # +step
+        cand = _make_closure_candidate(parent, deltas)
+        if cand is not None:
+            out.append(cand)
+    return out
+
+
+def _build_stage_f1_records(
+    parent: ThreeBombCandidate,
+    seed: int,
+    q2_code_sha: str,
+    q3_code_sha: str,
+    start_idx: int,
+) -> List[FormalScheduleRecord]:
+    """Build 16 F1 one-variable perturbation records.
+
+    F1 profile = coarse (0.05) — same as P2 Stage A/B base profile.
+    """
+    cands = _make_f1_perturbations(parent, seed=seed)
+    profile = "coarse"
+    scan_step = PROFILE_SCAN_STEPS[profile]
+    records: List[FormalScheduleRecord] = []
+    idx = start_idx
+    var_dirs = [(v, s) for v in CLOSURE_F1_VAR_NAMES for s in ("+", "-")]
+    for (var, sign), cand in zip(var_dirs, cands):
+        eid = _expected_q3_id(cand, profile, scan_step,
+                               q2_code_sha, q3_code_sha)
+        records.append(FormalScheduleRecord(
+            schedule_index=idx,
+            stage="F1",
+            seed=seed,
+            candidate_source=f"closure_F1_perturb_{var}{sign}",
+            profile=profile,
+            scan_step=scan_step,
+            candidate=cand,
+            expected_q3_evaluation_id=eid,
+        ))
+        idx += 1
+    # If some perturbation failed validation entirely, pad to 16 records with
+    # the parent itself (degenerate). But this is impossible in practice for
+    # well-formed incumbents; guard against it.
+    while len(records) < CLOSURE_F1_BUDGET:
+        cand = parent
+        eid = _expected_q3_id(cand, profile, scan_step,
+                               q2_code_sha, q3_code_sha)
+        records.append(FormalScheduleRecord(
+            schedule_index=idx, stage="F1", seed=seed,
+            candidate_source=(
+                f"closure_F1_degenerate_pad_{len(records)}"),
+            profile=profile, scan_step=scan_step,
+            candidate=cand, expected_q3_evaluation_id=eid,
+        ))
+        idx += 1
+    return records[:CLOSURE_F1_BUDGET]
+
+
+def _build_stage_f2_records(
+    parent: ThreeBombCandidate,
+    seed: int,
+    q2_code_sha: str,
+    q3_code_sha: str,
+    start_idx: int,
+) -> List[FormalScheduleRecord]:
+    """Build 8 F2 coordinate-combination records. Profile = coarse."""
+    cands = _make_f2_combinations(parent, seed=seed)
+    profile = "coarse"
+    scan_step = PROFILE_SCAN_STEPS[profile]
+    records: List[FormalScheduleRecord] = []
+    idx = start_idx
+    for i, cand in enumerate(cands):
+        combo_label = "+".join(CLOSURE_F2_COMBINATIONS[i])
+        eid = _expected_q3_id(cand, profile, scan_step,
+                               q2_code_sha, q3_code_sha)
+        records.append(FormalScheduleRecord(
+            schedule_index=idx, stage="F2", seed=seed,
+            candidate_source=f"closure_F2_combo_{combo_label}",
+            profile=profile, scan_step=scan_step,
+            candidate=cand, expected_q3_evaluation_id=eid,
+        ))
+        idx += 1
+    return records[:CLOSURE_F2_BUDGET]
+
+
+def _select_f3_parents(
+    incumbent_candidate: ThreeBombCandidate,
+    f1_results: List[ThreeBombEvaluation],
+    f2_results: List[ThreeBombEvaluation],
+    top_k: int = 3,
+) -> Tuple[ThreeBombCandidate, List[ThreeBombCandidate]]:
+    """F3 parents: incumbent + top-K challengers from F1+F2 (by duration).
+
+    Returns (incumbent_candidate, [challenger_candidates]).
+    Incumbent is always included as a re-evaluation candidate (Stage F3
+    re-evaluates incumbent at medium profile).
+    """
+    pool = [e for e in f1_results + f2_results
+            if e.valid and e.status == "ok"]
+    pool.sort(key=lambda e: e.total_union_duration_s, reverse=True)
+    seen = set()
+    challengers: List[ThreeBombCandidate] = []
+    for ev in pool:
+        key = _candidate_to_dict(ev.candidate)
+        key_frozen = tuple(sorted(key.items()))
+        if key_frozen in seen:
+            continue
+        seen.add(key_frozen)
+        challengers.append(ev.candidate)
+        if len(challengers) >= top_k:
+            break
+    return incumbent_candidate, challengers
+
+
+def _build_stage_f3_records(
+    incumbent_cand: ThreeBombCandidate,
+    challenger_cands: List[ThreeBombCandidate],
+    seed: int,
+    q2_code_sha: str,
+    q3_code_sha: str,
+    start_idx: int,
+) -> List[FormalScheduleRecord]:
+    """Build 4 F3 medium recheck records: incumbent + up to top-3 challengers.
+
+    Profile = CLOSURE_F3_PROFILE = "medium" (0.02).
+    """
+    profile = CLOSURE_F3_PROFILE
+    scan_step = PROFILE_SCAN_STEPS[profile]
+    parents = [incumbent_cand] + list(challenger_cands)
+    parents = parents[:CLOSURE_F3_BUDGET]
+    records: List[FormalScheduleRecord] = []
+    idx = start_idx
+    for i, cand in enumerate(parents):
+        if i == 0:
+            label = "closure_F3_incumbent_medium"
+        else:
+            label = f"closure_F3_challenger_rank_{i}_medium"
+        eid = _expected_q3_id(cand, profile, scan_step,
+                               q2_code_sha, q3_code_sha)
+        records.append(FormalScheduleRecord(
+            schedule_index=idx, stage="F3", seed=seed,
+            candidate_source=label,
+            profile=profile, scan_step=scan_step,
+            candidate=cand, expected_q3_evaluation_id=eid,
+        ))
+        idx += 1
+    # Pad to F3 budget with incumbent if challenger pool too small
+    while len(records) < CLOSURE_F3_BUDGET:
+        cand = incumbent_cand
+        eid = _expected_q3_id(cand, profile, scan_step,
+                               q2_code_sha, q3_code_sha)
+        records.append(FormalScheduleRecord(
+            schedule_index=idx, stage="F3", seed=seed,
+            candidate_source=f"closure_F3_incumbent_pad_{len(records)}",
+            profile=profile, scan_step=scan_step,
+            candidate=cand, expected_q3_evaluation_id=eid,
+        ))
+        idx += 1
+    return records[:CLOSURE_F3_BUDGET]
+
+
+def _build_stage_f4_records(
+    incumbent_cand: ThreeBombCandidate,
+    challenger_cand: ThreeBombCandidate,
+    seed: int,
+    q2_code_sha: str,
+    q3_code_sha: str,
+    start_idx: int,
+) -> List[FormalScheduleRecord]:
+    """Build 2 F4 fine recheck records: incumbent + best F3 challenger."""
+    profile = CLOSURE_F4_PROFILE
+    scan_step = PROFILE_SCAN_STEPS[profile]
+    parents = [incumbent_cand, challenger_cand]
+    records: List[FormalScheduleRecord] = []
+    idx = start_idx
+    for i, cand in enumerate(parents):
+        label = ("closure_F4_incumbent_fine" if i == 0
+                 else "closure_F4_best_f3_challenger_fine")
+        eid = _expected_q3_id(cand, profile, scan_step,
+                               q2_code_sha, q3_code_sha)
+        records.append(FormalScheduleRecord(
+            schedule_index=idx, stage="F4", seed=seed,
+            candidate_source=label,
+            profile=profile, scan_step=scan_step,
+            candidate=cand, expected_q3_evaluation_id=eid,
+        ))
+        idx += 1
+    return records[:CLOSURE_F4_BUDGET]
+
+
+def _build_stage_f5_records(
+    incumbent_cand: ThreeBombCandidate,
+    challenger_cand: ThreeBombCandidate,
+    seed: int,
+    q2_code_sha: str,
+    q3_code_sha: str,
+    start_idx: int,
+) -> List[FormalScheduleRecord]:
+    """Build 2 F5 high-resolution verification records.
+
+    Profile = "fine" but scan_step = 0.005 (high-resolution override).
+    """
+    profile = CLOSURE_F5_PROFILE
+    scan_step = CLOSURE_F5_SCAN_STEP
+    parents = [incumbent_cand, challenger_cand]
+    records: List[FormalScheduleRecord] = []
+    idx = start_idx
+    for i, cand in enumerate(parents):
+        label = ("closure_F5_incumbent_high_res" if i == 0
+                 else "closure_F5_best_f4_challenger_high_res")
+        eid = _expected_q3_id(cand, profile, scan_step,
+                               q2_code_sha, q3_code_sha)
+        records.append(FormalScheduleRecord(
+            schedule_index=idx, stage="F5", seed=seed,
+            candidate_source=label,
+            profile=profile, scan_step=scan_step,
+            candidate=cand, expected_q3_evaluation_id=eid,
+        ))
+        idx += 1
+    return records[:CLOSURE_F5_BUDGET]
+
+
+def _select_canonical_closure_candidate(
+    incumbent: ThreeBombEvaluation,
+    all_closure_evs: List[ThreeBombEvaluation],
+) -> ThreeBombEvaluation:
+    """Pick canonical closure candidate.
+
+    Rule: max total_union_duration_s; tie-break on evaluation_id
+    lexicographic only when abs(duration_a - duration_b) <= 1e-12.
+    """
+    pool = [e for e in all_closure_evs if e.valid and e.status == "ok"]
+    if not pool:
+        return incumbent
+    pool_sorted = sorted(
+        pool,
+        key=lambda e: (
+            -e.total_union_duration_s,
+            e.q3_evaluation_id,
+        ),
+    )
+    return pool_sorted[0]
+
+
+def _compute_closure_schedule_sha256(
+    records: Sequence[FormalScheduleRecord],
+) -> str:
+    payload = [r.to_dict() for r in records]
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _build_stage_b_records(
+    stage_a_results: List[ThreeBombEvaluation],
+    seed: int,
+    q2_code_sha: str,
+    q3_code_sha: str,
+    start_idx: int,
+) -> List[FormalScheduleRecord]:
+    """Build Stage B records (120) from Stage A real results.
+
+    Bounded coarse refinement. parents = top-12 from Stage A by duration.
+    Sequential stage propagation: only Stage A real results feed in.
+    """
+    profile_b = STAGE_PROFILES["B"]
+    scan_b = PROFILE_SCAN_STEPS[profile_b]
+    b_cands = _build_stage_b(stage_a_results, seed=seed)
+    records: List[FormalScheduleRecord] = []
+    idx = start_idx
+    for i, cand in enumerate(b_cands):
+        eid = _expected_q3_id(cand, profile_b, scan_b, q2_code_sha, q3_code_sha)
+        records.append(FormalScheduleRecord(
+            schedule_index=idx, stage="B", seed=seed,
+            candidate_source=(
+                f"stage_B_bounded_refinement_parent_"
+                f"{i // B_PERTURBATIONS_PER_PARENT}_pert_"
+                f"{i % B_PERTURBATIONS_PER_PARENT}"),
+            profile=profile_b, scan_step=scan_b,
+            candidate=cand, expected_q3_evaluation_id=eid,
+        ))
+        idx += 1
+    return records[:STAGE_B_BUDGET]
+
+
+def _build_stage_c_records(
+    pool: List[ThreeBombEvaluation],
+    seed: int,
+    q2_code_sha: str,
+    q3_code_sha: str,
+    start_idx: int,
+) -> List[FormalScheduleRecord]:
+    """Build Stage C records (24) from Stage A+B real results.
+
+    Medium finalist recheck. Top-12 parents × 2 perturbation sets.
+    """
+    profile_c = STAGE_PROFILES["C"]
+    scan_c = PROFILE_SCAN_STEPS[profile_c]
+    c_cands = _build_stage_c(pool, seed=seed)
+    records: List[FormalScheduleRecord] = []
+    idx = start_idx
+    for i, cand in enumerate(c_cands):
+        eid = _expected_q3_id(cand, profile_c, scan_c, q2_code_sha, q3_code_sha)
+        records.append(FormalScheduleRecord(
+            schedule_index=idx, stage="C", seed=seed,
+            candidate_source=(
+                f"stage_C_medium_finalist_recheck_set_"
+                f"{i % C_PERTURBATION_SETS_PER_PARENT}"),
+            profile=profile_c, scan_step=scan_c,
+            candidate=cand, expected_q3_evaluation_id=eid,
+        ))
+        idx += 1
+    return records[:STAGE_C_BUDGET]
+
+
+def _build_stage_d_records(
+    pool: List[ThreeBombEvaluation],
+    seed: int,
+    q2_code_sha: str,
+    q3_code_sha: str,
+    start_idx: int,
+) -> List[FormalScheduleRecord]:
+    """Build Stage D records (6) from Stage A+B+C real results.
+
+    Fine finalist recheck. Top-6 finalists re-evaluated at fine (0.01).
+    """
+    profile_d = STAGE_PROFILES["D"]
+    scan_d = PROFILE_SCAN_STEPS[profile_d]
+    d_cands = _build_stage_d(pool)
+    records: List[FormalScheduleRecord] = []
+    idx = start_idx
+    for i, cand in enumerate(d_cands):
+        eid = _expected_q3_id(cand, profile_d, scan_d, q2_code_sha, q3_code_sha)
+        records.append(FormalScheduleRecord(
+            schedule_index=idx, stage="D", seed=seed,
+            candidate_source=f"stage_D_fine_finalist_recheck_rank_{i+1}",
+            profile=profile_d, scan_step=scan_d,
+            candidate=cand, expected_q3_evaluation_id=eid,
+        ))
+        idx += 1
+    return records[:STAGE_D_BUDGET]
+
+
+def _build_stage_e_records(
+    pool: List[ThreeBombEvaluation],
+    seed: int,
+    q2_code_sha: str,
+    q3_code_sha: str,
+    start_idx: int,
+) -> List[FormalScheduleRecord]:
+    """Build Stage E records (2) from Stage A+B+C+D real results.
+
+    High-resolution verification. Top-2 finalists at fine (0.005).
+    """
+    profile_e = STAGE_PROFILES["E"]
+    scan_e = STAGE_E_SCAN_STEP
+    e_cands = _build_stage_e(pool)
+    records: List[FormalScheduleRecord] = []
+    idx = start_idx
+    for i, cand in enumerate(e_cands):
+        eid = _expected_q3_id(cand, profile_e, scan_e, q2_code_sha, q3_code_sha)
+        records.append(FormalScheduleRecord(
+            schedule_index=idx, stage="E", seed=seed,
+            candidate_source=f"stage_E_high_resolution_verification_rank_{i+1}",
+            profile=profile_e, scan_step=scan_e,
+            candidate=cand, expected_q3_evaluation_id=eid,
+        ))
+        idx += 1
+    return records[:STAGE_E_BUDGET]
 
 
 # === Build full schedule ===
@@ -733,6 +1275,7 @@ class FormalSearchStats:
     evaluated_q3_ids: List[str] = field(default_factory=list)
     stage_counts: dict = field(default_factory=lambda: {
         "A": 0, "B": 0, "C": 0, "D": 0, "E": 0,
+        "F1": 0, "F2": 0, "F3": 0, "F4": 0, "F5": 0,
     })
     per_profile_timing: dict = field(default_factory=lambda: {
         "coarse": {"count": 0, "durations": []},
@@ -743,9 +1286,28 @@ class FormalSearchStats:
     current_best_evaluation: Optional[ThreeBombEvaluation] = None
     current_best_union_duration: float = 0.0
     elapsed_seconds: float = 0.0
+    # Cumulative wall-clock accounting (P2C directive §十):
+    # previous_elapsed_seconds_total = cumulative from previous run(s),
+    # current_process_elapsed_seconds = (perf_counter() - start_time) within
+    # this process invocation.
+    previous_elapsed_seconds_total: float = 0.0
+    current_process_elapsed_seconds: float = 0.0
+    elapsed_seconds_total: float = 0.0  # previous + current (cumulative)
     status: str = "running"
     next_schedule_index: int = 0
     completed_records: list = field(default_factory=list)
+    # Closure-specific accumulators
+    closure_f1_best: Optional[ThreeBombEvaluation] = None
+    closure_f2_best: Optional[ThreeBombEvaluation] = None
+    closure_f3_best: Optional[ThreeBombEvaluation] = None
+    closure_f4_best: Optional[ThreeBombEvaluation] = None
+    closure_f5_best: Optional[ThreeBombEvaluation] = None
+    # Records built at each closure stage (per-stage, immutable after build)
+    closure_f1_records: list = field(default_factory=list)
+    closure_f2_records: list = field(default_factory=list)
+    closure_f3_records: list = field(default_factory=list)
+    closure_f4_records: list = field(default_factory=list)
+    closure_f5_records: list = field(default_factory=list)
 
 
 def _heartbeat(
@@ -753,11 +1315,14 @@ def _heartbeat(
     start_time: float, cap: int, wall_clock_cap: float,
     stream,
 ) -> None:
-    elapsed = time.perf_counter() - start_time
+    current_process_elapsed = time.perf_counter() - start_time
+    cumulative_elapsed = (
+        stats.previous_elapsed_seconds_total + current_process_elapsed
+    )
     remaining_evals = max(0, cap - stats.completed_q3_evaluations)
-    remaining_wall = max(0.0, wall_clock_cap - elapsed)
-    if stats.completed_q3_evaluations > 0 and elapsed > 0:
-        rate = stats.completed_q3_evaluations / elapsed
+    remaining_wall = max(0.0, wall_clock_cap - cumulative_elapsed)
+    if stats.completed_q3_evaluations > 0 and cumulative_elapsed > 0:
+        rate = stats.completed_q3_evaluations / cumulative_elapsed
         eta = remaining_evals / rate if rate > 0 else float("inf")
     else:
         eta = float("inf")
@@ -767,7 +1332,7 @@ def _heartbeat(
         f"single_bomb_calls={stats.single_bomb_evaluator_calls} "
         f"current_duration={current_duration:.6f} "
         f"best_observed={stats.current_best_union_duration:.6f} "
-        f"elapsed={elapsed:.3f} "
+        f"elapsed={cumulative_elapsed:.3f} "
         f"remaining_budget={remaining_evals} "
         f"remaining_wall_clock={remaining_wall:.3f} "
         f"ETA={eta:.3f}",
@@ -785,12 +1350,21 @@ def _eval_one(
     wall_clock_cap: float,
     cap: int,
 ) -> bool:
-    """Evaluate one record. Return True to continue, False on gate hit."""
-    elapsed = time.perf_counter() - start_time
+    """Evaluate one record. Return True to continue, False on gate hit.
+
+    Wall-clock gate uses CUMULATIVE elapsed (previous + current process),
+    not just process-local. Updates stats.elapsed_seconds_total at exit.
+    """
+    current_process_elapsed = time.perf_counter() - start_time
+    cumulative_elapsed = (
+        stats.previous_elapsed_seconds_total + current_process_elapsed
+    )
+    stats.current_process_elapsed_seconds = current_process_elapsed
+    stats.elapsed_seconds_total = cumulative_elapsed
     if stats.completed_q3_evaluations >= cap:
         stats.status = "EVALUATION_BUDGET_EXHAUSTED"
         return False
-    if elapsed >= wall_clock_cap:
+    if cumulative_elapsed >= wall_clock_cap:
         stats.status = "WALL_CLOCK_GATE_HIT"
         return False
     stats.attempted_candidates += 1
@@ -865,6 +1439,12 @@ def _eval_one(
 
     _heartbeat(rec.stage, stats, ev.total_union_duration_s,
                 start_time, cap, wall_clock_cap, sys.stdout)
+    # refresh cumulative wall-clock tracking at exit
+    stats.current_process_elapsed_seconds = time.perf_counter() - start_time
+    stats.elapsed_seconds_total = (
+        stats.previous_elapsed_seconds_total
+        + stats.current_process_elapsed_seconds
+    )
     return True
 
 
@@ -873,6 +1453,7 @@ def _verify_resume_identity(
     q2_code_sha: str, q3_code_sha: str, q3_search_code_sha: str,
     formal_config_sha: str, candidate_schema_version: int,
 ) -> bool:
+    """P2 7-field resume identity (fail-closed)."""
     return (
         old.get("execution_head_sha") == execution_head_sha
         and old.get("contract_snapshot_sha256") == contract_snapshot_sha256
@@ -881,6 +1462,25 @@ def _verify_resume_identity(
         and old.get("q3_search_code_sha256") == q3_search_code_sha
         and old.get("formal_config_sha256") == formal_config_sha
         and old.get("candidate_schema_version") == candidate_schema_version
+    )
+
+
+def _verify_closure_resume_identity(
+    old: dict, execution_head_sha: str, contract_snapshot_sha256: str,
+    q2_code_sha: str, q3_code_sha: str, q3_search_code_sha: str,
+    closure_config_sha: str, candidate_schema_version: int,
+    closure_schedule_sha: str,
+) -> bool:
+    """P2C 8-field resume identity (fail-closed)."""
+    return (
+        old.get("execution_head_sha") == execution_head_sha
+        and old.get("contract_snapshot_sha256") == contract_snapshot_sha256
+        and old.get("q2_single_bomb_code_sha256") == q2_code_sha
+        and old.get("q3_three_bombs_code_sha256") == q3_code_sha
+        and old.get("q3_search_code_sha256") == q3_search_code_sha
+        and old.get("closure_config_sha256") == closure_config_sha
+        and old.get("candidate_schema_version") == candidate_schema_version
+        and old.get("closure_schedule_sha256") == closure_schedule_sha
     )
 
 
@@ -981,6 +1581,16 @@ def run_formal_search(
         stats.single_bomb_evaluator_calls = old.get(
             "single_bomb_evaluator_calls", 0)
         stats.elapsed_seconds = old.get("elapsed_seconds", 0.0)
+        # Cumulative wall-clock resume: load previous_elapsed_seconds_total
+        # (P2C §十). On resume, current_process_elapsed_seconds starts at 0.
+        # cumulative = previous + current; do NOT reset to 0.
+        stats.previous_elapsed_seconds_total = float(
+            old.get("previous_elapsed_seconds_total",
+                    old.get("elapsed_seconds_total",
+                            old.get("elapsed_seconds", 0.0)))
+        )
+        stats.elapsed_seconds_total = stats.previous_elapsed_seconds_total
+        stats.current_process_elapsed_seconds = 0.0
         old_ids = old.get("evaluated_q3_ids", [])
         stats.evaluated_q3_ids = list(old_ids)
         stats.unique_q3_evaluation_ids = set(old_ids)
@@ -1032,16 +1642,6 @@ def run_formal_search(
         )
         if not ok:
             break
-        # record best_evaluation
-        if stats.current_best_evaluation is not None and \
-                len(stage_a_results) < stats.completed_q3_evaluations:
-            # We re-collect per-record evaluation if we have it. Since _eval_one
-            # doesn't return the ev, we re-derive from the last completed record.
-            # Instead, store the latest ev by reading from completed_records.
-            last = stats.completed_records[-1]
-            if last.get("valid") and last.get("status") == "ok":
-                # construct a minimal stand-in — only need duration here
-                pass
         if rec.schedule_index < len(all_records_phase1) - 1:
             _write_checkpoint(
                 stats, all_records_phase1, execution_head_sha,
@@ -1050,8 +1650,6 @@ def run_formal_search(
             )
 
     # After stage A: derive stage A results from completed records for B/C/D/E
-    # We need a list of ThreeBombEvaluation-like records. For B/C/D/E selection,
-    # we use the duration value from completed_records.
     pool: List[ThreeBombEvaluation] = []
     for rec_dict in stats.completed_records:
         if rec_dict.get("stage") == "A" and rec_dict.get("valid") \
@@ -1059,8 +1657,6 @@ def run_formal_search(
             dur = float(rec_dict.get("total_union_duration_s", 0.0))
             if dur <= 0:
                 continue
-            # We need a ThreeBombEvaluation object; reconstruct minimally
-            # from candidate + duration.
             cand_payload = next(
                 (r for r in all_records_phase1
                  if r.schedule_index == rec_dict["schedule_index"]),
@@ -1082,17 +1678,198 @@ def run_formal_search(
                 single_bomb_evaluator_calls=3,
             )
             pool.append(fake_ev)
+    stage_a_results = list(pool)
+
+    # === Sequential stage propagation (P2C directive §八) ===
+    # After Stage A completes, build Stage B records from Stage A
+    # real results. Run Stage B. Then build Stage C from Stage A+B
+    # real results. Run Stage C. Etc. Each stage's records are built
+    # only after the previous stage's evaluation has fully completed.
+    seed_for_bcde = seeds[0] if seeds else 2025
 
     if stats.status == "running" and stats.completed_q3_evaluations < cap:
-        # 4. Build B/C/D/E records
-        bcde_records = _build_bcde_records(
-            pool, seed_for_bcde=seeds[0] if seeds else 2025,
+        # === Stage B ===
+        b_records = _build_stage_b_records(
+            stage_a_results, seed=seed_for_bcde,
             q2_code_sha=q2_code_sha, q3_code_sha=q3_code_sha,
             start_idx=len(all_records_phase1),
         )
-        all_records_phase1.extend(bcde_records)
-        # 5. Run B/C/D/E
-        for rec in bcde_records[stats.next_schedule_index - len(stage_a_records):]:
+        all_records_phase1.extend(b_records)
+        print(
+            f"[FORMAL] stage B ready: {len(b_records)} records, "
+            f"built from {len(stage_a_results)} Stage A results",
+            flush=True,
+        )
+        for rec in b_records:
+            ok = _eval_one(
+                rec, evaluator, q2_code_sha, q3_code_sha,
+                stats, start_time, wall_clock_cap, cap,
+            )
+            if not ok:
+                break
+            _write_checkpoint(
+                stats, all_records_phase1, execution_head_sha,
+                contract_snapshot_sha256, q2_code_sha, q3_code_sha,
+                q3_search_code_sha, checkpoint_path,
+            )
+
+    # Refresh pool with Stage A+B real results
+    pool_ab = list(pool)
+    for rec_dict in stats.completed_records:
+        if rec_dict.get("stage") in ("A", "B") and rec_dict.get("valid") \
+                and rec_dict.get("status") == "ok":
+            dur = float(rec_dict.get("total_union_duration_s", 0.0))
+            if dur <= 0:
+                continue
+            cand_payload = next(
+                (r for r in all_records_phase1
+                 if r.schedule_index == rec_dict["schedule_index"]),
+                None,
+            )
+            if cand_payload is None:
+                continue
+            cand = cand_payload.candidate
+            fake_ev = ThreeBombEvaluation(
+                candidate=cand, valid=True, status="ok",
+                reason="rehydrated_from_completed_records",
+                bomb_evaluations=(None, None, None),
+                union_intervals=(), total_union_duration_s=dur,
+                sample_level=rec_dict.get("profile", "coarse"),
+                scan_step_s=rec_dict.get("scan_step", 0.05),
+                elapsed_s=rec_dict.get("elapsed_seconds", 0.0),
+                q3_evaluation_id=rec_dict.get(
+                    "actual_q3_evaluation_id", ""),
+                single_bomb_evaluator_calls=3,
+            )
+            pool_ab.append(fake_ev)
+
+    if stats.status == "running" and stats.completed_q3_evaluations < cap:
+        # === Stage C ===
+        c_records = _build_stage_c_records(
+            pool_ab, seed=seed_for_bcde + 1,
+            q2_code_sha=q2_code_sha, q3_code_sha=q3_code_sha,
+            start_idx=len(all_records_phase1),
+        )
+        all_records_phase1.extend(c_records)
+        print(
+            f"[FORMAL] stage C ready: {len(c_records)} records, "
+            f"built from {len(pool_ab)} Stage A+B results",
+            flush=True,
+        )
+        for rec in c_records:
+            ok = _eval_one(
+                rec, evaluator, q2_code_sha, q3_code_sha,
+                stats, start_time, wall_clock_cap, cap,
+            )
+            if not ok:
+                break
+            _write_checkpoint(
+                stats, all_records_phase1, execution_head_sha,
+                contract_snapshot_sha256, q2_code_sha, q3_code_sha,
+                q3_search_code_sha, checkpoint_path,
+            )
+
+    # Refresh pool with Stage A+B+C real results
+    pool_abc = list(pool_ab)
+    for rec_dict in stats.completed_records:
+        if rec_dict.get("stage") in ("A", "B", "C") and rec_dict.get("valid") \
+                and rec_dict.get("status") == "ok":
+            dur = float(rec_dict.get("total_union_duration_s", 0.0))
+            if dur <= 0:
+                continue
+            cand_payload = next(
+                (r for r in all_records_phase1
+                 if r.schedule_index == rec_dict["schedule_index"]),
+                None,
+            )
+            if cand_payload is None:
+                continue
+            cand = cand_payload.candidate
+            fake_ev = ThreeBombEvaluation(
+                candidate=cand, valid=True, status="ok",
+                reason="rehydrated_from_completed_records",
+                bomb_evaluations=(None, None, None),
+                union_intervals=(), total_union_duration_s=dur,
+                sample_level=rec_dict.get("profile", "coarse"),
+                scan_step_s=rec_dict.get("scan_step", 0.05),
+                elapsed_s=rec_dict.get("elapsed_seconds", 0.0),
+                q3_evaluation_id=rec_dict.get(
+                    "actual_q3_evaluation_id", ""),
+                single_bomb_evaluator_calls=3,
+            )
+            pool_abc.append(fake_ev)
+
+    if stats.status == "running" and stats.completed_q3_evaluations < cap:
+        # === Stage D ===
+        d_records = _build_stage_d_records(
+            pool_abc, seed=seed_for_bcde + 2,
+            q2_code_sha=q2_code_sha, q3_code_sha=q3_code_sha,
+            start_idx=len(all_records_phase1),
+        )
+        all_records_phase1.extend(d_records)
+        print(
+            f"[FORMAL] stage D ready: {len(d_records)} records, "
+            f"built from {len(pool_abc)} Stage A+B+C results",
+            flush=True,
+        )
+        for rec in d_records:
+            ok = _eval_one(
+                rec, evaluator, q2_code_sha, q3_code_sha,
+                stats, start_time, wall_clock_cap, cap,
+            )
+            if not ok:
+                break
+            _write_checkpoint(
+                stats, all_records_phase1, execution_head_sha,
+                contract_snapshot_sha256, q2_code_sha, q3_code_sha,
+                q3_search_code_sha, checkpoint_path,
+            )
+
+    # Refresh pool with Stage A+B+C+D real results
+    pool_abcd = list(pool_abc)
+    for rec_dict in stats.completed_records:
+        if rec_dict.get("stage") in ("A", "B", "C", "D") \
+                and rec_dict.get("valid") \
+                and rec_dict.get("status") == "ok":
+            dur = float(rec_dict.get("total_union_duration_s", 0.0))
+            if dur <= 0:
+                continue
+            cand_payload = next(
+                (r for r in all_records_phase1
+                 if r.schedule_index == rec_dict["schedule_index"]),
+                None,
+            )
+            if cand_payload is None:
+                continue
+            cand = cand_payload.candidate
+            fake_ev = ThreeBombEvaluation(
+                candidate=cand, valid=True, status="ok",
+                reason="rehydrated_from_completed_records",
+                bomb_evaluations=(None, None, None),
+                union_intervals=(), total_union_duration_s=dur,
+                sample_level=rec_dict.get("profile", "coarse"),
+                scan_step_s=rec_dict.get("scan_step", 0.05),
+                elapsed_s=rec_dict.get("elapsed_seconds", 0.0),
+                q3_evaluation_id=rec_dict.get(
+                    "actual_q3_evaluation_id", ""),
+                single_bomb_evaluator_calls=3,
+            )
+            pool_abcd.append(fake_ev)
+
+    if stats.status == "running" and stats.completed_q3_evaluations < cap:
+        # === Stage E ===
+        e_records = _build_stage_e_records(
+            pool_abcd, seed=seed_for_bcde + 3,
+            q2_code_sha=q2_code_sha, q3_code_sha=q3_code_sha,
+            start_idx=len(all_records_phase1),
+        )
+        all_records_phase1.extend(e_records)
+        print(
+            f"[FORMAL] stage E ready: {len(e_records)} records, "
+            f"built from {len(pool_abcd)} Stage A+B+C+D results",
+            flush=True,
+        )
+        for rec in e_records:
             ok = _eval_one(
                 rec, evaluator, q2_code_sha, q3_code_sha,
                 stats, start_time, wall_clock_cap, cap,
@@ -1107,7 +1884,12 @@ def run_formal_search(
 
     if stats.status == "running":
         stats.status = "pilot_complete"
-    stats.elapsed_seconds = time.perf_counter() - start_time
+    stats.current_process_elapsed_seconds = time.perf_counter() - start_time
+    stats.elapsed_seconds_total = (
+        stats.previous_elapsed_seconds_total
+        + stats.current_process_elapsed_seconds
+    )
+    stats.elapsed_seconds = stats.current_process_elapsed_seconds
 
     return _build_formal_summary(
         stats, all_records_phase1,
@@ -1179,9 +1961,17 @@ def _write_checkpoint(
         "evaluated_q3_ids": list(stats.evaluated_q3_ids),
         "stage_counts": dict(stats.stage_counts),
         "elapsed_seconds": stats.elapsed_seconds,
-        "elapsed_seconds_total": time.perf_counter() - (
-            start_time_for_total() if False else 0
+        # Cumulative wall-clock accounting (P2C §十):
+        # previous_elapsed_seconds_total = cumulative from earlier runs
+        # current_process_elapsed_seconds = within-process perf_counter delta
+        # elapsed_seconds_total = previous + current (cumulative)
+        "previous_elapsed_seconds_total": (
+            stats.previous_elapsed_seconds_total
         ),
+        "current_process_elapsed_seconds": (
+            stats.current_process_elapsed_seconds
+        ),
+        "elapsed_seconds_total": stats.elapsed_seconds_total,
         "next_schedule_index": stats.next_schedule_index,
         "completed_records": list(stats.completed_records),
         "current_best_candidate": best_cand_payload,
@@ -1312,6 +2102,739 @@ def _build_formal_summary(
     return summary
 
 
+# === Candidate closure runner (TASK_006-P2C, contract_version=4) ===
+
+def _write_closure_checkpoint(
+    stats: FormalSearchStats, all_records: List[FormalScheduleRecord],
+    execution_head_sha: str, contract_snapshot_sha256: str,
+    q2_code_sha: str, q3_code_sha: str, q3_search_code_sha: str,
+    closure_schedule_sha256: str,
+    checkpoint_path: str,
+) -> None:
+    """Atomic write closure checkpoint (8-field identity + cumulative wall-clock)."""
+    best_cand_payload = None
+    best_ev_payload = None
+    if stats.current_best_candidate is not None:
+        c = stats.current_best_candidate
+        best_cand_payload = {
+            "heading_rad": c.heading_rad, "speed_mps": c.speed_mps,
+            "release_time_1_s": c.release_time_1_s, "delay_1_s": c.delay_1_s,
+            "release_time_2_s": c.release_time_2_s, "delay_2_s": c.delay_2_s,
+            "release_time_3_s": c.release_time_3_s, "delay_3_s": c.delay_3_s,
+        }
+    if stats.current_best_evaluation is not None:
+        ev = stats.current_best_evaluation
+        best_ev_payload = {
+            "valid": ev.valid, "status": ev.status, "reason": ev.reason,
+            "total_union_duration_s": ev.total_union_duration_s,
+            "union_intervals": [list(iv) for iv in ev.union_intervals],
+            "per_bomb_intervals": [
+                [list(iv) for iv in ev.bomb_evaluations[0].intervals],
+                [list(iv) for iv in ev.bomb_evaluations[1].intervals],
+                [list(iv) for iv in ev.bomb_evaluations[2].intervals],
+            ] if ev.bomb_evaluations[0] is not None else [[], [], []],
+            "per_bomb_duration_s": [
+                ev.bomb_evaluations[0].total_duration_s,
+                ev.bomb_evaluations[1].total_duration_s,
+                ev.bomb_evaluations[2].total_duration_s,
+            ] if ev.bomb_evaluations[0] is not None else [0.0, 0.0, 0.0],
+            "sample_level": ev.sample_level, "scan_step_s": ev.scan_step_s,
+            "q3_evaluation_id": ev.q3_evaluation_id,
+            "single_bomb_evaluator_calls": ev.single_bomb_evaluator_calls,
+        }
+    else:
+        best_ev_payload = {
+            "total_union_duration_s": stats.current_best_union_duration,
+        }
+    payload = {
+        "checkpoint_schema_version": CLOSURE_CHECKPOINT_SCHEMA_VERSION,
+        "task_id": "TASK_006",
+        "phase_id": "TASK_006-P2C",
+        "contract_version": 4,
+        "candidate_schema_version": CANDIDATE_SCHEMA_VERSION,
+        "closure_config_sha256": CLOSURE_CONFIG_SHA256,
+        "closure_schedule_sha256": closure_schedule_sha256,
+        "execution_head_sha": execution_head_sha,
+        "contract_snapshot_sha256": contract_snapshot_sha256,
+        "q2_single_bomb_code_sha256": q2_code_sha,
+        "q3_three_bombs_code_sha256": q3_code_sha,
+        "q3_search_code_sha256": q3_search_code_sha,
+        "completed_q3_evaluations": stats.completed_q3_evaluations,
+        "attempted_candidates": stats.attempted_candidates,
+        "accepted_candidates": stats.accepted_candidates,
+        "rejected_candidates": stats.rejected_candidates,
+        "system_error_count": stats.system_error_count,
+        "single_bomb_evaluator_calls": stats.single_bomb_evaluator_calls,
+        "evaluated_q3_ids": list(stats.evaluated_q3_ids),
+        "stage_counts": dict(stats.stage_counts),
+        "elapsed_seconds": stats.elapsed_seconds,
+        "previous_elapsed_seconds_total": (
+            stats.previous_elapsed_seconds_total
+        ),
+        "current_process_elapsed_seconds": (
+            stats.current_process_elapsed_seconds
+        ),
+        "elapsed_seconds_total": stats.elapsed_seconds_total,
+        "next_schedule_index": stats.next_schedule_index,
+        "completed_records": list(stats.completed_records),
+        "current_best_candidate": best_cand_payload,
+        "current_best_evaluation_payload": best_ev_payload,
+        "status": stats.status,
+    }
+    _atomic_write_json(checkpoint_path, payload)
+
+
+def run_candidate_closure(
+    incumbent_payload: dict,
+    execution_head_sha: str,
+    contract_snapshot_sha256: str,
+    output_dir: str = "outputs/q3",
+    checkpoint_path: str = "work/q3_candidate_closure/checkpoint.json",
+    wall_clock_cap: float = CLOSURE_WALL_CLOCK_CAP_SECONDS,
+    evaluator: Optional[Callable] = None,
+    fake_dry_run: bool = False,
+) -> dict:
+    """Run Q3 candidate closure (TASK_006-P2C, 32 evals / 600 s).
+
+    Inputs:
+      - incumbent_payload: dict with 8 fields (heading_rad, speed_mps,
+        release_time_1_s, delay_1_s, release_time_2_s, delay_2_s,
+        release_time_3_s, delay_3_s) — original P2 incumbent at coarse
+        (0.05) profile.
+
+    Sequential stage propagation (F1→F2→F3→F4→F5). Each stage's records
+    are built only after the previous stage's evaluation has fully completed.
+
+    8-field resume identity (fail-closed). Cumulative wall-clock tracking.
+
+    Returns closure summary dict (also written to
+    outputs/q3/q3_candidate_closure_summary.json).
+    """
+    if evaluator is None:
+        if fake_dry_run:
+            evaluator = fake_evaluator_for_tests
+        else:
+            evaluator = lambda cand, prof, ss: evaluate_three_bomb_strategy(
+                cand, sample_level=prof, scan_step=ss,
+                code_identity_sha256=compute_q2_single_bomb_code_sha256(),
+                pilot_config_sha256=PILOT_CONFIG_SHA256,
+            )
+
+    incumbent_candidate = _dict_to_candidate(incumbent_payload)
+    ok, reason = validate_candidate(incumbent_candidate)
+    if not ok:
+        raise ValueError(
+            f"incumbent candidate invalid: {reason}"
+        )
+
+    q2_code_sha = compute_q2_single_bomb_code_sha256()
+    q3_code_sha = compute_q3_three_bombs_code_sha256()
+    q3_search_code_sha = compute_q3_search_code_sha256()
+
+    cap = CLOSURE_TOTAL_BUDGET
+
+    stats = FormalSearchStats()
+    start_time = time.perf_counter()
+
+    # Compute F1 records first (these are deterministic and can be built
+    # up-front without depending on prior stage results). F1 SHA enters the
+    # resume identity. F2 records are also deterministic.
+    f1_records = _build_stage_f1_records(
+        incumbent_candidate, seed=2025,
+        q2_code_sha=q2_code_sha, q3_code_sha=q3_code_sha,
+        start_idx=0,
+    )
+    f2_records = _build_stage_f2_records(
+        incumbent_candidate, seed=2026,
+        q2_code_sha=q2_code_sha, q3_code_sha=q3_code_sha,
+        start_idx=len(f1_records),
+    )
+    # Build pre-known portion of schedule for SHA computation
+    pre_known_records = list(f1_records) + list(f2_records)
+    # F3/F4/F5 will be appended at runtime; their contribution to SHA is
+    # fixed once built (per-stage immutability).
+    pre_known_sha = _compute_closure_schedule_sha256(pre_known_records)
+    # closure_schedule_sha256 is fixed as the SHA of the deterministic
+    # F1+F2 portion; F3/F4/F5 records are appended during run and their
+    # SHA contribution is checked via per-stage immutability (each stage's
+    # records are built once and never mutated).
+    closure_schedule_sha256 = pre_known_sha
+
+    # Resume check (8-field identity)
+    if os.path.exists(checkpoint_path):
+        try:
+            with open(checkpoint_path, "r", encoding="utf-8") as f:
+                old = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            stats.status = "CHECKPOINT_LOAD_ERROR"
+            print(
+                f"[CLOSURE] checkpoint load error ({e!r}); "
+                f"fail-closed — exit 2",
+                file=sys.stderr, flush=True,
+            )
+            return _build_candidate_closure_summary(
+                stats, pre_known_records,
+                start_time, execution_head_sha,
+                contract_snapshot_sha256, q2_code_sha, q3_code_sha,
+                q3_search_code_sha, output_dir, checkpoint_path,
+                closure_schedule_sha256, incumbent_payload,
+            )
+        if not _verify_closure_resume_identity(
+            old, execution_head_sha, contract_snapshot_sha256,
+            q2_code_sha, q3_code_sha, q3_search_code_sha,
+            CLOSURE_CONFIG_SHA256, CANDIDATE_SCHEMA_VERSION,
+            closure_schedule_sha256,
+        ):
+            stats.status = "RESUME_IDENTITY_MISMATCH"
+            print(
+                f"[CLOSURE] checkpoint identity mismatch — refusing resume",
+                file=sys.stderr, flush=True,
+            )
+            return _build_candidate_closure_summary(
+                stats, pre_known_records,
+                start_time, execution_head_sha,
+                contract_snapshot_sha256, q2_code_sha, q3_code_sha,
+                q3_search_code_sha, output_dir, checkpoint_path,
+                closure_schedule_sha256, incumbent_payload,
+            )
+        # identity OK: restore stats (cumulative)
+        print(
+            f"[CLOSURE] resuming from checkpoint "
+            f"(next_schedule_index={old.get('next_schedule_index', 0)}, "
+            f"completed={old.get('completed_q3_evaluations', 0)}, "
+            f"status={old.get('status')})",
+            flush=True,
+        )
+        stats.completed_q3_evaluations = old.get("completed_q3_evaluations", 0)
+        stats.attempted_candidates = old.get("attempted_candidates", 0)
+        stats.accepted_candidates = old.get("accepted_candidates", 0)
+        stats.rejected_candidates = old.get("rejected_candidates", 0)
+        stats.system_error_count = old.get("system_error_count", 0)
+        stats.single_bomb_evaluator_calls = old.get(
+            "single_bomb_evaluator_calls", 0)
+        stats.elapsed_seconds = old.get("elapsed_seconds", 0.0)
+        stats.previous_elapsed_seconds_total = float(
+            old.get("previous_elapsed_seconds_total",
+                    old.get("elapsed_seconds_total", 0.0))
+        )
+        stats.current_process_elapsed_seconds = 0.0
+        stats.elapsed_seconds_total = stats.previous_elapsed_seconds_total
+        old_ids = old.get("evaluated_q3_ids", [])
+        stats.evaluated_q3_ids = list(old_ids)
+        stats.unique_q3_evaluation_ids = set(old_ids)
+        old_stage_counts = old.get("stage_counts", {})
+        for k in stats.stage_counts:
+            stats.stage_counts[k] = int(old_stage_counts.get(k, 0))
+        stats.completed_records = list(old.get("completed_records", []))
+        stats.next_schedule_index = int(old.get("next_schedule_index", 0))
+        old_best_payload = old.get("current_best_candidate", None)
+        old_best_ev_payload = old.get("current_best_evaluation_payload", None)
+        if old_best_payload and old_best_ev_payload:
+            stats.current_best_candidate = ThreeBombCandidate(**old_best_payload)
+            stats.current_best_union_duration = float(
+                old_best_ev_payload.get("total_union_duration_s", 0.0))
+        if old.get("status") in (
+            "pilot_complete", "EVALUATION_BUDGET_EXHAUSTED",
+            "WALL_CLOCK_GATE_HIT", "RUN_SYSTEM_ERROR",
+            "RESUME_IDENTITY_MISMATCH", "CHECKPOINT_LOAD_ERROR",
+        ):
+            stats.status = old["status"]
+            print(
+                f"[CLOSURE] previous run already terminated "
+                f"(status={stats.status}); emitting summary only",
+                flush=True,
+            )
+            return _build_candidate_closure_summary(
+                stats, pre_known_records,
+                start_time, execution_head_sha,
+                contract_snapshot_sha256, q2_code_sha, q3_code_sha,
+                q3_search_code_sha, output_dir, checkpoint_path,
+                closure_schedule_sha256, incumbent_payload,
+            )
+
+    # Establish incumbent baseline (cheap placeholder for F3/F4/F5 parent
+    # selection). NOT counted in the 32-ev budget. F3's first record IS
+    # the incumbent evaluation at medium profile.
+    incumbent_baseline_ev: Optional[ThreeBombEvaluation] = None
+
+    # === F1 (16 evals) ===
+    if (stats.status == "running"
+            and stats.completed_q3_evaluations < cap):
+        for rec in f1_records:
+            ok = _eval_one(
+                rec, evaluator, q2_code_sha, q3_code_sha,
+                stats, start_time, wall_clock_cap, cap,
+            )
+            if not ok:
+                break
+            _write_closure_checkpoint(
+                stats, pre_known_records, execution_head_sha,
+                contract_snapshot_sha256, q2_code_sha, q3_code_sha,
+                q3_search_code_sha, closure_schedule_sha256,
+                checkpoint_path,
+            )
+        # Track F1 best
+        f1_top = sorted(
+            [r for r in stats.completed_records
+             if r.get("stage") == "F1" and r.get("valid")
+             and r.get("status") == "ok"],
+            key=lambda r: r.get("total_union_duration_s", 0.0),
+            reverse=True,
+        )
+        if f1_top:
+            f1_best_dur = float(f1_top[0]["total_union_duration_s"])
+            stats.closure_f1_best = (
+                stats.current_best_evaluation
+                if (stats.current_best_union_duration >= f1_best_dur)
+                else _make_baseline_eval_from_record(f1_top[0], incumbent_candidate)
+            )
+
+    # === F2 (8 evals) ===
+    if (stats.status == "running"
+            and stats.completed_q3_evaluations < cap):
+        for rec in f2_records:
+            ok = _eval_one(
+                rec, evaluator, q2_code_sha, q3_code_sha,
+                stats, start_time, wall_clock_cap, cap,
+            )
+            if not ok:
+                break
+            _write_closure_checkpoint(
+                stats, pre_known_records, execution_head_sha,
+                contract_snapshot_sha256, q2_code_sha, q3_code_sha,
+                q3_search_code_sha, closure_schedule_sha256,
+                checkpoint_path,
+            )
+
+    # Refresh F1+F2 results list for F3 parent selection
+    f1_f2_records = [r for r in stats.completed_records
+                     if r.get("stage") in ("F1", "F2")
+                     and r.get("valid") and r.get("status") == "ok"]
+    f1_f2_pool: List[ThreeBombEvaluation] = []
+    for rec_dict in f1_f2_records:
+        dur = float(rec_dict.get("total_union_duration_s", 0.0))
+        if dur <= 0:
+            continue
+        cand_payload = next(
+            (r for r in pre_known_records
+             if r.schedule_index == rec_dict["schedule_index"]),
+            None,
+        )
+        if cand_payload is None:
+            continue
+        cand = cand_payload.candidate
+        fake_ev = ThreeBombEvaluation(
+            candidate=cand, valid=True, status="ok",
+            reason="rehydrated_from_completed_records",
+            bomb_evaluations=(None, None, None),
+            union_intervals=(), total_union_duration_s=dur,
+            sample_level=rec_dict.get("profile", "coarse"),
+            scan_step_s=rec_dict.get("scan_step", 0.05),
+            elapsed_s=rec_dict.get("elapsed_seconds", 0.0),
+            q3_evaluation_id=rec_dict.get("actual_q3_evaluation_id", ""),
+            single_bomb_evaluator_calls=3,
+        )
+        f1_f2_pool.append(fake_ev)
+    # Add incumbent baseline evaluation
+    if incumbent_baseline_ev is not None:
+        f1_f2_pool.append(incumbent_baseline_ev)
+
+    # === F3 (4 evals: incumbent + top-3 from F1+F2) ===
+    # Build F3 records now from real F1/F2 results
+    if (stats.status == "running"
+            and stats.completed_q3_evaluations < cap):
+        incumbent_cand, challenger_cands = _select_f3_parents(
+            incumbent_candidate, f1_f2_pool, [],
+            top_k=3,
+        )
+        f3_records = _build_stage_f3_records(
+            incumbent_cand, challenger_cands, seed=2027,
+            q2_code_sha=q2_code_sha, q3_code_sha=q3_code_sha,
+            start_idx=len(pre_known_records),
+        )
+        pre_known_records.extend(f3_records)
+        stats.closure_f3_records = list(f3_records)
+        for rec in f3_records:
+            ok = _eval_one(
+                rec, evaluator, q2_code_sha, q3_code_sha,
+                stats, start_time, wall_clock_cap, cap,
+            )
+            if not ok:
+                break
+            _write_closure_checkpoint(
+                stats, pre_known_records, execution_head_sha,
+                contract_snapshot_sha256, q2_code_sha, q3_code_sha,
+                q3_search_code_sha, closure_schedule_sha256,
+                checkpoint_path,
+            )
+
+    # === F4 (2 evals: incumbent + best F3 challenger) ===
+    f3_records_run = [r for r in stats.completed_records
+                      if r.get("stage") == "F3"
+                      and r.get("valid") and r.get("status") == "ok"]
+    f3_pool: List[ThreeBombEvaluation] = []
+    for rec_dict in f3_records_run:
+        dur = float(rec_dict.get("total_union_duration_s", 0.0))
+        if dur <= 0:
+            continue
+        cand_payload = next(
+            (r for r in pre_known_records
+             if r.schedule_index == rec_dict["schedule_index"]),
+            None,
+        )
+        if cand_payload is None:
+            continue
+        cand = cand_payload.candidate
+        fake_ev = ThreeBombEvaluation(
+            candidate=cand, valid=True, status="ok",
+            reason="rehydrated_from_completed_records",
+            bomb_evaluations=(None, None, None),
+            union_intervals=(), total_union_duration_s=dur,
+            sample_level=rec_dict.get("profile", "coarse"),
+            scan_step_s=rec_dict.get("scan_step", 0.05),
+            elapsed_s=rec_dict.get("elapsed_seconds", 0.0),
+            q3_evaluation_id=rec_dict.get("actual_q3_evaluation_id", ""),
+            single_bomb_evaluator_calls=3,
+        )
+        f3_pool.append(fake_ev)
+    if (stats.status == "running"
+            and stats.completed_q3_evaluations < cap):
+        # F4 challenger = best non-incumbent F3 result
+        f3_pool_sorted = sorted(
+            f3_pool, key=lambda e: e.total_union_duration_s, reverse=True)
+        f4_challenger_cand = (
+            f3_pool_sorted[0].candidate if f3_pool_sorted
+            else incumbent_candidate
+        )
+        f4_records = _build_stage_f4_records(
+            incumbent_candidate, f4_challenger_cand, seed=2028,
+            q2_code_sha=q2_code_sha, q3_code_sha=q3_code_sha,
+            start_idx=len(pre_known_records),
+        )
+        pre_known_records.extend(f4_records)
+        stats.closure_f4_records = list(f4_records)
+        for rec in f4_records:
+            ok = _eval_one(
+                rec, evaluator, q2_code_sha, q3_code_sha,
+                stats, start_time, wall_clock_cap, cap,
+            )
+            if not ok:
+                break
+            _write_closure_checkpoint(
+                stats, pre_known_records, execution_head_sha,
+                contract_snapshot_sha256, q2_code_sha, q3_code_sha,
+                q3_search_code_sha, closure_schedule_sha256,
+                checkpoint_path,
+            )
+
+    # === F5 (2 evals: incumbent + best F4 challenger) ===
+    f4_records_run = [r for r in stats.completed_records
+                      if r.get("stage") == "F4"
+                      and r.get("valid") and r.get("status") == "ok"]
+    f4_pool: List[ThreeBombEvaluation] = []
+    for rec_dict in f4_records_run:
+        dur = float(rec_dict.get("total_union_duration_s", 0.0))
+        if dur <= 0:
+            continue
+        cand_payload = next(
+            (r for r in pre_known_records
+             if r.schedule_index == rec_dict["schedule_index"]),
+            None,
+        )
+        if cand_payload is None:
+            continue
+        cand = cand_payload.candidate
+        fake_ev = ThreeBombEvaluation(
+            candidate=cand, valid=True, status="ok",
+            reason="rehydrated_from_completed_records",
+            bomb_evaluations=(None, None, None),
+            union_intervals=(), total_union_duration_s=dur,
+            sample_level=rec_dict.get("profile", "fine"),
+            scan_step_s=rec_dict.get("scan_step", 0.01),
+            elapsed_s=rec_dict.get("elapsed_seconds", 0.0),
+            q3_evaluation_id=rec_dict.get("actual_q3_evaluation_id", ""),
+            single_bomb_evaluator_calls=3,
+        )
+        f4_pool.append(fake_ev)
+    if (stats.status == "running"
+            and stats.completed_q3_evaluations < cap):
+        f4_pool_sorted = sorted(
+            f4_pool, key=lambda e: e.total_union_duration_s, reverse=True)
+        f5_challenger_cand = (
+            f4_pool_sorted[0].candidate if f4_pool_sorted
+            else incumbent_candidate
+        )
+        f5_records = _build_stage_f5_records(
+            incumbent_candidate, f5_challenger_cand, seed=2029,
+            q2_code_sha=q2_code_sha, q3_code_sha=q3_code_sha,
+            start_idx=len(pre_known_records),
+        )
+        pre_known_records.extend(f5_records)
+        stats.closure_f5_records = list(f5_records)
+        for rec in f5_records:
+            ok = _eval_one(
+                rec, evaluator, q2_code_sha, q3_code_sha,
+                stats, start_time, wall_clock_cap, cap,
+            )
+            if not ok:
+                break
+            _write_closure_checkpoint(
+                stats, pre_known_records, execution_head_sha,
+                contract_snapshot_sha256, q2_code_sha, q3_code_sha,
+                q3_search_code_sha, closure_schedule_sha256,
+                checkpoint_path,
+            )
+
+    # Final canonical selection
+    all_evs = []
+    for rec_dict in stats.completed_records:
+        if rec_dict.get("valid") and rec_dict.get("status") == "ok":
+            dur = float(rec_dict.get("total_union_duration_s", 0.0))
+            if dur <= 0:
+                continue
+            cand_payload = next(
+                (r for r in pre_known_records
+                 if r.schedule_index == rec_dict["schedule_index"]),
+                None,
+            )
+            if cand_payload is None:
+                continue
+            cand = cand_payload.candidate
+            fake_ev = ThreeBombEvaluation(
+                candidate=cand, valid=True, status="ok",
+                reason=rec_dict.get("reason", ""),
+                bomb_evaluations=(None, None, None),
+                union_intervals=(), total_union_duration_s=dur,
+                sample_level=rec_dict.get("profile", "coarse"),
+                scan_step_s=rec_dict.get("scan_step", 0.05),
+                elapsed_s=rec_dict.get("elapsed_seconds", 0.0),
+                q3_evaluation_id=rec_dict.get("actual_q3_evaluation_id", ""),
+                single_bomb_evaluator_calls=3,
+            )
+            all_evs.append(fake_ev)
+    canonical_ev = _select_canonical_closure_candidate(
+        ThreeBombEvaluation(
+            candidate=incumbent_candidate, valid=True, status="ok",
+            reason="incumbent_anchor",
+            bomb_evaluations=(None, None, None),
+            union_intervals=(),
+            total_union_duration_s=0.0,
+            sample_level="coarse", scan_step_s=0.05,
+            elapsed_s=0.0, q3_evaluation_id="",
+            single_bomb_evaluator_calls=3,
+        ), all_evs)
+    if canonical_ev is not None:
+        stats.current_best_evaluation = canonical_ev
+        stats.current_best_candidate = canonical_ev.candidate
+        stats.current_best_union_duration = canonical_ev.total_union_duration_s
+
+    if stats.status == "running":
+        stats.status = "pilot_complete"
+    stats.current_process_elapsed_seconds = time.perf_counter() - start_time
+    stats.elapsed_seconds_total = (
+        stats.previous_elapsed_seconds_total
+        + stats.current_process_elapsed_seconds
+    )
+    stats.elapsed_seconds = stats.current_process_elapsed_seconds
+
+    return _build_candidate_closure_summary(
+        stats, pre_known_records,
+        start_time, execution_head_sha,
+        contract_snapshot_sha256, q2_code_sha, q3_code_sha,
+        q3_search_code_sha, output_dir, checkpoint_path,
+        closure_schedule_sha256, incumbent_payload,
+    )
+
+
+def _make_baseline_eval_from_record(rec_dict, cand):
+    """Construct a placeholder ThreeBombEvaluation from a completed record."""
+    dur = float(rec_dict.get("total_union_duration_s", 0.0))
+    return ThreeBombEvaluation(
+        candidate=cand, valid=True, status="ok",
+        reason=rec_dict.get("reason", ""),
+        bomb_evaluations=(None, None, None),
+        union_intervals=(), total_union_duration_s=dur,
+        sample_level=rec_dict.get("profile", "coarse"),
+        scan_step_s=rec_dict.get("scan_step", 0.05),
+        elapsed_s=rec_dict.get("elapsed_seconds", 0.0),
+        q3_evaluation_id=rec_dict.get("actual_q3_evaluation_id", ""),
+        single_bomb_evaluator_calls=3,
+    )
+
+
+def _build_candidate_closure_summary(
+    stats: FormalSearchStats, all_records: List[FormalScheduleRecord],
+    start_time: float, execution_head_sha: str,
+    contract_snapshot_sha256: str, q2_code_sha: str, q3_code_sha: str,
+    q3_search_code_sha: str, output_dir: str, checkpoint_path: str,
+    closure_schedule_sha256: str, incumbent_payload: dict,
+) -> dict:
+    """Build the canonical closure summary JSON."""
+    timing = {}
+    for prof, d in stats.per_profile_timing.items():
+        ds = d["durations"]
+        if ds:
+            timing[prof] = {
+                "count": d["count"],
+                "median_seconds": float(statistics.median(ds)),
+                "p90_seconds": float(sorted(ds)[
+                    min(len(ds) - 1, int(0.9 * len(ds)))
+                ]),
+            }
+        else:
+            timing[prof] = {"count": 0, "median_seconds": 0.0,
+                             "p90_seconds": 0.0}
+
+    stage_counts = dict(stats.stage_counts)
+    stage_counts["total"] = sum(stats.stage_counts.values())
+
+    # Canonical Q3 candidate payload (full 3-bomb evidence)
+    canonical_payload = None
+    canonical_evidence = None
+    if stats.current_best_evaluation is not None:
+        ev = stats.current_best_evaluation
+        c = ev.candidate
+        canonical_payload = {
+            "heading_rad": c.heading_rad, "speed_mps": c.speed_mps,
+            "release_time_1_s": c.release_time_1_s, "delay_1_s": c.delay_1_s,
+            "release_time_2_s": c.release_time_2_s, "delay_2_s": c.delay_2_s,
+            "release_time_3_s": c.release_time_3_s, "delay_3_s": c.delay_3_s,
+        }
+        if (ev.bomb_evaluations is not None
+                and len(ev.bomb_evaluations) == 3
+                and ev.bomb_evaluations[0] is not None):
+            canonical_evidence = {
+                "valid": ev.valid,
+                "status": ev.status,
+                "reason": ev.reason,
+                "total_union_duration_s": ev.total_union_duration_s,
+                "union_intervals": [list(iv) for iv in ev.union_intervals],
+                "per_bomb_intervals": [
+                    [list(iv) for iv in ev.bomb_evaluations[0].intervals],
+                    [list(iv) for iv in ev.bomb_evaluations[1].intervals],
+                    [list(iv) for iv in ev.bomb_evaluations[2].intervals],
+                ],
+                "per_bomb_duration_s": [
+                    ev.bomb_evaluations[0].total_duration_s,
+                    ev.bomb_evaluations[1].total_duration_s,
+                    ev.bomb_evaluations[2].total_duration_s,
+                ],
+                "sample_level": ev.sample_level,
+                "scan_step_s": ev.scan_step_s,
+                "q3_evaluation_id": ev.q3_evaluation_id,
+                "single_bomb_evaluator_calls": ev.single_bomb_evaluator_calls,
+            }
+        else:
+            canonical_evidence = {
+                "total_union_duration_s": ev.total_union_duration_s,
+                "rehydrated_from_completed_records": True,
+            }
+
+    # Compute absolute / relative improvement vs incumbent reference duration
+    incumbent_ref_dur = float(incumbent_payload.get(
+        "_reference_duration_s", 4.469013137817385))
+    best_dur = stats.current_best_union_duration
+    abs_improvement = best_dur - incumbent_ref_dur
+    rel_improvement = (
+        abs_improvement / incumbent_ref_dur if incumbent_ref_dur > 0 else 0.0
+    )
+
+    summary = {
+        "phase_id": "TASK_006-P2C",
+        "contract_version": 4,
+        "result_level": {
+            "declared_level": "BUDGET_LIMITED_BEST_KNOWN",
+            "local_convergence_established": False,
+            "not_a_proven_global_optimum": True,
+            "not_a_formal_q3_result": True,
+            "result1_xlsx_generated": False,
+        },
+        "stage_counts": stage_counts,
+        "counts": {
+            "completed_q3_evaluations": stats.completed_q3_evaluations,
+            "attempted_candidates": stats.attempted_candidates,
+            "accepted_candidates": stats.accepted_candidates,
+            "rejected_candidates": stats.rejected_candidates,
+            "system_error_count": stats.system_error_count,
+            "single_bomb_evaluator_calls": stats.single_bomb_evaluator_calls,
+            "unique_q3_evaluation_ids": len(stats.unique_q3_evaluation_ids),
+        },
+        "canonical_q3_candidate": canonical_payload,
+        "canonical_q3_evidence": canonical_evidence,
+        "canonical_total_union_duration_s": stats.current_best_union_duration,
+        "comparison": {
+            "incumbent_reference_total_union_duration_s": incumbent_ref_dur,
+            "absolute_improvement_s": abs_improvement,
+            "relative_improvement": rel_improvement,
+        },
+        "incumbent_high_resolution": {
+            "candidate": incumbent_payload,
+            "reference_total_union_duration_s": incumbent_ref_dur,
+            "source": "TASK_006-P2 stage_E_high_resolution_verification_rank_1",
+            "p2_execution_head": "70a4dd767f057edded65bd2011ac544347f661dc",
+            "p2_evidence_commit": "dc970a483ab9e05d76467decf63f61dff70f0862",
+        },
+        "timing": timing,
+        "total_wall_clock_seconds": stats.elapsed_seconds_total,
+        "previous_elapsed_seconds_total": stats.previous_elapsed_seconds_total,
+        "current_process_elapsed_seconds": stats.current_process_elapsed_seconds,
+        "status": {
+            "pilot_complete": stats.status == "pilot_complete",
+            "evaluation_budget_exhausted":
+                stats.status == "EVALUATION_BUDGET_EXHAUSTED",
+            "wall_clock_gate_hit": stats.status == "WALL_CLOCK_GATE_HIT",
+            "run_system_error": stats.status == "RUN_SYSTEM_ERROR",
+            "resume_identity_mismatch":
+                stats.status == "RESUME_IDENTITY_MISMATCH",
+            "checkpoint_load_error":
+                stats.status == "CHECKPOINT_LOAD_ERROR",
+            "raw_status": stats.status,
+        },
+        "identity": {
+            "execution_head_sha": execution_head_sha,
+            "contract_snapshot_sha256": contract_snapshot_sha256,
+            "q2_single_bomb_code_sha256": q2_code_sha,
+            "q3_three_bombs_code_sha256": q3_code_sha,
+            "q3_search_code_sha256": q3_search_code_sha,
+            "closure_config_sha256": CLOSURE_CONFIG_SHA256,
+            "closure_schedule_sha256": closure_schedule_sha256,
+            "candidate_schema_version": CANDIDATE_SCHEMA_VERSION,
+            "checkpoint_schema_version": CLOSURE_CHECKPOINT_SCHEMA_VERSION,
+            "checkpoint_path": checkpoint_path,
+            "closure_run_identity_sha256": hashlib.sha256(
+                json.dumps({
+                    "closure_config_sha256": CLOSURE_CONFIG_SHA256,
+                    "closure_schedule_sha256": closure_schedule_sha256,
+                    "q2_single_bomb_code_sha256": q2_code_sha,
+                    "q3_three_bombs_code_sha256": q3_code_sha,
+                    "q3_search_code_sha256": q3_search_code_sha,
+                    "candidate_schema_version": CANDIDATE_SCHEMA_VERSION,
+                    "execution_head_sha": execution_head_sha,
+                    "stage_counts": stage_counts,
+                    "completed_q3_evaluations":
+                        stats.completed_q3_evaluations,
+                }, sort_keys=True).encode("utf-8")
+            ).hexdigest(),
+        },
+        "original_p2_evidence_preservation": {
+            "original_p2_execution_head":
+                "70a4dd767f057edded65bd2011ac544347f661dc",
+            "original_p2_evidence_commit":
+                "dc970a483ab9e05d76467decf63f61dff70f0862",
+            "p2_search_rerun_performed": False,
+            "original_512_evaluations_preserved": True,
+            "original_834_07s_wall_clock_preserved": True,
+        },
+        "p2c_contract_snapshot_path":
+            "work/task_contracts/TASK_006-P2C-v4.json",
+    }
+
+    out_path = os.path.join(
+        output_dir, "q3_candidate_closure_summary.json")
+    _atomic_write_json(out_path, summary)
+    return summary
+
+
 # === CLI ===
 
 def _print_help() -> None:
@@ -1322,19 +2845,27 @@ def _print_help() -> None:
           "--seeds 2025 2026 2027")
     print("  python -m src.q3_search --dry-run --budget 32 "
           "--seeds 2025")
+    print("  python -m src.q3_search --candidate-closure "
+          "--budget 32 --wall-clock-cap 600")
     print()
     print("参数:")
     print("  --formal-search      启动 Q3 正式 bounded search (real evaluator)")
+    print("  --candidate-closure  启动 TASK_006-P2C candidate closure "
+          "(F1=16/F2=8/F3=4/F4=2/F5=2 = 32 evals / 600 s)")
     print("  --dry-run            启动 dry-run (FakeEvaluator, 不消耗 real eval)")
-    print("  --budget N           顶层 Q3 candidate evaluation 预算 (≤ 512)")
-    print("  --wall-clock-cap S   wall-clock 上限 (秒, 默认 1200)")
-    print("  --seeds S [S ...]    seeds 列表 (默认 2025 2026 2027)")
+    print("  --budget N           顶层 Q3 candidate evaluation 预算")
+    print("                       (formal-search: ≤ 512; closure: ≤ 32)")
+    print("  --wall-clock-cap S   wall-clock 上限 (秒, "
+          "formal-search 默认 1200; closure 默认 600)")
+    print("  --seeds S [S ...]    seeds 列表 (仅 formal-search, 默认 2025 2026 2027)")
     print("  --output-dir D       输出目录 (默认 outputs/q3)")
-    print("  --checkpoint-path P  checkpoint 路径 (默认 work/q3_formal/checkpoint.json)")
+    print("  --checkpoint-path P  checkpoint 路径")
+    print("                       (formal-search: work/q3_formal/checkpoint.json; "
+          "closure: work/q3_candidate_closure/checkpoint.json)")
     print("  -h, --help           显示本帮助")
     print()
     print("退出码:")
-    print("  0 = pilot_complete (无 system_error, Stage E 完成)")
+    print("  0 = pilot_complete (无 system_error, Stage E / F5 完成)")
     print("  1 = system_error / wall_clock_gate_hit / evaluation_budget_exhausted")
     print("  2 = 参数错误 / identity mismatch / checkpoint load error / 预算无效")
 
@@ -1344,6 +2875,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         argv = sys.argv[1:]
 
     formal_search = False
+    candidate_closure = False
     dry_run = False
     show_help = False
     budget = TOTAL_BUDGET
@@ -1363,6 +2895,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             formal_search = True
             i += 1
             continue
+        if a == "--candidate-closure":
+            candidate_closure = True
+            # switch to closure defaults
+            budget = CLOSURE_TOTAL_BUDGET
+            wall_clock_cap = CLOSURE_WALL_CLOCK_CAP_SECONDS
+            checkpoint_path = "work/q3_candidate_closure/checkpoint.json"
+            i += 1
+            continue
         if a == "--dry-run":
             dry_run = True
             i += 1
@@ -1376,9 +2916,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             except ValueError:
                 print(f"--budget 解析失败: {argv[i + 1]!r}", file=sys.stderr)
                 return 2
-            if budget < 1 or budget > TOTAL_BUDGET:
+            upper = (CLOSURE_TOTAL_BUDGET if candidate_closure
+                     else TOTAL_BUDGET)
+            if budget < 1 or budget > upper:
                 print(
-                    f"--budget 必须 ∈ [1, {TOTAL_BUDGET}], 实际 {budget}",
+                    f"--budget 必须 ∈ [1, {upper}], 实际 {budget}",
                     file=sys.stderr,
                 )
                 return 2
@@ -1440,7 +2982,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         _print_help()
         return 0
 
-    if not (formal_search or dry_run):
+    if not (formal_search or candidate_closure or dry_run):
         _print_help()
         return 0
 
@@ -1460,8 +3002,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
               file=sys.stderr)
         return 2
 
-    # 2. Read contract snapshot SHA
-    snapshot_path = "work/task_contracts/TASK_006-P2-v3.json"
+    # 2. Read contract snapshot SHA (closure uses v4; formal-search uses v3)
+    if candidate_closure:
+        snapshot_path = "work/task_contracts/TASK_006-P2C-v4.json"
+    else:
+        snapshot_path = "work/task_contracts/TASK_006-P2-v3.json"
     if not os.path.exists(snapshot_path):
         print(f"contract snapshot missing: {snapshot_path}",
               file=sys.stderr)
@@ -1470,15 +3015,39 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         contract_snapshot_sha256 = hashlib.sha256(f.read()).hexdigest()
 
     # 3. Run
-    summary = run_formal_search(
-        execution_head_sha=execution_head_sha,
-        contract_snapshot_sha256=contract_snapshot_sha256,
-        output_dir=output_dir,
-        checkpoint_path=checkpoint_path,
-        seeds=tuple(seeds),
-        wall_clock_cap=wall_clock_cap,
-        fake_dry_run=dry_run,
-    )
+    if candidate_closure:
+        # Build incumbent payload from the locked P2 result
+        # (Stage E high-resolution verification rank 1)
+        incumbent_payload = dict(
+            heading_rad=3.127613485137657,
+            speed_mps=116.62799297398149,
+            release_time_1_s=0.993241052387636,
+            delay_1_s=3.720360704323356,
+            release_time_2_s=4.88566490244013,
+            delay_2_s=3.7704749980723404,
+            release_time_3_s=10.157737577136487,
+            delay_3_s=3.7180978311642083,
+            _reference_duration_s=4.469013137817385,
+        )
+        summary = run_candidate_closure(
+            incumbent_payload=incumbent_payload,
+            execution_head_sha=execution_head_sha,
+            contract_snapshot_sha256=contract_snapshot_sha256,
+            output_dir=output_dir,
+            checkpoint_path=checkpoint_path,
+            wall_clock_cap=wall_clock_cap,
+            fake_dry_run=dry_run,
+        )
+    else:
+        summary = run_formal_search(
+            execution_head_sha=execution_head_sha,
+            contract_snapshot_sha256=contract_snapshot_sha256,
+            output_dir=output_dir,
+            checkpoint_path=checkpoint_path,
+            seeds=tuple(seeds),
+            wall_clock_cap=wall_clock_cap,
+            fake_dry_run=dry_run,
+        )
 
     if summary["status"]["run_system_error"]:
         return 1
