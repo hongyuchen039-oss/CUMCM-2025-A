@@ -1641,7 +1641,7 @@ P2 summary 同步修正：
 
 ## Q3 result1 artifact generation (TASK_006-P3 / BUDGET_LIMITED_BEST_KNOWN / NOT A PROVEN GLOBAL OPTIMUM)
 
-> 将在 `scripts/build_result1.py` 实现；通过 `tests/test_q3.py` 新增 ≥ 22 个
+> 已在 `scripts/build_result1.py` 实现；通过 `tests/test_q3.py` 新增 ≥ 22 个
 > result1 模块单元测试（FakeEvaluator + temporary workbook，**不**调用真实
 > Q3 evaluator）验证。本节固定 Q3 result1.xlsx 生成的官方模板处理、列写入合同、
 > heading conversion、J 列约定、reconstruction gate、template preservation contract、
@@ -1649,7 +1649,31 @@ P2 summary 同步修正：
 > 等级: **BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE WITH GENERATED AND ROUND-TRIP-VERIFIED
 > RESULT1.XLSX / LOCAL CONVERGENCE NOT ESTABLISHED / NOT A PROVEN GLOBAL OPTIMUM**。
 > 不得冒充 Q3 VERIFIED / FINAL / 官方答案 / 解析极值 / 全局最优 / local convergence。
-> 独立 Final Audit (Audit CC) + Hermes 签字后才能正式合并。
+
+### 0. Closeout 状态（DOCS/METADATA ONLY, 不重跑）
+
+- **TASK_006-P3 COMPLETE**
+- result1.xlsx **GENERATED** + **ROUND-TRIP VERIFIED**
+- 冻结的 8-dimensional candidate 未改变；P3 是 artifact generation, **不是** 新 optimization
+- 当前 Gate: **FINAL AUDIT / HERMES PENDING**
+- TASK_007 NOT STARTED
+- p3_starting_head = `843b4a1e5791e67a09c377c2173f16a1105ab944`
+- p3_execution_head = `cb3dd83c834ec3b5f8c1e85213ddc63301e3d709`
+- p3_evidence_commit = `a04e158b7848d7d5a3d381ed9e5871961267ed37`
+- result1.xlsx SHA = `b938a90b96181be14990d5bd3395c2cff72e93035828542617571ddc1d754847`
+- P2C closure selection score (coarse/0.05) = `4.478218820691105 s` (历史证据)
+- P3 canonical reconstruction (fine/0.005) = `4.478204178810118 s` (result1.xlsx 几何来源)
+- absolute profile difference = `1.4641880987653622e-05 s`
+- official_template_zip_sha256 = `f9879c0d36b7bdccb99fb330a8032e62851ab1a1f0a1636c92440a1cdaec658e`
+- official_template_member_sha256 = `d1773205296034c0f02ed7f848f8f1e66af633d1e6562938e059450a554b930e`
+
+历史过程 commit (`03ddda3` PLAN, `0597028` WORKING, `108d21b` headers-fix) 是 P3
+身份链内的施工过程；真实 `p3_execution_head` = `cb3dd83c`, 真实 `p3_evidence_commit`
+= `a04e158b`. 若任何叙述把 `108d21b` 当作 execution-head, 属
+**HISTORICAL COMMIT ROLE REQUIRES FINAL AUDIT ANCESTRY CHECK**, 不由本 closeout
+自行重定义, 不重跑 P3.
+
+独立 Final Audit (Audit CC) + Hermes 签字后才能正式合并 PR #13.
 
 ### 1. 官方模板处理
 
@@ -1776,7 +1800,12 @@ P2 summary 同步修正：
   4. `q3_three_bombs_code_sha256` — `src/q3_three_bombs.py` 的 SHA-256
   5. `result1_builder_code_sha256` — `scripts/build_result1.py` 的 SHA-256
   6. `canonical_candidate_sha256` — 冻结 8 维 candidate 的 SHA-256
-  7. `official_template_sha256` — `题目及模板/..._结果模板.zip` 的 SHA-256
+  7. `official_template_sha256` — `题目及模板/..._结果模板.zip` 整文件字节的 SHA-256
+     （legacy 字段；P3 closeout 新增 `official_template_member_sha256` 给出
+     `result1.xlsx` member 字节的 SHA-256；新增 `official_template_zip_sha256` 给出
+     ZIP 整文件字节的 SHA-256。两个新字段的语义在
+     `outputs/q3/q3_result1_artifact_summary.json` `identity_provenance_closeout`
+     块中明确说明, 不替换 legacy 字段。）
 - atomic write：temp + flush + fsync + os.replace。
 - corrupt / load error → `status = CHECKPOINT_LOAD_ERROR`, exit 2。
 - identity mismatch → `status = RESUME_IDENTITY_MISMATCH`, exit 2。

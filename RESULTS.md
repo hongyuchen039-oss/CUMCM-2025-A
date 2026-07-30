@@ -1076,6 +1076,29 @@ speed_mps 单步扰动大小）。F5 high-resolution 复评后该候选以 ε=1e
 > RESULT1.XLSX / LOCAL CONVERGENCE NOT ESTABLISHED / NOT A PROVEN GLOBAL OPTIMUM**。
 > 独立 Final Audit (Audit CC) + Hermes 签字后才能正式合并。
 
+### 0. Closeout 身份与 Gate（DOCS/METADATA ONLY, 不重跑）
+
+- **TASK_006-P3 COMPLETE**; result1.xlsx **GENERATED**, round-trip **VERIFIED**.
+- p3_starting_head = `843b4a1e5791e67a09c377c2173f16a1105ab944`
+- p3_execution_head = `cb3dd83c834ec3b5f8c1e85213ddc63301e3d709`
+- p3_evidence_commit = `a04e158b7848d7d5a3d381ed9e5871961267ed37`
+- result1.xlsx output SHA = `b938a90b96181be14990d5bd3395c2cff72e93035828542617571ddc1d754847`
+- result1_run_identity_sha256 = `82065aa5fe4d4e6036691a053b38732b9ff1f50497083e3306e262e82a4bfc65`
+- official_template_zip_sha256 = `f9879c0d36b7bdccb99fb330a8032e62851ab1a1f0a1636c92440a1cdaec658e`
+- official_template_member_sha256 = `d1773205296034c0f02ed7f848f8f1e66af633d1e6562938e059450a554b930e`
+
+历史过程 commit `03ddda3` (PLAN) / `0597028` (WORKING) / `108d21b` (headers-fix)
+是 P3 身份链内的施工过程; 真实 `p3_execution_head` = `cb3dd83c`,
+真实 `p3_evidence_commit` = `a04e158b`. 若有叙述把 `108d21b` 当作 execution-head,
+属 **HISTORICAL COMMIT ROLE REQUIRES FINAL AUDIT ANCESTRY CHECK**, 不由本 closeout
+自行重定义, 不重跑 P3.
+
+- result level = **BUDGET_LIMITED_BEST_KNOWN**
+- LOCAL CONVERGENCE NOT ESTABLISHED
+- NOT A PROVEN GLOBAL OPTIMUM
+- NOT FORMAL_RESULT_VERIFIED
+- 下一 Gate = **FINAL AUDIT / HERMES PENDING**; TASK_007 NOT STARTED
+
 ### 1. 双数值证据（必须区分 profile 来源）
 
 | 数值 | profile | scan_step | 来源 |

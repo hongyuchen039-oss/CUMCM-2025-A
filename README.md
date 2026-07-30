@@ -13,42 +13,56 @@
 
 ## 当前状态
 
-TASK_006-P3 Q3 RESULT1.XLSX ARTIFACT GENERATION（PLAN 已冻结）。
-本轮对 P2C 冻结的 8 维 candidate 执行一次高精度重建，并从官方空白模板生成、
-回读和核验 `outputs/submission/result1.xlsx`。
+**TASK_006-P3 COMPLETE** — Q3 RESULT1.XLSX GENERATED, ROUND-TRIP VERIFIED.
 
-- **P2 已完成**：Q3 三弹正式 bounded search（512 evaluations / 834.07 s）；
-  best `total_union_duration_s = 4.469013137817385 s`，HEAD `70a4dd7`、evidence `dc970a48` 完整保留。
-- **P2C 已闭合（CANDIDATE CLOSURE）**：32-evaluation bounded closure（F1=16 / F2=8 / F3=4 / F4=2 / F5=2），
-  wall-clock 290.54 s ≤ 600 s。closure canonical candidate 与 P2 共享 7 维，仅
-  `speed_mps` 从 116.62799297398149 → 116.12799297398149（差 −0.5 m/s）。
-- **P2C closure canonical**:
-  `heading_rad=3.127613485137657, speed_mps=116.12799297398149, release_time_1_s=0.993241052387636, delay_1_s=3.720360704323356, release_time_2_s=4.88566490244013, delay_2_s=3.7704749980723404, release_time_3_s=10.157737577136487, delay_3_s=3.7180978311642083`
-  `closure_selection_score_s = 4.478218820691105 s` (profile=coarse/0.05)
-  `canonical_reconstruction_total_union_duration_s = 4.478204178810118 s` (profile=fine/0.005)
-  profile_difference = 1.4641880987653622e-05 s (10^-5 量级, 两个 profile 各自保留, 不混用)
-  `source = TASK_006-P2C F5 high-resolution verification`
-- **P3 当前阶段（PLAN 冻结，WORKING 待启动）**:
-  - 1 次 fine / scan_step=0.005 高精度重建；
-  - 期望 `abs(reconstructed - 4.478204178810118) ≤ 1e-12` (fine / 0.005 reconstruction gate);
-  - 从官方模板 ZIP `题目及模板/2025高教社杯数学建模A题_结果模板.zip`
-    读取 `result1.xlsx` → in-memory edit → 写 `outputs/submission/result1.xlsx`；
-  - 模板指纹保留（sheet names / merged cells / freeze panes / header / 附注等）；
-  - 程序从磁盘回读，逐格核验 10 列 × 3 行；
-  - 7 字段 resume identity（含 `canonical_candidate_sha256` + `official_template_sha256`，新增）；
-  - 输出 `outputs/q3/q3_result1_artifact_summary.json`；
-  - ≥ 22 个新 result1 模块单元测试（FakeEvaluator + temporary workbook，**不**调用真实 Q3 evaluator）；
-  - PR #13 保持 Draft / unmerged。
-- **P3 严禁**:
-  - 重跑 P2C 32 / P2 512 / Pilot；
-  - 调整任何决策变量 / 产生 challenger；
-  - 修改 foundation（Q1 / Q2 / q3_three_bombs）；
-  - 修改官方模板 ZIP；
-  - 生成 result2.xlsx / result3.xlsx；
-  - 启动 Final Audit CC / Hermes（MAIN 决定）；
-  - 启动 Q4 / Q5（MAIN 决定）；
-  - 自动 Ready / merge；
-  - 声称 FORMAL_RESULT_VERIFIED / local convergence / global optimum / 官方答案。
+- PR #13 = Open / Draft / Unmerged / Mergeable.
+- FINAL AUDIT / HERMES PENDING.
+- TASK_007 NOT STARTED.
+
+**P3 双数值证据（profile provenance, 不混用）**:
+- Q3 canonical fine reconstruction: `4.478204178810118 s` (profile=fine, scan_step=0.005)
+- P2C closure selection score: `4.478218820691105 s` (profile=coarse, scan_step=0.05, 历史证据)
+- profile_difference: `1.4641880987653622e-05 s`
+
+**result1.xlsx**:
+- 输出路径: `outputs/submission/result1.xlsx` (5911 bytes)
+- 来源模板 ZIP: `题目及模板/2025高教社杯数学建模A题_结果模板.zip` 内 `result1.xlsx` member
+- 输出 SHA: `b938a90b96181be14990d5bd3395c2cff72e93035828542617571ddc1d754847`
+- round-trip: PASS (abs_tol=1e-10, rel_tol=1e-12, 12-field fingerprint preserved)
+
+**身份链（锁定）**:
+
+| 字段 | SHA |
+|---|---|
+| main HEAD | `007b93d301db73c9a73904337de34d1b4e13467e` |
+| p3_starting_head | `843b4a1e5791e67a09c377c2173f16a1105ab944` |
+| p3_execution_head | `cb3dd83c834ec3b5f8c1e85213ddc63301e3d709` |
+| p3_evidence_commit | `a04e158b7848d7d5a3d381ed9e5871961267ed37` |
+| official_template_zip_sha256 | `f9879c0d36b7bdccb99fb330a8032e62851ab1a1f0a1636c92440a1cdaec658e` |
+| official_template_member_sha256 | `d1773205296034c0f02ed7f848f8f1e66af633d1e6562938e059450a554b930e` |
+| result1_run_identity_sha256 | `82065aa5fe4d4e6036691a053b38732b9ff1f50497083e3306e262e82a4bfc65` |
+
+**P2 / P2C 证据（锁定，不重跑）**:
+- P2: 512 evals / 834.07 s, best = 4.469013137817385 s, HEAD=70a4dd7, evidence=dc970a48
+- P2C: 32 evals / 290.54 s, closure_selection_score = 4.478218820691105 s, evidence=843b4a1
+
+**禁止事项**:
+- 重跑 P3 / P2 512 / P2C 32 / Pilot
+- 修改 foundation (Q1 / Q2 / q3_three_bombs)
+- 修改官方模板 ZIP
+- 生成 result2.xlsx / result3.xlsx
+- 启动 Final Audit CC / Hermes / Q4 / Q5 (MAIN 决定)
+- 自动 Ready / merge
+- 声称 FORMAL_RESULT_VERIFIED / local convergence / global optimum / 官方答案
+
+**任务编号（固定, 取消 TASK_006-P4 / TASK_006-P5）**:
+- `TASK_006` = Q3 + result1.xlsx
+- `TASK_007` = Q4 + result2.xlsx
+- `TASK_008` = Q5 + result3.xlsx
+- `TASK_009` = unified recomputation / sensitivity / robustness / figures
+- `TASK_010` = paper / consistency / final package
+
+`TASK_006-P4` / `TASK_006-P5` 编号方案作废 — **HISTORICAL INCORRECT TASK LABEL — DO NOT USE**.
 
 P2C 详细结果见 [RESULTS.md](./RESULTS.md) / [MODEL.md §"Q3 Candidate Closure"]；
 P3 详细合同见 [MODEL.md §"Q3 result1 artifact generation (TASK_006-P3)"] /
