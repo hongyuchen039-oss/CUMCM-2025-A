@@ -1,4 +1,4 @@
-"""Q3 three-bomb evaluator + bounded pilot 测试 (TASK_006-P0P1).
+"""Q3 three-bomb evaluator + bounded pilot 测试 (TASK_006-P0P1 + CLOSURE v2).
 
 按 Q3 directive §十五 分级:
 
@@ -28,17 +28,37 @@ FAST (≤30 s, 全部为纯函数 / 序列化 / 不调用真实 evaluator):
       - 构造不一致 checkpoint, run_pilot 必须 RESUME_IDENTITY_MISMATCH
   - TestPilotSmall:
       - 完整 run_pilot 入口的边界 (placeholder)
+  - TestHeadingStrictBounds (closure v2 §四):
+      - 0 接受, nextafter(2π, 0) 接受, -1e-12 拒绝, 2π 拒绝, 4π 拒绝
+  - TestBudgetRecommendation (closure v2 §十二):
+      - efficient / conservative 场景算术 + MAIN_DECISION_REQUIRED 状态
+  - TestResumeScheduleSynthetic (closure v2 §七/§八):
+      - schedule_sha / stage_counts 字段存在
+      - 完成 record 增量更新
+      - fail-closed 状态在 identity mismatch 时
+      - corrupt checkpoint → CHECKPOINT_LOAD_ERROR
 
 TASK (≤600 s, 真实 Q3 evaluator 调用总次数 ≤ 3):
-  - TestThreeBombEvaluator (setUpClass 共享 1 次 evaluation + 2 次独立):
-      - test_q2_one_bomb_degeneration_exact_comparison
-      - test_three_bombs_shared_heading_speed
-      - test_three_bomb_union_no_double_count
+  - TestThreeBombEvaluator (setUpClass 共享 1 次 evaluation):
+      - test_q2_one_bomb_degeneration_exact_comparison (复用 setUpClass)
+      - test_three_bombs_shared_heading_speed (复用 setUpClass)
+      - test_three_bomb_union_no_double_count (复用 setUpClass)
       - test_invalid_candidate_fail_closed (0 real eval)
-      - test_pruned_zero_still_legal
+      - test_pruned_zero_still_legal (复用 setUpClass)
       - test_system_error_raises_not_zero (0 real eval)
       - test_evaluation_id_uniqueness_across_distinct_candidates
-      - test_repeated_run_determinism
+        (closure v2: ID-only, 0 extra real Q3 eval)
+  - TestQ2DegenerationDirectVsSequence (closure v2 §九):
+      - single_strategy = anchor.as_strategies()[0]
+      - direct_q2 = evaluate_single_bomb_strategy(...)
+      - sequence_q2 = evaluate_bomb_sequence([single_strategy], ...)[0]
+      - 逐项 exact 比较. 0 Q3 eval.
+  - TestRepeatedDeterminismRealReeval (closure v2 §十):
+      - ev_a = evaluate_three_bomb_strategy(anchor, ...)
+      - ev_b = evaluate_three_bomb_strategy(anchor, ...)
+      - 逐项 exact 比较. 2 Q3 eval.
+
+Q3 evaluator real-call budget = setUpClass(1) + TestRepeatedDeterminismRealReeval(2) = 3.
 
 注意: 不依赖 outputs/, 不依赖 git, 不启动 Q3 Formal Search.
 """
@@ -549,17 +569,31 @@ class TestThreeBombEvaluator(unittest.TestCase):
         # 只有 1 个 q3_evaluation_id (setUpClass 只产生一次)
         self.assertTrue(ev.q3_evaluation_id)
 
-    # --- unique IDs (1 extra real eval) ---
+    # --- unique IDs (0 extra real eval; closure v2: ID-only 验证) ---
     def test_evaluation_id_uniqueness_across_distinct_candidates(self):
-        """两个不同候选产生不同 evaluation_id; 内部 3 次单弹 evaluator."""
+        """两个不同候选产生不同 evaluation_id.
+
+        closure v2: 用 compute_q3_evaluation_id ID-only 验证, 不额外消耗真实
+        Q3 evaluator. 同一 code_identity / sample_level / scan_step / pilot
+        config 下, 不同 candidate ⇒ 不同 ID.
+        """
         c1 = self.anchor
         c2 = make_anchor_candidate(extra_delay=0.1)
-        ev1 = self.shared_ev  # c1
-        ev2 = evaluate_three_bomb_strategy(c2, sample_level="coarse")
-        self.assertNotEqual(ev1.q3_evaluation_id, ev2.q3_evaluation_id)
-        # ev2 也是 valid (合法的 anchor + 0.1)
-        self.assertTrue(ev2.valid)
-        self.assertEqual(ev2.single_bomb_evaluator_calls, 3)
+        shared_code_id = "fixture_code_sha"
+        ev1_id = compute_q3_evaluation_id(
+            c1, sample_level="coarse", scan_step=0.05,
+            code_identity_sha256=shared_code_id,
+            pilot_config_sha256=PILOT_CONFIG_SHA256,
+        )
+        ev2_id = compute_q3_evaluation_id(
+            c2, sample_level="coarse", scan_step=0.05,
+            code_identity_sha256=shared_code_id,
+            pilot_config_sha256=PILOT_CONFIG_SHA256,
+        )
+        self.assertNotEqual(ev1_id, ev2_id)
+        # setUpClass 共享 evaluation 的 ID 非空且与 anchor c1 同源
+        self.assertTrue(self.shared_ev.q3_evaluation_id)
+        self.assertEqual(len(self.shared_ev.q3_evaluation_id), 64)
 
     # --- repeated run determinism (0 extra real eval; 复用 setUpClass) ---
     def test_repeated_run_determinism(self):
@@ -585,6 +619,311 @@ class TestThreeBombEvaluator(unittest.TestCase):
             pilot_config_sha256=PILOT_CONFIG_SHA256,
         )
         self.assertEqual(recomputed_id_a, recomputed_id_b)
+
+
+# === CLOSURE v2 tests (directive §四-§十二) ===
+
+class TestHeadingStrictBounds(unittest.TestCase):
+    """closure v2 §四: validate_candidate 必须检查原始 heading_rad ∈ [0, 2π),
+    不得先 normalize."""
+
+    def _make_with_heading(self, h: float) -> ThreeBombCandidate:
+        return ThreeBombCandidate(
+            heading_rad=h, speed_mps=100.0,
+            release_time_1_s=1.0, delay_1_s=2.0,
+            release_time_2_s=2.0, delay_2_s=2.0,
+            release_time_3_s=3.0, delay_3_s=2.0,
+        )
+
+    def test_heading_zero_accepted(self):
+        c = self._make_with_heading(0.0)
+        ok, reason = validate_candidate(c)
+        self.assertTrue(ok, reason)
+
+    def test_heading_just_below_2pi_accepted(self):
+        # nextafter(2π, 0) → 2π - 1 ulp, 应严格在 [0, 2π) 内, 接受
+        c = self._make_with_heading(math.nextafter(2 * math.pi, 0.0))
+        ok, reason = validate_candidate(c)
+        self.assertTrue(ok, reason)
+
+    def test_heading_negative_epsilon_rejected(self):
+        c = self._make_with_heading(-1e-12)
+        ok, reason = validate_candidate(c)
+        self.assertFalse(ok)
+        self.assertIn("heading_rad", reason)
+
+    def test_heading_exactly_2pi_rejected(self):
+        c = self._make_with_heading(2 * math.pi)
+        ok, reason = validate_candidate(c)
+        self.assertFalse(ok)
+        self.assertIn("heading_rad", reason)
+
+    def test_heading_4pi_rejected(self):
+        c = self._make_with_heading(4 * math.pi)
+        ok, reason = validate_candidate(c)
+        self.assertFalse(ok)
+        self.assertIn("heading_rad", reason)
+
+
+class TestBudgetRecommendation(unittest.TestCase):
+    """closure v2 §十二: budget_recommendation 用 stage-weighted 公式,
+    efficient + conservative 两个 scenario, MAIN_DECISION_REQUIRED 状态,
+    不得照抄 TASK_005 (528 / 32 / 5 / 16557)."""
+
+    def test_no_timing_returns_decision_required(self):
+        from src.q3_three_bombs import _recommend_budget, PilotStats
+        rec = _recommend_budget({}, PilotStats())
+        self.assertEqual(rec["recommendation_status"], "MAIN_DECISION_REQUIRED")
+        self.assertIsNone(rec["efficient_scenario"])
+        self.assertIsNone(rec["conservative_scenario"])
+        self.assertIsNone(rec["recommended_refinement_evaluations"])
+        self.assertIsNone(rec["recommended_verification_q3_calls"])
+
+    def test_efficient_conservative_scenarios_with_timing(self):
+        from src.q3_three_bombs import _recommend_budget, PilotStats
+        timing = {
+            "coarse": {"count": 80, "median_q3_evaluation_seconds": 1.0,
+                       "p90_q3_evaluation_seconds": 1.0,
+                       "median_single_bomb_seconds": 0.4,
+                       "p90_single_bomb_seconds": 0.5},
+            "medium": {"count": 6, "median_q3_evaluation_seconds": 4.0,
+                       "p90_q3_evaluation_seconds": 5.0,
+                       "median_single_bomb_seconds": 1.5,
+                       "p90_single_bomb_seconds": 2.0},
+            "fine": {"count": 2, "median_q3_evaluation_seconds": 30.0,
+                     "p90_q3_evaluation_seconds": 35.0,
+                     "median_single_bomb_seconds": 12.0,
+                     "p90_single_bomb_seconds": 15.0},
+        }
+        stats = PilotStats()
+        stats.completed_q3_evaluations = 94
+        rec = _recommend_budget(timing, stats)
+
+        # 状态 MAIN_DECISION_REQUIRED
+        self.assertEqual(rec["recommendation_status"], "MAIN_DECISION_REQUIRED")
+        # efficient: 480 coarse + 8 medium + 4 fine = 492
+        eff = rec["efficient_scenario"]
+        self.assertEqual(eff["coarse_evaluations"], 480)
+        self.assertEqual(eff["medium_evaluations"], 8)
+        self.assertEqual(eff["fine_evaluations"], 4)
+        self.assertEqual(eff["total_q3_evaluations"], 492)
+        # p90_raw = 480*1.0 + 8*5.0 + 4*35.0 = 480 + 40 + 140 = 660
+        self.assertAlmostEqual(eff["p90_raw_seconds"], 660.0, places=9)
+        # recommended_wall = 660 * 1.5 = 990
+        self.assertEqual(eff["recommended_wall_clock_seconds"], 990)
+        self.assertEqual(eff["safety_factor"], 1.5)
+
+        # conservative: 480 coarse + 24 medium + 8 fine = 512
+        con = rec["conservative_scenario"]
+        self.assertEqual(con["coarse_evaluations"], 480)
+        self.assertEqual(con["medium_evaluations"], 24)
+        self.assertEqual(con["fine_evaluations"], 8)
+        self.assertEqual(con["total_q3_evaluations"], 512)
+        # p90_raw = 480*1.0 + 24*5.0 + 8*35.0 = 480 + 120 + 280 = 880
+        self.assertAlmostEqual(con["p90_raw_seconds"], 880.0, places=9)
+        # recommended_wall = 880 * 1.5 = 1320
+        self.assertEqual(con["recommended_wall_clock_seconds"], 1320)
+        self.assertEqual(con["safety_factor"], 1.5)
+
+        # 显式字段 = null (closure v2 禁止硬编码 32 / 5)
+        self.assertIsNone(rec["recommended_refinement_evaluations"])
+        self.assertIsNone(rec["recommended_verification_q3_calls"])
+        # 算术依据字段非空
+        self.assertIn("stage-weighted", rec["calculation_basis"])
+        # safety factor 一致
+        self.assertEqual(rec["safety_factor"], 1.5)
+
+
+class TestResumeScheduleSynthetic(unittest.TestCase):
+    """closure v2 §七/§八: schedule 字段 / completed_records / fail-closed."""
+
+    def test_schedule_and_stage_counts_present(self):
+        from src.q3_three_bombs import (
+            build_pilot_schedule, compute_schedule_sha256,
+        )
+        schedule = build_pilot_schedule(
+            code_identity_sha256="fixture_code_sha",
+            pilot_config_sha256=PILOT_CONFIG_SHA256,
+        )
+        sha = compute_schedule_sha256(schedule)
+        # schedule 总数 = 6 (stage A) + 80 (stage B) = 86
+        # Stage C / D 在 all_results finalize 后注入
+        self.assertEqual(len(schedule), 86)
+        # 前 6 条 = calibration
+        for r in schedule[:6]:
+            self.assertEqual(r.stage, "calibration")
+        # 后 80 条 = coarse_exploration
+        for r in schedule[6:]:
+            self.assertEqual(r.stage, "coarse_exploration")
+            self.assertEqual(r.profile, "coarse")
+        # sha 非空且 deterministic
+        self.assertEqual(sha, compute_schedule_sha256(schedule))
+        self.assertEqual(len(sha), 64)
+
+    def test_serialize_best_candidate_exactly_three_bomb_intervals(self):
+        """closure v2 §二: per_bomb_intervals 必须恰好 3 项, 即便 ev 缺失."""
+        from src.q3_three_bombs import _serialize_best_candidate
+        c = make_anchor_candidate()
+        # ev=None 情形: per_bomb_intervals = [[], [], []]
+        payload = _serialize_best_candidate(c, None)
+        self.assertIsNotNone(payload)
+        self.assertEqual(len(payload["per_bomb_intervals"]), 3)
+        self.assertEqual(payload["per_bomb_intervals"], [[], [], []])
+        self.assertEqual(len(payload["per_bomb_duration_s"]), 3)
+
+    def test_stage_counts_increment_via_schedule_records(self):
+        """模拟 _eval_record 的 stage_counts 增量, 验证 closure v2 §三."""
+        from src.q3_three_bombs import PilotStats, ScheduleRecord
+        stats = PilotStats()
+        # 模拟 6 calibration + 80 coarse_exploration + 6 medium_recheck +
+        # 2 fine_spotcheck = 94 records
+        for stage, count in [
+            ("calibration", 6), ("coarse_exploration", 80),
+            ("medium_recheck", 6), ("fine_spotcheck", 2),
+        ]:
+            for _ in range(count):
+                stats.stage_counts[stage] += 1
+        self.assertEqual(stats.stage_counts, {
+            "calibration": 6, "coarse_exploration": 80,
+            "medium_recheck": 6, "fine_spotcheck": 2,
+        })
+        self.assertEqual(sum(stats.stage_counts.values()), 94)
+
+    def test_fail_closed_on_checkpoint_load_error(self):
+        """closure v2 §七: corrupt checkpoint 必须 CHECKPOINT_LOAD_ERROR,
+        exit code 不消耗 Q3 evaluator."""
+        from src.q3_three_bombs import run_pilot
+        with tempfile.TemporaryDirectory() as tmp:
+            ckpt_path = os.path.join(tmp, "checkpoint.json")
+            # 写入非法 JSON
+            with open(ckpt_path, "w") as f:
+                f.write("{ not json at all ")
+            output_dir = os.path.join(tmp, "out")
+            summary = run_pilot(
+                execution_head_sha="0" * 40,
+                contract_snapshot_sha256="0" * 64,
+                output_dir=output_dir,
+                checkpoint_path=ckpt_path,
+            )
+            self.assertTrue(summary["status"]["checkpoint_load_error"])
+            # 没有启动 evaluator
+            self.assertEqual(summary["counts"]["q3_candidate_evaluations"], 0)
+            self.assertEqual(summary["counts"]["single_bomb_evaluator_calls"], 0)
+
+    def test_fail_closed_on_identity_mismatch(self):
+        """closure v2 §七: identity mismatch 必须 RESUME_IDENTITY_MISMATCH."""
+        from src.q3_three_bombs import run_pilot
+        with tempfile.TemporaryDirectory() as tmp:
+            ckpt_path = os.path.join(tmp, "checkpoint.json")
+            # 构造 mismatch payload (5 个原 identity 之一不同)
+            payload = {
+                "checkpoint_schema_version": 2,
+                "execution_head_sha": "f" * 40,
+                "contract_snapshot_sha256": "f" * 64,
+                "q2_single_bomb_code_sha256": "f" * 64,
+                "candidate_schema_version": CANDIDATE_SCHEMA_VERSION,
+                "pilot_config_sha256": PILOT_CONFIG_SHA256,
+                "schedule_sha256": "f" * 64,
+                "stage": "A",
+                "completed_q3_evaluations": 0,
+                "single_bomb_evaluator_calls": 0,
+                "attempted_candidates": 0,
+                "accepted_candidates": 0,
+                "rejected_candidates": 0,
+                "system_error_count": 0,
+                "evaluated_q3_ids": [],
+                "stage_counts": {"calibration": 0, "coarse_exploration": 0,
+                                 "medium_recheck": 0, "fine_spotcheck": 0},
+                "completed_records": [],
+                "next_schedule_index": 0,
+                "current_best_union_duration_s": 0.0,
+                "per_profile_timing": {"coarse": {"count": 0},
+                                       "medium": {"count": 0},
+                                       "fine": {"count": 0}},
+                "elapsed_seconds": 0.0,
+                "elapsed_seconds_total": 0.0,
+                "status": "running",
+            }
+            _atomic_write_json(ckpt_path, payload)
+            output_dir = os.path.join(tmp, "out")
+            summary = run_pilot(
+                execution_head_sha="0" * 40,
+                contract_snapshot_sha256="0" * 64,
+                output_dir=output_dir,
+                checkpoint_path=ckpt_path,
+            )
+            self.assertTrue(summary["status"]["resume_identity_mismatch"])
+            self.assertEqual(summary["counts"]["q3_candidate_evaluations"], 0)
+
+
+class TestQ2DegenerationDirectVsSequence(unittest.TestCase):
+    """closure v2 §九: 必须独立执行 evaluate_single_bomb_strategy vs
+    evaluate_bomb_sequence([single_strategy])[0], 逐项 exact 比较.
+
+    不消耗真实 Q3 evaluator (Q2 single-bomb calls 不计入 Q3 cap).
+    """
+
+    def test_direct_vs_sequence_anchor_first_bomb(self):
+        anchor = make_anchor_candidate()
+        s1, _, _ = anchor.as_strategies()
+        # 直接 evaluate_single_bomb_strategy
+        direct = evaluate_single_bomb_strategy(s1, sample_level="coarse")
+        # 走 evaluate_bomb_sequence(1 枚)
+        sequence = evaluate_bomb_sequence([s1], sample_level="coarse")[0]
+        # 逐项 exact 比较
+        self.assertEqual(direct.valid, sequence.valid)
+        self.assertEqual(direct.status, sequence.status)
+        self.assertEqual(direct.intervals, sequence.intervals)
+        self.assertAlmostEqual(
+            direct.total_duration_s, sequence.total_duration_s, places=12,
+        )
+        self.assertEqual(direct.release_point, sequence.release_point)
+        self.assertEqual(direct.detonation_time_s, sequence.detonation_time_s)
+        self.assertEqual(direct.detonation_point, sequence.detonation_point)
+        self.assertEqual(direct.evaluation_window, sequence.evaluation_window)
+        self.assertEqual(direct.normalized_heading_rad,
+                         sequence.normalized_heading_rad)
+
+
+class TestRepeatedDeterminismRealReeval(unittest.TestCase):
+    """closure v2 §十: 真实重新执行同一 Q3 candidate, 逐项 exact 比较.
+
+    2 real Q3 evaluations.
+    """
+
+    def test_same_anchor_evaluated_twice_full_payload_match(self):
+        anchor = make_anchor_candidate()
+        ev_a = evaluate_three_bomb_strategy(anchor, sample_level="coarse")
+        ev_b = evaluate_three_bomb_strategy(anchor, sample_level="coarse")
+        # 逐项 exact 比较
+        self.assertEqual(ev_a.valid, ev_b.valid)
+        self.assertEqual(ev_a.status, ev_b.status)
+        self.assertEqual(ev_a.union_intervals, ev_b.union_intervals)
+        self.assertAlmostEqual(
+            ev_a.total_union_duration_s, ev_b.total_union_duration_s,
+            places=12,
+        )
+        for i in range(3):
+            self.assertEqual(
+                ev_a.bomb_evaluations[i].intervals,
+                ev_b.bomb_evaluations[i].intervals,
+            )
+            self.assertAlmostEqual(
+                ev_a.bomb_evaluations[i].total_duration_s,
+                ev_b.bomb_evaluations[i].total_duration_s,
+                places=12,
+            )
+            self.assertEqual(
+                ev_a.bomb_evaluations[i].release_point,
+                ev_b.bomb_evaluations[i].release_point,
+            )
+            self.assertEqual(
+                ev_a.bomb_evaluations[i].detonation_point,
+                ev_b.bomb_evaluations[i].detonation_point,
+            )
+        self.assertEqual(ev_a.q3_evaluation_id, ev_b.q3_evaluation_id)
+        self.assertEqual(ev_a.single_bomb_evaluator_calls,
+                         ev_b.single_bomb_evaluator_calls)
 
 
 if __name__ == "__main__":
