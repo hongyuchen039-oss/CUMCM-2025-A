@@ -57,14 +57,25 @@ SHA 以 GitHub PR head 为准；不得从本任务文档字面读取）：
 2. `git status --porcelain` 只允许 `work/` 的 untracked 出现；
    tracked 不允许有未提交修改。
 3. `git diff main --stat` 显示的变更文件列表 ⊆ 上述允许列表。
-4. `git log main..HEAD --oneline` 含 1× `DOCS:` + 2× `FIX:` commit
-   （P1 fix `34d8e8f` + P1B fix 当前）；prefix 都正确。
+4. `git log main..HEAD --oneline` 含 1× `DOCS:` + 4× `FIX:` commit
+   （P1 `34d8e8f` + P1B `b0375bf` + Final consistency `3f87b92` +
+   本轮 wording closure）；prefix 都正确。
 5. `git push` 状态：`local = remote = PR head`。尚未 force-push。
 6. PR 状态：Open / Draft / unmerged；base 分支 = `main`。
 7. PR body 包含 3 stress scenarios + 不冒充声明 + HEAD / base /
    changed files + **First Fix Closure** + **Second Fix Closure**。
 8. `outputs/submission/result*.xlsx` 不在变更中。
-9. `work/` 仍是 untracked / gitignored，未被误提交。
+9. `work/` runtime artifacts 状态（不要求整个目录被 .gitignore
+   忽略；按具体路径核验）：
+   - not tracked（未被 git 跟踪）；
+   - not staged（未进 index）；
+   - not committed（未进 commit 历史）；
+   - not pushed（未推送到 origin）；
+   - 仅位于 `allowed_untracked_paths` 授权范围；
+   - 是否 gitignored 按具体路径事实核验（不是按整个 `work/`
+     整体是否 gitignored 推断）；
+   - 不要求整个 `work/` 被 `.gitignore` 忽略。
+   本轮任务未修改 `.gitignore`。
 10. `templates/task-contract.md` 中的主模板 ```json``` 代码块经
     `python -c "import json,re,...; json.loads(...)"` 验证为合法 JSON。
 11. `task-contract.md` 主 JSON 模板：

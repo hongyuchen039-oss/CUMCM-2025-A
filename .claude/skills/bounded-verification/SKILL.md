@@ -179,8 +179,12 @@ phase 必须在 `bounded_verification` 下重新冻结下列字段：
 phase_id                    : str, e.g. "TASK_006-P0P1"
 contract_version            : int, 从 1 单调递增
 target_acceptance_level     : EXPERIMENTAL / BUDGET_LIMITED_BEST_KNOWN / FORMAL_RESULT_VERIFIED
-contract_snapshot_path      : 归档上一 phase 合同的副本路径
+contract_snapshot_path      : 当前 phase 合同的不可变 runtime snapshot 路径
 ```
+
+`contract_snapshot_path` 指向一个 JSON 文件，作为 **当前 phase 合同的
+不可变 runtime snapshot** 保存；这一定义与
+`templates/task-contract.md` Phase contract lifecycle 段完全一致。
 
 Phase 内 frozen fields（**不得在 phase 运行中修改**）：
 
@@ -203,9 +207,21 @@ Phase 内 frozen fields（**不得在 phase 运行中修改**）：
 6. `contract_version` +1。
 7. 新预算数字重新冻结（基于上一 phase 实测）。
 8. 新 `checkpoint_path`（不得与历史 phase 共享）。
-9. 保存旧合同 snapshot 到 `contract_snapshot_path`。
+9. snapshot 处理（与 `templates/task-contract.md` 一致）：
+   - 确认上一 phase 的 snapshot 存在且保持不变；
+   - 为新 phase 分配**新的** `contract_snapshot_path`（不得复用
+     上一 phase 的路径）；
+   - 在该新路径保存当前 phase 合同的不可变 runtime snapshot。
 10. 更新 `work/task_context.json`。
 11. Harness 通过（`CONTEXT_VALID_*`）后才可启动下一 phase。
+
+明确：
+
+- phase 1 没有 previous snapshot：直接为 phase 1 分配
+  `contract_snapshot_path`，在该路径保存 phase 1 当前合同 snapshot；
+- phase 2+ 不覆盖、不修改上一 phase 的 snapshot；
+- 每个 phase 都拥有自己的 `contract_snapshot_path`；
+- 与 `templates/task-contract.md` 的定义保持完全一致。
 
 **明确**：phase-boundary re-freeze 不是 mid-run budget mutation。
 
