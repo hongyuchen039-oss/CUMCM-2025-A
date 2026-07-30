@@ -103,10 +103,13 @@ bounded_verification           : object  (see §5.2)
 
 ```
 bounded_verification:
+  phase_id                      : str, e.g. "TASK_006-P0P1"
+  contract_version              : int, 从 1 单调递增
+  target_acceptance_level       : EXPERIMENTAL | BUDGET_LIMITED_BEST_KNOWN
+                                   | FORMAL_RESULT_VERIFIED
+  contract_snapshot_path        : str, immutable runtime snapshot 路径
   goal                          : str
   task_type                     : DOCS | FAST | TASK | EXPENSIVE | GOVERNANCE
-  acceptance_level              : EXPERIMENTAL | BUDGET_LIMITED_BEST_KNOWN
-                                   | FORMAL_RESULT_VERIFIED
   fast_tests                    : list[str]
   task_tests                    : list[str]
   full_regression_trigger       : bool
@@ -119,6 +122,14 @@ bounded_verification:
   result_claim                  : str
   stop_condition                : str
 ```
+
+字段命名锁定（**严禁出现 `acceptance_level` 作为 bounded_verification
+顶层字段**）：
+
+- `target_acceptance_level` = 当前 phase 在启动前冻结的目标等级；
+- `declared_level` （在 final-report.md §H 使用）= phase 执行结束后
+  由真实 evidence 支持的实际等级；
+- 不得新增第二个 `acceptance_level` 字段。
 
 ### 5.3 Validation split（重要）
 
@@ -380,16 +391,84 @@ CODE_FAILED 阻塞一切晋升，必须修复后重跑。
 
 ## 14. Result credibility levels
 
-强制使用以下等级（不得跳跃）：
+强制使用以下等级（不得跳跃；详细字段定义见 `templates/final-report.md §H`）：
 
 ```
-EXPERIMENTAL       (单次尝试，未交叉验证)
-  → BUDGET_LIMITED_BEST_KNOWN   (预算受限 best-known)
-    → FORMAL_RESULT_VERIFIED     (正式结果已验证，独立 Audit 通过)
+EXPERIMENTAL               (Pilot / 单次探索 / Builder evidence only)
+  → BUDGET_LIMITED_BEST_KNOWN   (运行 evidence level；可在独立 Audit 之前声明)
+    → FORMAL_RESULT_VERIFIED     (正式 result level；需独立 Audit + Hermes + MAIN 一起)
       → ANALYTICAL_OPTIMUM       (解析证明全局最优)
 ```
 
-每级必须显式记录 promoted-by / verified-by / pending-by，禁止伪造跳跃。
+### 字段约定（与 final-report.md §H 一致）
+
+每级必须显式记录，且只允许下列字段，**禁止伪造跳跃**：
+
+```
+declared_level              : <EXPERIMENTAL | BUDGET_LIMITED_BEST_KNOWN | FORMAL_RESULT_VERIFIED>
+evidence_generated_by       : <Builder + 实际 evidence commit SHA>
+math_reviewed_by            : <独立 Audit CC，或 NOT_RUN / PENDING>
+git_verified_by             : <Hermes，或 NOT_RUN / PENDING>
+promotion_authorized_by     : <MAIN / USER，或 PENDING>
+pending_by                  : <下一步谁审>
+```
+
+### 谁能声明哪一级
+
+- Builder **可以**根据合法正式运行 evidence 在 phase 结束后声明
+  `declared_level = BUDGET_LIMITED_BEST_KNOWN`，前提：
+  冻结的 evaluation budget + wall-clock budget + clean committed
+  HEAD + 有效 checkpoint / identity + 真实 evaluator + 没有
+  CODE_TEST_FAILED / RUN_SYSTEM_ERROR + 预算结束后形成 best-observed，
+  并同时显式声明 `LOCAL_CONVERGENCE_NOT_ESTABLISHED` +
+  `NOT_A_PROVEN_GLOBAL_OPTIMUM`。
+- Builder **不得**声明 `FORMAL_RESULT_VERIFIED`。
+- 独立 Audit CC **负责**数学复核（`math_reviewed_by`）。
+- Hermes **负责**Git / PR 状态核验（`git_verified_by`）；Hermes **不验证**
+  数学结果。
+- MAIN / USER **单独负责**正式 result 的晋升授权
+  （`promotion_authorized_by`）。
+- 跳过任何一级（如从 `EXPERIMENTAL` 直接到 `FORMAL_RESULT_VERIFIED`）
+  即伪造跳跃，禁止。
+
+### `BUDGET_LIMITED_BEST_KNOWN` 的必要条件（运行 evidence level）
+
+可在独立 Audit **之前**声明，但必须同时满足：
+
+- 冻结的 evaluation budget；
+- 冻结的 wall-clock budget；
+- clean committed HEAD；
+- 有效 checkpoint / identity；
+- 真实 evaluator（不是 mock / 不是 shortcut）；
+- 没有 `CODE_TEST_FAILED` / `RUN_SYSTEM_ERROR`；
+- 候选来自实际合法 candidate pool；
+- 预算结束后形成 best-observed；
+- 显式声明：`LOCAL_CONVERGENCE_NOT_ESTABLISHED` +
+  `NOT_A_PROVEN_GLOBAL_OPTIMUM`。
+
+### `FORMAL_RESULT_VERIFIED` 的必要条件（独立审查后的 result level）
+
+必须同时满足：
+
+- `math_reviewed_by = independent Audit CC PASS`
+- `git_verified_by = Hermes PASS`
+- `promotion_authorized_by = MAIN / USER`（显式签字授权）
+
+缺少任一项不得声明 `FORMAL_RESULT_VERIFIED`。
+
+### 等级语义澄清
+
+- `BUDGET_LIMITED_BEST_KNOWN` 是 **运行 evidence level**（基于真实
+  frozen-budget 运行）；
+- `FORMAL_RESULT_VERIFIED` 是 **独立审查 + 显式签字后的 result level**
+  （不可逆 promote）。
+
+禁止：
+
+- 在未运行前把任何 phase 的 `declared_level` 标记为
+  `FORMAL_RESULT_VERIFIED`；
+- 跳过 BUDGET_LIMITED_BEST_KNOWN 直接声明 FORMAL_RESULT_VERIFIED；
+- 用 Builder 的自我测试代替独立 Audit 签字。
 
 ## 15. Builder / Audit / Hermes boundaries
 

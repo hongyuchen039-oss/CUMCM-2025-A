@@ -125,16 +125,51 @@ pending_by                  : <下一步谁审 — 例如 "Audit CC",
 
 - `math_reviewed_by = independent Audit CC PASS`
 - `git_verified_by = Hermes PASS`
-- `promotion_authorized_by = MAIN / USER`（显式签字）
+- `promotion_authorized_by = MAIN / USER`（显式签字授权）
 
-缺少任一项，**最高只能声明**：
+缺少任一项不得声明 `FORMAL_RESULT_VERIFIED`。
 
-- `BUDGET_LIMITED_BEST_KNOWN`（已通过独立数学复核 + Git 核验，
-  但未到 promotion 签字）；或
-- `EXPERIMENTAL`（仅 Builder evidence，未到独立数学复核）。
+### 等级语义（BUDGET 是运行 evidence level，FORMAL 是 result level）
 
-`ANALYTICAL_OPTIMUM` 需额外有解析证明 + MAIN 单独裁决，不在本模板
-涵盖。
+| 等级 | 性质 | 典型声明方 | 典型签字组合 |
+|---|---|---|---|
+| `EXPERIMENTAL` | Pilot / 单次探索 / Builder evidence only | Builder | `math_reviewed_by = NOT_RUN`；`git_verified_by = NOT_RUN` 或 `Hermes PASS`；`promotion_authorized_by = PENDING` |
+| `BUDGET_LIMITED_BEST_KNOWN` | **运行 evidence level**（基于真实 frozen-budget 运行；可在独立 Audit 之前声明） | Builder | `evidence_generated_by = Builder + commit SHA`；`math_reviewed_by = NOT_RUN` 或 `independent Audit CC PASS`；`git_verified_by = NOT_RUN` 或 `Hermes PASS`；`promotion_authorized_by = PENDING` |
+| `FORMAL_RESULT_VERIFIED` | **独立审查 + 显式签字后的 result level** | MAIN / USER 显式签字 | 三项签字必须齐全：`Audit PASS` + `Hermes PASS` + `MAIN/USER` |
+
+### `BUDGET_LIMITED_BEST_KNOWN` 的声明条件（运行 evidence level）
+
+可以在独立 Audit **之前**声明，但必须同时满足：
+
+- 冻结的 evaluation budget；
+- 冻结的 wall-clock budget；
+- clean committed HEAD；
+- 有效 checkpoint / identity；
+- 真实 evaluator（不是 mock / 不是 shortcut）；
+- 没有 `CODE_TEST_FAILED` / `RUN_SYSTEM_ERROR`；
+- 候选来自实际合法 candidate pool；
+- 预算结束后形成 best-observed；
+- 显式声明：`LOCAL_CONVERGENCE_NOT_ESTABLISHED` +
+  `NOT_A_PROVEN_GLOBAL_OPTIMUM`。
+
+声明时字段建议：
+
+```
+declared_level              : BUDGET_LIMITED_BEST_KNOWN
+evidence_generated_by       : <Builder> + <commit SHA>
+math_reviewed_by            : NOT_RUN          (若是独立 Audit 之后：independent Audit CC PASS)
+git_verified_by             : NOT_RUN          (若是 Hermes 之后：Hermes PASS)
+promotion_authorized_by     : PENDING          (待 MAIN / USER 显式签字后可升级为 FORMAL_RESULT_VERIFIED)
+pending_by                  : Audit CC         (下一步建议先 Audit，再 Hermes，再 MAIN)
+```
+
+`BUDGET_LIMITED_BEST_KNOWN` 不要求独立数学复核后才能声明；它属于
+**运行 evidence level**，与 `FORMAL_RESULT_VERIFIED` 的 result level
+是两个独立维度。
+
+### `ANALYTICAL_OPTIMUM`
+
+需额外有解析证明 + MAIN 单独裁决，不在本模板涵盖。
 
 ### 未执行项必须显式标记
 

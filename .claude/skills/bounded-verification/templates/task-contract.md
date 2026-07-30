@@ -173,14 +173,39 @@ Pilot/任何 task 在填写 path 列表前必须字面检查
 
 ## Phase contract lifecycle（必须）
 
-### 每 phase 都启动前必须
+### contract_snapshot_path runtime snapshot 语义
 
-1. 复制上一 phase 完成的 `contract_snapshot_path`，归档到
-   `work/task_contracts/<phase_id>-v<contract_version_prev>.json`。
-2. `phase_id`、`contract_version`、`target_acceptance_level`、
+`contract_snapshot_path` 指向的 JSON 文件是 **当前 phase 合同的不可变
+runtime snapshot**，必须遵守：
+
+- 当前 phase 启动前保存（包含完整 outer + bounded_verification JSON）；
+- 下一 phase 启动时使用新的 `contract_snapshot_path`，不得覆盖上一
+  phase 的 snapshot；
+- 历史 snapshot 保留，不删除；
+- 必须位于 `allowed_untracked_paths` 授权范围内（典型 =
+  `work/` 子目录）；
+- **不得** staged、**不得** commit、**不得** push；
+- 不要求当前仓库已将其 gitignore（`.gitignore` 是 BUILD 配置，
+  本 Skill 不强制改它）；
+- 是否添加精确 `.gitignore` 条目由具体 task 决定（应避免修改）。
+
+### 首 phase 行为
+
+- 项目的 phase 1（例如 `TASK_006-P0P1`）**没有** previous phase；
+  此时不要求复制不存在的旧 snapshot；
+- 直接在 `contract_snapshot_path` 处保存 phase 1 当前合同 snapshot；
+- 这一行为兼容 phase 1 与 phase 2+ 的步骤序列。
+
+### 每 phase 启动前必须
+
+1. **phase 2+ 才执行**：确认上一 phase 的 `contract_snapshot_path`
+   存在且内容保持不变；**phase 1 跳过此步**。
+2. **所有 phase 都执行**：在 `contract_snapshot_path` 处保存当前
+   phase 的不可变 runtime snapshot。
+3. `phase_id`、`contract_version`、`target_acceptance_level`、
    `max_expensive_evaluations`、`max_run_wall_clock_seconds`、
    `checkpoint_path` 都重新评估或重新冻结。
-3. 写入新的 `work/task_context.json`，并跑：
+4. 写入新的 `work/task_context.json`，并跑：
    `python scripts/verify_task_context.py --context work/task_context.json`
    → 至少 `CONTEXT_VALID_AUTHORIZED_DIRTY`。
 
@@ -275,7 +300,7 @@ Path lists 在写入 `work/task_context.json` 前必须字面检查无 wildcard
 - 任意时刻 `bounded_verification.resume_identity_fields` 与历史
   checkpoint 不一致仍强行 resume。
 - 在 dirty worktree 上产生 canonical 结果。
-- `bounded_verification.acceptance_level` 缺省未填。
+- `bounded_verification.target_acceptance_level` 缺省未填。
 - `bounded_verification.stop_condition` 未写明。
 - `allowed_*_paths` / `forbidden_paths` 中出现 `*` / `**` / `?` /
   `[]` 等通配符。
