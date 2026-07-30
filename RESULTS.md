@@ -677,11 +677,17 @@ DOC-ONLY P2 CLOSED BY CURRENT COMMIT
 
 ---
 
-## Q3 Pilot (TASK_006-P0P1 / EXPERIMENTAL Q3 PILOT / RESULT1.XLSX NOT GENERATED)
+## Q3 Pilot (TASK_006-P0P1-CLOSURE / EXPERIMENTAL Q3 PILOT / RESULT1.XLSX NOT GENERATED)
 
 > 本节为 Q3 三弹 evaluator + bounded pilot 的实测记录。
 > 等级: **EXPERIMENTAL Q3 PILOT / NOT A FORMAL Q3 RESULT / RESULT1.XLSX NOT GENERATED**。
-> Pilot 在 clean-HEAD `4d442a7a16127ca0166d1114656b5fe4d5546b4d` 上完成。
+> Pilot 在 clean-HEAD `4d442a7a16127ca0166d1114656b5fe4d5546b4d` 上完成（commit `59999f9aba063e90d8428f5f783d8cc4abf10d62`）。
+> **closure v2 (TASK_006-P0P1-CLOSURE)**: 不重跑 94-evaluation Pilot,
+> 仅修复 (a) stage_counts 机器证据, (b) per_bomb_intervals 序列化,
+> (c) budget_recommendation 算术, (d) resume identity + fail-closed,
+> (e) heading_rad 原始范围。1 次 targeted reconstruction Q3 call
+> 复评 best pilot candidate (coarse profile, scan_step=0.05),
+> 严格 = 原始 3.788169 s。
 > 独立审查签字 + MAIN 显式立项 TASK_006-P2 后才能升 `BUDGET_LIMITED_BEST_KNOWN`
 > 或进一步生成 result1.xlsx。
 
@@ -698,16 +704,23 @@ DOC-ONLY P2 CLOSED BY CURRENT COMMIT
 - unique_q3_evaluation_ids: **86** (Stage C/D 决赛阶段重评引入 8 个重复 ID)
 - 执行 HEAD: `4d442a7a16127ca0166d1114656b5fe4d5546b4d` (WORKING commit)
 - base SHA: `007b93d301db73c9a73904337de34d1b4e13467e`
+- closure v2 evidence HEAD: `59999f9aba063e90d8428f5f783d8cc4abf10d62` (VERIFIED commit, 保留原 94-evaluation 证据)
+- closure v2 code HEAD: 待 VERIFIED commit 后填入 (本节 FIX commit)
+- 1 次 targeted reconstruction Q3 call: `outputs/q3/q3_targeted_reconstruction.json`
+  (q3_evaluation_id = f98d28e99c3901be135a9d2a25b93849ad19e7391a10846431ca6138f51478ff,
+  total_union_duration_s = 3.788169 s, 与原始 3.7881687521934495 s 严格一致)
 
-### 1. Pilot 阶段分配（实测）
+### 1. Pilot 阶段分配（实测, closure v2 显式 stage_counts）
 
 | 阶段 | 候选来源 | 评估数 | profile |
 |---|---|---|---|
-| Stage A profile calibration | profile_calibration (q2_canonical_seed_family) | 6 | 2 cands × coarse/medium/fine |
-| Stage B deterministic coarse exploration | deterministic_random_seed_2025 + _2026 | 80 | coarse |
-| Stage C medium finalist recheck | finalist_medium_recheck | 6 | medium |
-| Stage D fine spot-check | finalist_fine_spotcheck | 2 | fine |
-| **合计** | | **94** | |
+| Stage A profile calibration (calibration) | profile_calibration (q2_canonical_seed_family) | 6 | 2 cands × coarse/medium/fine |
+| Stage B deterministic coarse exploration (coarse_exploration) | deterministic_random_seed_2025 + _2026 | 80 | coarse |
+| Stage C medium finalist recheck (medium_recheck) | finalist_medium_recheck | 6 | medium |
+| Stage D fine spot-check (fine_spotcheck) | finalist_fine_spotcheck | 2 | fine |
+| **合计 (total)** | | **94** | |
+
+closure v2 §三: `stage_counts = {calibration: 6, coarse_exploration: 80, medium_recheck: 6, fine_spotcheck: 2, total: 94}` 由 schedule record 精确 +1, 不得从 profile count 反推。
 
 - Stage D 的 `top-2 fine finalists` 来自 finalist_medium_recheck 排序后 top-2 (medium 评估过后的候选)
 - 仅 best candidate 在 Stage A 由 profile_calibration 进入 (coarse profile dur=3.788 s, medium dur=3.784 s, fine dur=3.782 s)
@@ -737,6 +750,7 @@ DOC-ONLY P2 CLOSED BY CURRENT COMMIT
 | release_time_3_s | 5.205790545673161 |
 | delay_3_s | 3.637016476748259 |
 | per_bomb_duration_s | [3.788169, 0, 0] |
+| **per_bomb_intervals** (closure v2: 恰好 3 项) | `[[[5.551472308646765, 9.339641060840215]], [], []]` |
 | total_union_duration_s | 3.7881687521934495 |
 | union_intervals | [(5.551472308646765, 9.339641060840215)] |
 | evaluation_id | f98d28e99c3901be135a9d2a25b93849ad19e7391a10846431ca6138f51478ff |
@@ -746,40 +760,65 @@ DOC-ONLY P2 CLOSED BY CURRENT COMMIT
 - **重要观察**: Pilot best candidate 仅 bomb 1 贡献非零 duration (3.788 s); bomb 2 与 bomb 3 各自总时长 0
 - 原因: pilot 候选生成采用 `q2_canonical_seed_family` 锚点 + 随机扰动, 三枚弹的 release_time 间隔较大 (≥1 s), 后两枚弹的 detonate 时刻常落入 t_arrival 之后或严格遮蔽时间窗外, 贡献空 union
 - 该观察仅为 Pilot 阶段粗扫结果, 不构成 Q3 真实最优; 真实 Q3 形式搜索可能产生非平凡 union (三枚弹均贡献), 需要 bounded formal search 评估
+- closure v2 §二: `per_bomb_intervals` 必须为恰好 3 项 list (即便部分 bomb 空 union 也输出 `[]`)
 
-### 4. Budget recommendation（向 MAIN 提交）
+### 4. Budget recommendation (closure v2: stage-weighted 公式 + efficient / conservative 双方案)
+
+**`recommendation_status: MAIN_DECISION_REQUIRED`** — closure v2 不得硬编码
+单一推荐值, 改用 stage-weighted 公式 + efficient / conservative 两 scenario,
+由 MAIN 在 TASK_006-P2 立项前决定。
+
+公式: `sum(profile_count × profile_p90) × safety_factor (1.5)`
+
+#### efficient scenario
 
 | 字段 | 值 |
 |---|---|
-| recommended_formal_q3_evaluations | 528 |
-| recommended_seed_count | 3 |
-| recommended_formal_wall_clock_seconds | 16557 |
-| recommended_refinement_evaluations | 32 |
-| recommended_verification_q3_calls | 5 |
+| coarse_evaluations | 480 |
+| medium_evaluations | 8 |
+| fine_evaluations | 4 |
+| total_q3_evaluations | 492 |
+| p90_raw_seconds | 486.912 (= 480×0.5750 + 8×5.5935 + 4×41.5400) |
 | safety_factor | 1.5 |
+| recommended_wall_clock_seconds | **730** |
+
+#### conservative scenario
+
+| 字段 | 值 |
+|---|---|
+| coarse_evaluations | 480 |
+| medium_evaluations | 24 |
+| fine_evaluations | 8 |
+| total_q3_evaluations | 512 |
+| p90_raw_seconds | 742.568 (= 480×0.5750 + 24×5.5935 + 8×41.5400) |
+| safety_factor | 1.5 |
+| recommended_wall_clock_seconds | **1114** |
+
+#### explicit null fields (closure v2 §十二禁止硬编码 legacy constants)
+
+| 字段 | 值 |
+|---|---|
+| recommended_refinement_evaluations | **null** |
+| recommended_verification_q3_calls | **null** |
 
 calculation_basis:
-- coarse median = 0.5227 s, coarse p90 = 0.5750 s
-- fine median = 41.2872 s, fine p90 = 41.5400 s
+- coarse_p90 = 0.5750 s (count=82)
+- medium_p90 = 5.5935 s (count=8)
+- fine_p90 = 41.5400 s (count=4)
 - safety_factor = 1.5
 - pilot completed 94 evals
 
-推算逻辑:
-```
-estimated_evals = 3 seeds × (160 coarse + 8 medium + 8 fine) = 528
-per_eval_est = (coarse_median + fine_median) / 2 ≈ 20.9 s
-recommended_wall = 528 × 20.9 × 1.5 ≈ 16557 s
-```
-
 ### 5. MAIN 决策建议（不冒充）
 
-预算推荐来自实测 median / p90，未照抄 TASK_005 的 3×1000 / 32 / 5 / 6。
+预算推荐来自实测 p90 per profile，未照抄 TASK_005 的 3×1000 / 32 / 5 / 6。
 
 考虑到 fine profile 单次 ~41 s 远高于 coarse (~0.5 s)，MAIN 在 TASK_006-P2 立项前可考虑：
 1. **优先 coarse 阶段大量采样**: fine 只用于 finalist 重评;
-2. **降低 fine 阶段比例**: 若非必要可只对 top-2 而非 top-8 做 fine 复评;
+2. **降低 fine 阶段比例**: 若非必要可只对 top-2 而非 top-8 做 fine 复评 (对应 conservative 比 efficient 多 4 fine evals ≈ 166 s);
 3. **取消 Stage A 中 fine profile calibration**: Stage A 已有 coarse+medium，fine 耗时占 60% 但对 Stage B/C/D 决策不直接参与;
-4. **三 seed × 160 coarse + 8 medium + 4 fine**: 若只对 top-4 做 fine 复评，可将 recommended_wall 从 16557 s 降至 ~10000 s.
+4. **efficient / conservative 之差 ~384 s**: 主要来自 medium 8 vs 24 (96 s p90 差) 与 fine 4 vs 8 (166 s p90 差).
+
+closure v2 推荐 efficient 起步 (730 s wall) + 决赛阶段按需升级到 conservative (1114 s wall); 保守上限不应超过 1500 s (与 TASK_005 Q2 历史最严上限对齐)。
 
 本轮仅交付实测与建议，不冒充 Q3 Formal Search 的最优预算。
 
@@ -788,6 +827,21 @@ recommended_wall = 528 × 20.9 × 1.5 ≈ 16557 s
 - 不冒充 VERIFIED GLOBAL OPTIMUM
 - 不冒充 FINAL OFFICIAL ANSWER
 - 不冒充 LOCAL CONVERGENCE ESTABLISHED
-- 不冒充 16557 s 必须是真实 wall-clock 上限（仅基于 Pilot 实测 + safety_factor 推导）
+- 不冒充 730 / 1114 s 必须是真实 wall-clock 上限（仅基于 Pilot 实测 + safety_factor 推导）
 - 不冒充 Pilot best candidate (3.788 s) 是 Q3 全局最优
 - 不冒充 Pilot 中发现的"单弹贡献"模式是 Q3 真实最优结构
+- closure v2 budget recommendation 显式 `MAIN_DECISION_REQUIRED`, 由 MAIN 在 efficient / conservative 之间决策
+
+### 7. closure v2 修复清单（evidence_corrections, 见 q3_pilot_summary.json）
+
+| corrected_field | 原状态 (commit 59999f9a) | closure v2 状态 | 来源 |
+|---|---|---|---|
+| stage_counts | {calibration: 12, coarse_exploration: 78, fine_spotcheck: 4, medium_recheck: 8} | {calibration: 6, coarse_exploration: 80, medium_recheck: 6, fine_spotcheck: 2, total: 94} | schedule record 显式 +1 |
+| best_pilot_candidate.per_bomb_intervals | 1 项 list (缺 2 枚) | 3 项 list (bomb 1 非空, bomb 2/3 空) | _serialize_best_candidate 重写 |
+| budget_recommendation | 硬编码 528 / 32 / 5 / 16557 | stage-weighted + MAIN_DECISION_REQUIRED + efficient / conservative | _recommend_budget 重写 |
+| resume_identity.schedule_sha256 | 缺失 | 新增 (6 项 identity 之一) | run_pilot 重写为 schedule-based |
+| resume_identity.fail_closed | 静默 fallback | CHECKPOINT_LOAD_ERROR / RESUME_IDENTITY_MISMATCH (exit 2) | run_pilot 重写 |
+| validate_candidate.heading_rad_strict_range | normalize 后判定 (隐式 wrap) | 原始字段 0 ≤ heading_rad < 2π 严格判定 | closure v2 §四 |
+
+- closure v2 evidence commit HEAD (FIX commit) 与 original_pilot_evidence_commit (`59999f9a`) 不同; PR body 用 base_sha / original_pilot_execution_head (`4d442a7a`) / original_evidence_commit (`59999f9a`) / closure_code_head / closure_evidence_head / current_pr_head 6 个独立字段区分.
+- 1 次 targeted reconstruction Q3 call = `python -m src.q3_three_bombs --targeted-reconstruction --profile coarse --scan-step 0.05`, 输出 `outputs/q3/q3_targeted_reconstruction.json`.
