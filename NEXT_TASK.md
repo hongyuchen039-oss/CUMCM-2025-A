@@ -1,106 +1,131 @@
-# 当前唯一任务
+# TASK_GOV_003 — BOUNDED VERIFICATION SKILL v0.1 — P1B CONTRACT CLOSURE
 
-## 任务标题
-TASK_005 FINAL GIT / PR VERIFICATION — HERMES HANDOFF
+> 本轮是 TASK_GOV_003 的 **P1B second contract fix**。在 P1 fix
+> （`34d8e8f`）已并入 PR #12 的基础上，再修三处 P1：
+>
+> 1. Harness v1 不支持 glob/path-wildcard — `allowed_*_paths` /
+>    `forbidden_paths` 必须为精确路径或真实目录前缀；
+> 2. Skill 缺 Pilot → Formal 的 phase-boundary 重新冻结合同；
+> 3. final-report 的 `verified_by` 会混淆 Builder / Audit /
+>    Hermes / MAIN，必须拆分为四个职责互斥的字段。
+>
+> 不修改 `CLAUDE.md` / `START_HERE.md`；不修改 Harness；不启动
+> TASK_006；不重跑测试 / evaluator / Q2 / Q3。
 
-## 已完成
-- independent Audit passed
-- no P0 / no P1
-- doc-only P2 closed by current commit
-- canonical Q2 result promoted: 4.260970878601073 s
+## 当前任务边界
 
-## 状态声明（不变）
+- Base: `main` = `5604bb086668ac6a857fc2c5ad86b0b8eb2713ae`
+- Pre-fix head (audit base): `34d8e8f3e994a317463e2130cf6f57043e428f74`
+  （PR #12 上的 P1 FIX commit；本轮 P1B FIX 的起点）
+- Branch: `task/TASK_GOV_003-bounded-verification`
+- PR: `#12`
 
-```
-FORMAL BUDGET-LIMITED BEST-KNOWN Q2 CANDIDATE /
-LOCAL CONVERGENCE NOT ESTABLISHED /
-NOT A PROVEN GLOBAL OPTIMUM
-```
+### 本轮允许修改（仅 4 个文件 + PR body）
 
-## Canonical Q2 result
+| 路径 | 用途 |
+|---|---|
+| `.claude/skills/bounded-verification/SKILL.md` | 加 §5.4 Harness path semantics（no glob）+ §5.5 phase contract lifecycle；改 §8 clean HEAD 措辞 |
+| `.claude/skills/bounded-verification/templates/task-contract.md` | 删 wildcard 示例；加 phase_id / contract_version / target_acceptance_level / contract_snapshot_path；以 TASK_006-P0P1 pilot 模板为准 |
+| `.claude/skills/bounded-verification/templates/final-report.md` | 拆 verified_by 为 evidence_generated_by / math_reviewed_by / git_verified_by / promotion_authorized_by / pending_by |
+| `NEXT_TASK.md` | 回填 pre-fix head = `34d8e8f…`；"五项 milestone" + 新增 Hermes 校验项 |
+| `PR #12 body` | 加 **Second Fix Closure** 小节 |
 
-```
-heading_rad     = 3.126767217560497
-speed_mps       = 116.43351397802584
-release_time_s  = 1.2672692031529031
-delay_s         = 3.789202402720746
-total_duration_s = 4.260970878601073
-interval (s)    = (5.089825368500298, 9.350796247101371)
-```
+### 禁止修改
 
-旧候选 `(3.121767217560497, 115.43351397802584, 1.7672692031529031, 3.889202402720746)` dur `2.48275905609131 s` 已降级为 `HISTORICAL FORMAL-SEARCH CANDIDATE`。
+`CLAUDE.md`、`START_HERE.md`、`scripts/verify_task_context.py`、
+`configs/`、`src/`、`tests/`、`outputs/`、`problem/`、`MODEL.md`、
+`RESULTS.md`、`README.md`、`.gitignore`、任何 `result*.xlsx`、
+任何 tracked `work/` 文件。
 
-## 当前唯一任务（read-only）
+## 本轮修复要点（pre-fix `34d8e8f` vs post-fix）
 
-Hermes 只读核验最终仓库和 PR 事实，不修改任何文件。
+| 维度 | pre-fix | post-fix |
+|---|---|---|
+| `task-contract.md` pilot 示例 path lists | 含 `src/q3_*.py` / `outputs/q3/**` / `src/q2_*.py` 等 wildcard | 改为精确路径（`src/q3_three_bombs.py` / `outputs/q3/` 等），与 Harness v1 字面校验能力匹配 |
+| Skill §5 / `task-contract.md` phase 字段 | 缺 `phase_id` / `contract_version` / `target_acceptance_level` / `contract_snapshot_path` | 4 个字段列入 Skill `§5.5` + `task-contract.md` Phase contract lifecycle；Pilot 默认填 `TASK_006-P0P1 / 1 / EXPERIMENTAL / work/task_contracts/TASK_006-P0P1-v1.json` |
+| final-report §H | 含 `verified_by : <Audit CC / Hermes / 自身测量>`（混合四种角色） | 拆为 5 个互斥字段 `declared_level` / `evidence_generated_by` / `math_reviewed_by` / `git_verified_by` / `promotion_authorized_by` / `pending_by`；明确角色归属锁定 + 未执行必须写 `NOT_RUN` / `PENDING` |
+| SKILL.md §8 clean HEAD wording | 写"git status --porcelain 输出为空，允许 work/ untracked"（近似但语义模糊） | 改为按 `git diff --name-only` / `--cached` / conflicts / `allowed_untracked_paths` 逐项排除 |
+| `NEXT_TASK.md` | pre-fix head = `6075884`；引用"四项 milestone"与 §三/§四 pre-fix 列 | pre-fix head = `34d8e8f`；五项 milestone；新增 Hermes 校验项 13–16 |
 
-### Hermes 应核验
+## Hermes 必须核验的事实（必须用 PR head，不用自我引用 SHA）
 
-- current PR head after DOCS promotion commit（占位标记：`FINAL_DOC_HEAD_TO_BE_FILLED_AFTER_COMMIT`；实际 SHA 在 PR body / final report 中给出，避免自引用循环）
-- branch = `task/TASK_005-q2-formal-search`
-- base = `9ea31890c22b11089f9d224c0e90f1a0cab8fde8`
-- commit count、push status
-- PR Open / Draft / unmerged
-- changed files 仅落在允许范围：START_HERE.md / NEXT_TASK.md / README.md / MODEL.md / RESULTS.md
-- no Q3 启动
-- no result*.xlsx
-- no src / tests / scripts / configs / outputs JSON / problem / CLAUDE / .claude / Harness / .gitignore 改动
-- 任务上下文 verify_task_context 状态有效
+本轮 P1B FIX 形成后，Hermes 应核验 **PR #12 的最终 head**（具体
+SHA 以 GitHub PR head 为准；不得从本任务文档字面读取）：
 
-### Hermes 禁止
+1. `git rev-parse origin/task/TASK_GOV_003-bounded-verification` =
+   PR #12 head。
+2. `git status --porcelain` 只允许 `work/` 的 untracked 出现；
+   tracked 不允许有未提交修改。
+3. `git diff main --stat` 显示的变更文件列表 ⊆ 上述允许列表。
+4. `git log main..HEAD --oneline` 含 1× `DOCS:` + 4× `FIX:` commit
+   （P1 `34d8e8f` + P1B `b0375bf` + Final consistency `3f87b92` +
+   本轮 wording closure）；prefix 都正确。
+5. `git push` 状态：`local = remote = PR head`。尚未 force-push。
+6. PR 状态：Open / Draft / unmerged；base 分支 = `main`。
+7. PR body 包含 3 stress scenarios + 不冒充声明 + HEAD / base /
+   changed files + **First Fix Closure** + **Second Fix Closure**。
+8. `outputs/submission/result*.xlsx` 不在变更中。
+9. `work/` runtime artifacts 状态（不要求整个目录被 .gitignore
+   忽略；按具体路径核验）：
+   - not tracked（未被 git 跟踪）；
+   - not staged（未进 index）；
+   - not committed（未进 commit 历史）；
+   - not pushed（未推送到 origin）；
+   - 仅位于 `allowed_untracked_paths` 授权范围；
+   - 是否 gitignored 按具体路径事实核验（不是按整个 `work/`
+     整体是否 gitignored 推断）；
+   - 不要求整个 `work/` 被 `.gitignore` 忽略。
+   本轮任务未修改 `.gitignore`。
+10. `templates/task-contract.md` 中的主模板 ```json``` 代码块经
+    `python -c "import json,re,...; json.loads(...)"` 验证为合法 JSON。
+11. `task-contract.md` 主 JSON 模板：
+    `phase_id == "TASK_006-P0P1"`、`target_acceptance_level == "EXPERIMENTAL"`、
+    `output_artifacts` 不含 `result1.xlsx`、
+    `forbidden_paths` 含 `outputs/submission/`、
+    `checkpoint_path == "work/q3_pilot/checkpoint.json"`。
+12. Pilot 模板中 `allowed_modified_paths` /
+    `allowed_untracked_paths` / `forbidden_paths` 三列表均无
+    `*` / `?` / `[` / `]` 通配符
+    （`HARNESS_PATH_LISTS_NO_GLOB`）。
+13. `final-report.md` 不再含 `verified_by : <Audit CC / Hermes / 自身测量>`；
+    含 `evidence_generated_by`、`math_reviewed_by`、`git_verified_by`、
+    `promotion_authorized_by`、`pending_by`。
+14. `SKILL.md` 不再写 "git status --porcelain 输出为空，允许 work/ untracked"
+    字面；不再写 P0/P1 → P2 自动跳转的允许性。
+15. `SKILL.md` §5.5 / `task-contract.md` Phase contract lifecycle 列出
+    11 步 phase-boundary re-freeze 顺序，并写明 "phase-boundary
+    re-freeze ≠ mid-run budget mutation"。
+16. Pilot 模板严禁含：`FORMAL_RESULT_VERIFIED` /
+    `outputs/submission/result1.xlsx` / `result1.xlsx 已生成` /
+    `Q3 正式预算` / `formal search 已授权`。
 
-- 修改任何文件
-- commit / push
-- 转 Ready / merge
-- 启动 TASK_006
+## Hermes 输出
 
-### Hermes 输出（四选一）
+返回四项之一：
 
-- `PASS`
-- `PASS WITH P2`
-- `P1 BLOCK`
-- `INCOMPLETE`
+| 输出 | 含义 | 后续 |
+|---|---|---|
+| **PASS** | 1–16 全部通过 | MAIN / 用户决定 Ready / merge |
+| **PASS WITH P2** | 仅文档细节需微调 | 仅文档层二次 commit；不改 Skill 主体 |
+| **P1 BLOCK** | 范围 / allow-list / Skill 内容错 | 阻塞，等 MAIN / 用户修正 |
+| **INCOMPLETE** | 数据未齐全 | 等回填后再核 |
 
-### Hermes 完成后
+## Hermes 禁止
 
-MAIN / 用户授权 Ready 或 merge。
+- 修改任何 Skill / template / `NEXT_TASK.md` / PR body；
+- 触发 commit / push / amend / rebase / merge；
+- 把 PR 标记为 Ready / merge / close；
+- 启动 TASK_006 / Q3 / result1.xlsx 生成；
+- 触碰到任何 result*.xlsx 模板；
+- 触碰 work/ tracked 文件化。
 
-## 绝对禁止（已在本轮执行过的不重复）
+## STOP CONDITION（任务终止）
 
-- 重跑 evaluator
-- 重跑 formal / refinement / verification runner
-- 重跑 3×1000
-- 重跑完整 16 项扰动
-- 运行 tests.test_q2_search
-- 运行 unittest discover
-- 自动 merge
-- 自动 Ready
-- 启动 Audit CC / Hermes（仅 MAIN 可启动）
-- 修改 src / tests / scripts / configs / outputs JSON / problem / CLAUDE / .claude / Harness / .gitignore
-- 修改原始 checkpoint / work/q2_formal_refinement/checkpoint.json
+- Hermes 输出 PASS / PASS WITH P2，由 MAIN / 用户显式决定
+  Ready / merge；
+- 合并后由 MAIN 显式立项 TASK_006（第一 phase = `TASK_006-P0P1`）。
 
-## 验证内容（已在本轮执行）
-
-- `git diff --check`
-- 文本一致性 grep
-- harness: `python scripts/verify_task_context.py --context work/task_context.json`
-  → `CONTEXT_VALID_AUTHORIZED_DIRTY` 或 `CONTEXT_VALID_CLEAN`
-
-## 跟踪证据
-
-- `outputs/q2/q2_verify_summary.json` (tracked)
-  - `verification_run_head_sha = 4a1cbd9520d1a62eeeb4cb91180e989c91dcf036`
-  - `verification_script_sha256 = 53e37211c50bdd5395c3fa22dcf9c77a71df5be975fa0803e478a2dfaea28b66`
-  - `q2_search_code_identity    = 3b90accd0ca7695fe8a56e9044fac5fefe8119cfb8ba72d857327ac1e5877ac7`
-  - `checkpoint_source_head_sha = ac97a38c7564c9d7f2c0793c935eeb27bbd1fa90`
-  - `refinement_config_sha256   = 6f9cb503397996b788d0edfc6491b5a4425dd6e4a784f7ad82f8616acfd65a3d`
-  - `evaluator_call_count       = 5`
-  - `stability_evaluation_id    = c19c1eaddffdb8567f4053c118c4a1ed`
-  - `checkpoint_identity_validation = True`
-  - `stability_ok = True`
-  - `physical_validity.ok = True`
-  - `local_convergence_established = False`
-
-## 提交后停止条件
-
-DOCS commit + push + PR #11 body 更新后立即停止；不自动 merge；不进入 Q3 / TASK_006；不启动 Audit CC / Hermes（仅 MAIN 决定）。
+本任务不自动进入下一阶段；不擅自扩大任务；不冒充 TASK_006 已
+启动；不冒充本轮 P1B FIX 自动校验 `bounded_verification` 字段
+（Harness v1 当前不校验该字段，靠 Builder 自检 + 独立 Audit CC
+复核）；不冒充 `verified_by` 仍存在（已拆分为四个互斥字段）。
