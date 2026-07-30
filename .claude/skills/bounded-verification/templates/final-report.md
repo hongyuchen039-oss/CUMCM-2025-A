@@ -73,13 +73,79 @@ evaluations_completed      : <整数>
 checkpoint_identity_ok     : <true / false>
 ```
 
-## H. Result level
+## H. Result level — Result attribution split (重要)
+
+`verified_by` 字段已被废除，原因是它混合了 Builder 测量 / 数学独立
+审查 / Git 状态核验 / MAIN 推广授权四个角色。改为五个 **职责互斥**
+的字段，**每个字段只能由对应角色填写**：
 
 ```
-declared_level             : <EXPERIMENTAL / BUDGET_LIMITED_BEST_KNOWN / FORMAL_RESULT_VERIFIED>
-verified_by                : <Audit CC / Hermes / 自身测量>
-pending_by                 : <下一步谁审>
+declared_level              : EXPERIMENTAL
+                            | BUDGET_LIMITED_BEST_KNOWN
+                            | FORMAL_RESULT_VERIFIED
+
+evidence_generated_by       : <Builder 实际执行的 evaluator / 模型 /
+                              artifact 复算的来源 commit SHA>
+math_reviewed_by            : <独立 Audit CC 复算 PASS；如未运行 → NOT_RUN>
+git_verified_by             : <Hermes 核验 HEAD / SHA / PR / push 状态；
+                              如未运行 → NOT_RUN>
+promotion_authorized_by     : <MAIN / USER 显式签字授权 promote；
+                              如未签字 → PENDING>
+pending_by                  : <下一步谁审 — 例如 "Audit CC",
+                              "Hermes", "MAIN">
 ```
+
+### 字段归属锁定
+
+- `evidence_generated_by` 只能由 **Builder** 填写。
+  Builder 的自我测试与复算不能成为独立 Audit；只能描述
+  "本 Builder 工具体生成的 evidence"，绝不写 "Audit"。
+- `math_reviewed_by` 只能由 **独立 Audit CC** 填写。
+  数学结果是否可信 = `math_reviewed_by = independent Audit PASS`。
+  未运行必须写 `NOT_RUN`，**不得**留空或写 `Builder 测量`。
+- `git_verified_by` 只能由 **Hermes** 填写。
+  Hermes 只核验 Git / PR / SHA / push 状态；Hermes **不验证**
+  数学结果。Git 状态正常 ≠ `math_reviewed_by`。
+- `promotion_authorized_by` 只能由 **MAIN / USER** 填写。
+  没有显式签字授权，**任何**等级不得 promote。
+- `pending_by` 描述下一角色，由 Builder 在汇报末尾填写。
+
+### 角色与字段不允许互填
+
+| 角色 | 可写的字段 | 禁止写的字段 |
+|---|---|---|
+| Builder | `evidence_generated_by`、`pending_by` | `math_reviewed_by`、`promotion_authorized_by` |
+| 独立 Audit CC | `math_reviewed_by` | `evidence_generated_by`、`git_verified_by`、`promotion_authorized_by` |
+| Hermes | `git_verified_by` | `evidence_generated_by`、`math_reviewed_by`、`promotion_authorized_by` |
+| MAIN / USER | `promotion_authorized_by` | `evidence_generated_by`、`math_reviewed_by`（除非同时是 Audit 签字人）|
+
+### `FORMAL_RESULT_VERIFIED` 的必要条件
+
+`declared_level = FORMAL_RESULT_VERIFIED` 必须同时满足：
+
+- `math_reviewed_by = independent Audit CC PASS`
+- `git_verified_by = Hermes PASS`
+- `promotion_authorized_by = MAIN / USER`（显式签字）
+
+缺少任一项，**最高只能声明**：
+
+- `BUDGET_LIMITED_BEST_KNOWN`（已通过独立数学复核 + Git 核验，
+  但未到 promotion 签字）；或
+- `EXPERIMENTAL`（仅 Builder evidence，未到独立数学复核）。
+
+`ANALYTICAL_OPTIMUM` 需额外有解析证明 + MAIN 单独裁决，不在本模板
+涵盖。
+
+### 未执行项必须显式标记
+
+任何上述字段若对应动作未执行，必须写：
+
+- `NOT_RUN`（动作尚未触发）；
+- `PENDING`（动作已指派但未完成）；
+- `NOT_APPLICABLE`（任务类型不适用，例如 DOCS-only 任务无
+  `math_reviewed_by` 必要）。
+
+留空 / N/A / TBD 均视为违规。
 
 ## I. 已建立的可信维度
 
@@ -137,3 +203,5 @@ RESULT_AUTO_PROMOTED     : <NO — 必须由独立 Audit / 用户显式裁决>
 - 不冒充声明不得省略。
 - 不在汇报中写"测试都通过"而不分层; 必须 FAST / TASK / FULL 分别报告。
 - 不在汇报中写"全局最优"或"verified"而无论证。
+- **角色归属**：见 §H 的字段归属锁定。Builder / 独立 Audit CC /
+  Hermes / MAIN 必须各填各的字段；不得代签。

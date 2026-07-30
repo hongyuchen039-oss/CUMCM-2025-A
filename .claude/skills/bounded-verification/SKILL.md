@@ -129,6 +129,80 @@ bounded_verification:
 - **不得声称** `verify_task_context.py` 已自动校验预算字段。
 - 模板见 `templates/task-contract.md`。**不得先运行后补预算。**
 
+### 5.4 Harness v1 path semantics
+
+外层 schema v1 中的三个 path 列表字段
+
+```
+allowed_modified_paths
+allowed_untracked_paths
+forbidden_paths
+```
+
+**仅接受精确路径或真实目录前缀**：
+
+- 精确文件路径，例如 `"configs/q3_search_pilot_v1.json"`；
+- 真实目录前缀（带末尾 `/`），例如 `"outputs/q3/"`。
+
+**不接受任何通配符**：
+
+- `*`、`**`、`?`、`[]` 通配符；
+- glob / fnmatch / 正则语义。
+
+判定要点：
+
+- `"outputs/q3/"`（带尾部斜杠）= 授权其子路径；
+- `"outputs/q3/**"`（带通配）= **不接受**；
+- `"src/q3_*.py"`、`"src/q1_*.py"` 模板风格路径 = **不接受**。
+
+Builder 在写入 `work/task_context.json` 前必须字面检查所有 path：
+`'*' / '?' / '[' / ']'` 任一出现即拒绝。
+
+### 5.5 Phase contract lifecycle
+
+每个 task 由若干 phase 组成（例如 P0/P1 pilot → P2 formal_search
+→ P3 refinement → P4 verification → P5 audit → P6 freeze）。每个
+phase 必须在 `bounded_verification` 下重新冻结下列字段：
+
+```
+phase_id                    : str, e.g. "TASK_006-P0P1"
+contract_version            : int, 从 1 单调递增
+target_acceptance_level     : EXPERIMENTAL / BUDGET_LIMITED_BEST_KNOWN / FORMAL_RESULT_VERIFIED
+contract_snapshot_path      : 归档上一 phase 合同的副本路径
+```
+
+Phase 内 frozen fields（**不得在 phase 运行中修改**）：
+
+- `phase_id`
+- `contract_version`
+- `target_acceptance_level`
+- `max_expensive_evaluations`
+- `max_run_wall_clock_seconds`
+- `checkpoint_path`
+- `resume_identity_fields`
+
+进入下一 phase 的强制顺序（**phase-boundary re-freeze**）：
+
+1. 当前 phase 必须先达到 `stop_condition`。
+2. MAIN 审查当前 phase 的 evidence（result level + checkpoint
+   identity + 不冒充声明 + 测试层级）。
+3. MAIN 显式授权下一 phase。
+4. 形成新的 committed HEAD（包含新 phase 的预算调整 / schema 微调）。
+5. `phase_id` 更新。
+6. `contract_version` +1。
+7. 新预算数字重新冻结（基于上一 phase 实测）。
+8. 新 `checkpoint_path`（不得与历史 phase 共享）。
+9. 保存旧合同 snapshot 到 `contract_snapshot_path`。
+10. 更新 `work/task_context.json`。
+11. Harness 通过（`CONTEXT_VALID_*`）后才可启动下一 phase。
+
+**明确**：phase-boundary re-freeze 不是 mid-run budget mutation。
+
+**禁止**：在 P0/P1 pilot 阶段期间自动跳入 P2 formal_search /
+refinement / result*.xlsx 冻结。
+
+详细字段定义见 `templates/task-contract.md` §"Phase contract lifecycle"。
+
 ## 6. Evaluation budget
 
 正式运行前必须冻结 `bounded_verification.max_expensive_evaluations`：
@@ -186,13 +260,25 @@ bounded_verification:
 
 ## 8. Clean committed HEAD requirement
 
-正式结果必须在干净 committed HEAD 上产生：
+正式结果必须在干净 committed HEAD 上产生。Clean 的判定标准：
 
-- tracked worktree clean（`git status --porcelain` 输出为空，允许 work/ untracked）
-- HEAD 是 commit SHA（不是 uncommitted change）
-- `python scripts/verify_task_context.py --context work/task_context.json`
-  返回 `CONTEXT_VALID_CLEAN` 或 `CONTEXT_VALID_AUTHORIZED_DIRTY`
-- 不在 dirty worktree 上产生 canonical 结果
+- 无 tracked modifications（`git diff --name-only` / `git diff --cached --name-only` 为空）；
+- 无 staged files（`git diff --cached --name-only` 为空）；
+- 无 conflicts（`git status --porcelain` 不包含 `UU` / `AA` 之类）；
+- 无未授权的 deleted / renamed files（必须在
+  `allowed_modified_paths` / `forbidden_paths` 授权范围内变更）；
+- 仅允许 Harness `allowed_untracked_paths` 授权的 untracked 路径
+  （典型 = `work/`）；
+- Harness 状态必须有效：
+  `python scripts/verify_task_context.py --context work/task_context.json`
+  返回 `CONTEXT_VALID_CLEAN` 或 `CONTEXT_VALID_AUTHORIZED_DIRTY`。
+
+若任何 untracked 路径不在 `allowed_untracked_paths` 列表中，Harness
+返回 `CONTEXT_INVALID`，必须立即停止，不得 reset / stash / clean /
+rebase / 改写 context 绕过。
+
+正式结果（canonical Q candidate / final P1 evidence / freeze-ready
+state）不得在 dirty / non-clean HEAD 上产生。
 
 ## 9. Harness integration
 
