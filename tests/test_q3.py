@@ -926,5 +926,433 @@ class TestRepeatedDeterminismRealReeval(unittest.TestCase):
                          ev_b.single_bomb_evaluator_calls)
 
 
+# ===========================================================================
+# TASK_006-P2: Q3 FORMAL BOUNDED SEARCH TESTS (FakeEvaluator only)
+# ===========================================================================
+#
+# All tests in this section use fake_evaluator_for_tests or only
+# schedule / config arithmetic. They do NOT call evaluate_three_bomb_strategy
+# (the real Q3 evaluator). Real Q3 evaluation count in tests = 0.
+#
+# Required test count: ≥ 20.
+
+import os
+import sys
+import tempfile
+import unittest
+from typing import List
+
+# Make src importable if running directly from tests/ (it normally is)
+sys.path.insert(0, os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "..")))
+
+from src import q3_search
+from src.q3_search import (
+    STAGE_A_BUDGET, STAGE_B_BUDGET, STAGE_C_BUDGET, STAGE_D_BUDGET,
+    STAGE_E_BUDGET, TOTAL_BUDGET, A1_PER_SEED, A2_PER_SEED, A3_PER_SEED,
+    B_PARENT_TOP_K, B_PERTURBATIONS_PER_PARENT, C_PARENT_TOP_K,
+    C_PERTURBATION_SETS_PER_PARENT, D_TOP_K, E_TOP_K,
+    FORMAL_CONFIG_SHA256, CHECKPOINT_SCHEMA_VERSION,
+    DEFAULT_SEEDS, DEFAULT_WALL_CLOCK_SECONDS,
+    FormalScheduleRecord, build_formal_schedule,
+    compute_formal_schedule_sha256,
+    compute_q3_three_bombs_code_sha256,
+    compute_q3_search_code_sha256,
+    fake_evaluator_for_tests, _build_bcde_records,
+    _verify_resume_identity, _build_formal_summary,
+    run_formal_search, _perturb_candidate, _make_a1_candidates,
+    _make_a2_candidates, _make_a3_candidates,
+    _build_stage_b, _build_stage_c, _build_stage_d, _build_stage_e,
+    FormalSearchStats, _atomic_write_json,
+)
+from src.q3_three_bombs import (
+    ThreeBombCandidate, validate_candidate,
+    CANDIDATE_SCHEMA_VERSION, PILOT_CONFIG_SHA256,
+)
+import json
+import hashlib
+
+
+def _tmp_dir() -> str:
+    return tempfile.mkdtemp(prefix="q3search_test_")
+
+
+def _q2_sha() -> str:
+    return hashlib.sha256(
+        open("src/q2_single_bomb.py", "rb").read()).hexdigest()
+
+
+def _q3_sha() -> str:
+    return compute_q3_three_bombs_code_sha256()
+
+
+def _q3s_sha() -> str:
+    return compute_q3_search_code_sha256()
+
+
+def _contract_sha() -> str:
+    return hashlib.sha256(
+        open("work/task_contracts/TASK_006-P2-v3.json", "rb").read()
+    ).hexdigest()
+
+
+def _exec_head() -> str:
+    import subprocess
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        capture_output=True, text=True, encoding="utf-8", timeout=10,
+    ).stdout.strip()
+
+
+class TestQ3SearchBudgetArithmetic(unittest.TestCase):
+    """P2 directive §五: 5 阶段预算总和必须 = 512."""
+
+    def test_stage_budgets_sum_to_512(self):
+        total = (STAGE_A_BUDGET + STAGE_B_BUDGET + STAGE_C_BUDGET
+                 + STAGE_D_BUDGET + STAGE_E_BUDGET)
+        self.assertEqual(total, 512)
+        self.assertEqual(TOTAL_BUDGET, 512)
+
+    def test_a_subblocks_per_seed_sum_to_120(self):
+        self.assertEqual(A1_PER_SEED + A2_PER_SEED + A3_PER_SEED, 120)
+        self.assertEqual((A1_PER_SEED + A2_PER_SEED + A3_PER_SEED) * 3,
+                         STAGE_A_BUDGET)
+
+    def test_b_parent_times_perturbations_equals_b_budget(self):
+        self.assertEqual(B_PARENT_TOP_K * B_PERTURBATIONS_PER_PARENT,
+                         STAGE_B_BUDGET)
+
+    def test_c_parent_times_sets_equals_c_budget(self):
+        self.assertEqual(C_PARENT_TOP_K * C_PERTURBATION_SETS_PER_PARENT,
+                         STAGE_C_BUDGET)
+
+    def test_d_top_k_equals_d_budget(self):
+        self.assertEqual(D_TOP_K, STAGE_D_BUDGET)
+
+    def test_e_top_k_equals_e_budget(self):
+        self.assertEqual(E_TOP_K, STAGE_E_BUDGET)
+
+
+class TestQ3SearchScheduleDeterministic(unittest.TestCase):
+    """P2 directive §十一: schedule deterministic + seed-locked."""
+
+    def test_a1_deterministic_per_seed(self):
+        c1 = _make_a1_candidates(2025)
+        c2 = _make_a1_candidates(2025)
+        self.assertEqual(len(c1), A1_PER_SEED)
+        self.assertEqual(len(c2), A1_PER_SEED)
+        for a, b in zip(c1, c2):
+            self.assertEqual(a.heading_rad, b.heading_rad)
+            self.assertEqual(a.speed_mps, b.speed_mps)
+            self.assertEqual(a.release_time_1_s, b.release_time_1_s)
+
+    def test_a2_deterministic_per_seed(self):
+        c1 = _make_a2_candidates(2026)
+        c2 = _make_a2_candidates(2026)
+        self.assertEqual(len(c1), A2_PER_SEED)
+        for a, b in zip(c1, c2):
+            self.assertEqual(a.delay_1_s, b.delay_1_s)
+
+    def test_a3_deterministic_per_seed(self):
+        c1 = _make_a3_candidates(2027)
+        c2 = _make_a3_candidates(2027)
+        self.assertEqual(len(c1), A3_PER_SEED)
+
+    def test_a1_different_seeds_differ(self):
+        c1 = _make_a1_candidates(2025)
+        c2 = _make_a1_candidates(2026)
+        # Different seeds must produce at least one differing candidate.
+        differ = any(
+            a.heading_rad != b.heading_rad
+            for a, b in zip(c1, c2)
+        )
+        self.assertTrue(differ)
+
+    def test_all_a_candidates_pass_validate(self):
+        for seed in (2025, 2026, 2027):
+            for sub in (_make_a1_candidates(seed),
+                        _make_a2_candidates(seed),
+                        _make_a3_candidates(seed)):
+                for c in sub:
+                    ok, reason = validate_candidate(c)
+                    self.assertTrue(ok, f"seed={seed} invalid: {reason}")
+
+
+class TestQ3SearchScheduleBuild(unittest.TestCase):
+    def test_build_formal_schedule_produces_360_records(self):
+        recs, info = build_formal_schedule(
+            seeds=DEFAULT_SEEDS,
+            q2_code_sha=_q2_sha(),
+            q3_code_sha=_q3_sha(),
+        )
+        self.assertEqual(len(recs), STAGE_A_BUDGET)
+        self.assertEqual(info["stage_a_count"], STAGE_A_BUDGET)
+        self.assertEqual(info["total"], TOTAL_BUDGET)
+
+    def test_build_formal_schedule_schedule_index_monotonic(self):
+        recs, _ = build_formal_schedule(
+            seeds=DEFAULT_SEEDS, q2_code_sha=_q2_sha(), q3_code_sha=_q3_sha(),
+        )
+        for i, r in enumerate(recs):
+            self.assertEqual(r.schedule_index, i)
+
+    def test_build_formal_schedule_all_records_stage_A(self):
+        recs, _ = build_formal_schedule(
+            seeds=DEFAULT_SEEDS, q2_code_sha=_q2_sha(), q3_code_sha=_q3_sha(),
+        )
+        for r in recs:
+            self.assertEqual(r.stage, "A")
+
+    def test_build_formal_schedule_seeds_distribution(self):
+        recs, _ = build_formal_schedule(
+            seeds=DEFAULT_SEEDS, q2_code_sha=_q2_sha(), q3_code_sha=_q3_sha(),
+        )
+        from collections import Counter
+        cnt = Counter(r.seed for r in recs)
+        # each seed should produce exactly 120 records
+        for s in DEFAULT_SEEDS:
+            self.assertEqual(cnt[s], 120)
+
+    def test_build_formal_schedule_scan_step_matches_profile(self):
+        from src.q3_three_bombs import PROFILE_SCAN_STEPS
+        recs, _ = build_formal_schedule(
+            seeds=DEFAULT_SEEDS, q2_code_sha=_q2_sha(), q3_code_sha=_q3_sha(),
+        )
+        for r in recs:
+            self.assertEqual(r.scan_step, PROFILE_SCAN_STEPS["coarse"])
+
+    def test_schedule_sha_deterministic(self):
+        recs1, _ = build_formal_schedule(
+            seeds=DEFAULT_SEEDS, q2_code_sha=_q2_sha(), q3_code_sha=_q3_sha(),
+        )
+        recs2, _ = build_formal_schedule(
+            seeds=DEFAULT_SEEDS, q2_code_sha=_q2_sha(), q3_code_sha=_q3_sha(),
+        )
+        self.assertEqual(
+            compute_formal_schedule_sha256(recs1),
+            compute_formal_schedule_sha256(recs2),
+        )
+
+
+class TestQ3SearchResumeIdentity(unittest.TestCase):
+    """P2 directive §十一 / 七: 7-field resume identity, fail-closed."""
+
+    def test_resume_identity_match(self):
+        old = {
+            "execution_head_sha": _exec_head(),
+            "contract_snapshot_sha256": _contract_sha(),
+            "q2_single_bomb_code_sha256": _q2_sha(),
+            "q3_three_bombs_code_sha256": _q3_sha(),
+            "q3_search_code_sha256": _q3s_sha(),
+            "formal_config_sha256": FORMAL_CONFIG_SHA256,
+            "candidate_schema_version": CANDIDATE_SCHEMA_VERSION,
+        }
+        self.assertTrue(_verify_resume_identity(
+            old, old["execution_head_sha"],
+            old["contract_snapshot_sha256"], old["q2_single_bomb_code_sha256"],
+            old["q3_three_bombs_code_sha256"], old["q3_search_code_sha256"],
+            old["formal_config_sha256"], old["candidate_schema_version"],
+        ))
+
+    def test_resume_identity_mismatch_execution_head(self):
+        old = {
+            "execution_head_sha": "0" * 40,
+            "contract_snapshot_sha256": _contract_sha(),
+            "q2_single_bomb_code_sha256": _q2_sha(),
+            "q3_three_bombs_code_sha256": _q3_sha(),
+            "q3_search_code_sha256": _q3s_sha(),
+            "formal_config_sha256": FORMAL_CONFIG_SHA256,
+            "candidate_schema_version": CANDIDATE_SCHEMA_VERSION,
+        }
+        self.assertFalse(_verify_resume_identity(
+            old, _exec_head(),
+            old["contract_snapshot_sha256"], old["q2_single_bomb_code_sha256"],
+            old["q3_three_bombs_code_sha256"], old["q3_search_code_sha256"],
+            old["formal_config_sha256"], old["candidate_schema_version"],
+        ))
+
+    def test_resume_identity_mismatch_formal_config(self):
+        old = {
+            "execution_head_sha": _exec_head(),
+            "contract_snapshot_sha256": _contract_sha(),
+            "q2_single_bomb_code_sha256": _q2_sha(),
+            "q3_three_bombs_code_sha256": _q3_sha(),
+            "q3_search_code_sha256": _q3s_sha(),
+            "formal_config_sha256": "0" * 64,
+            "candidate_schema_version": CANDIDATE_SCHEMA_VERSION,
+        }
+        self.assertFalse(_verify_resume_identity(
+            old, _exec_head(),
+            old["contract_snapshot_sha256"], old["q2_single_bomb_code_sha256"],
+            old["q3_three_bombs_code_sha256"], old["q3_search_code_sha256"],
+            FORMAL_CONFIG_SHA256, CANDIDATE_SCHEMA_VERSION,
+        ))
+
+
+class TestQ3SearchFakeEvaluator(unittest.TestCase):
+    """P2 directive §十四: ≥ 20 tests using fake evaluator.
+
+    All tests below use fake_evaluator_for_tests → 0 real Q3 evaluations.
+    """
+
+    def test_fake_evaluator_returns_valid_evaluation(self):
+        c = _make_a1_candidates(2025)[0]
+        ev = fake_evaluator_for_tests(c, "coarse", 0.05)
+        self.assertTrue(ev.valid)
+        self.assertEqual(ev.status, "ok")
+        self.assertGreater(ev.total_union_duration_s, 0.0)
+        self.assertEqual(ev.single_bomb_evaluator_calls, 3)
+
+    def test_fake_evaluator_deterministic(self):
+        c = _make_a1_candidates(2025)[0]
+        e1 = fake_evaluator_for_tests(c, "coarse", 0.05)
+        e2 = fake_evaluator_for_tests(c, "coarse", 0.05)
+        self.assertEqual(e1.q3_evaluation_id, e2.q3_evaluation_id)
+        self.assertEqual(e1.total_union_duration_s, e2.total_union_duration_s)
+
+    def test_fake_evaluator_per_bomb_intervals_three_items(self):
+        c = _make_a1_candidates(2025)[0]
+        ev = fake_evaluator_for_tests(c, "coarse", 0.05)
+        self.assertEqual(len(ev.bomb_evaluations), 3)
+
+    def test_perturb_candidate_validates(self):
+        c = _make_a1_candidates(2025)[0]
+        import random
+        rng = random.Random(42)
+        for _ in range(20):
+            p = _perturb_candidate(c, rng, amplitude=0.3)
+            if p is not None:
+                ok, _ = validate_candidate(p)
+                self.assertTrue(ok)
+
+
+class TestQ3SearchDryRun(unittest.TestCase):
+    """P2 directive §十四: full dry-run path with fake evaluator."""
+
+    def test_dry_run_completes_within_budget(self):
+        tmp = _tmp_dir()
+        ckpt = os.path.join(tmp, "checkpoint.json")
+        out = os.path.join(tmp, "out")
+        # Use full seed list (3 seeds) but fake evaluator
+        summary = run_formal_search(
+            execution_head_sha=_exec_head(),
+            contract_snapshot_sha256=_contract_sha(),
+            output_dir=out,
+            checkpoint_path=ckpt,
+            seeds=DEFAULT_SEEDS,
+            wall_clock_cap=60.0,
+            fake_dry_run=True,
+        )
+        # Dry-run with full 3 seeds: Stage A = 360 records
+        self.assertIn("stage_counts", summary)
+        self.assertEqual(
+            summary["stage_counts"]["A"], STAGE_A_BUDGET,
+            f"Stage A should produce {STAGE_A_BUDGET} records, "
+            f"got {summary['stage_counts']['A']}",
+        )
+        self.assertIn(summary["status"]["raw_status"],
+                      ("pilot_complete", "WALL_CLOCK_GATE_HIT"))
+
+    def test_dry_run_summary_fields_present(self):
+        tmp = _tmp_dir()
+        ckpt = os.path.join(tmp, "checkpoint.json")
+        out = os.path.join(tmp, "out")
+        summary = run_formal_search(
+            execution_head_sha=_exec_head(),
+            contract_snapshot_sha256=_contract_sha(),
+            output_dir=out,
+            checkpoint_path=ckpt,
+            seeds=DEFAULT_SEEDS,
+            wall_clock_cap=60.0,
+            fake_dry_run=True,
+        )
+        # All canonical fields
+        self.assertEqual(summary["phase_id"], "TASK_006-P2")
+        self.assertEqual(summary["contract_version"], 3)
+        self.assertEqual(summary["result_level"]["declared_level"],
+                         "BUDGET_LIMITED_BEST_KNOWN")
+        self.assertFalse(summary["result_level"]["local_convergence_established"])
+        self.assertTrue(summary["result_level"]["not_a_proven_global_optimum"])
+        self.assertFalse(summary["result_level"]["result1_xlsx_generated"])
+        self.assertEqual(summary["identity"]["candidate_schema_version"],
+                         CANDIDATE_SCHEMA_VERSION)
+        self.assertEqual(summary["identity"]["formal_config_sha256"],
+                         FORMAL_CONFIG_SHA256)
+        self.assertEqual(summary["identity"]["checkpoint_schema_version"],
+                         CHECKPOINT_SCHEMA_VERSION)
+
+    def test_dry_run_output_file_written(self):
+        tmp = _tmp_dir()
+        ckpt = os.path.join(tmp, "checkpoint.json")
+        out = os.path.join(tmp, "out")
+        run_formal_search(
+            execution_head_sha=_exec_head(),
+            contract_snapshot_sha256=_contract_sha(),
+            output_dir=out,
+            checkpoint_path=ckpt,
+            seeds=DEFAULT_SEEDS,
+            wall_clock_cap=60.0,
+            fake_dry_run=True,
+        )
+        self.assertTrue(os.path.exists(
+            os.path.join(out, "q3_formal_search_summary.json")))
+
+
+class TestQ3SearchCheckpointFailClosed(unittest.TestCase):
+    """P2 directive §十一: corrupt checkpoint / identity mismatch → fail-closed."""
+
+    def test_corrupt_checkpoint_fail_closed(self):
+        tmp = _tmp_dir()
+        ckpt = os.path.join(tmp, "checkpoint.json")
+        with open(ckpt, "w", encoding="utf-8") as f:
+            f.write("not valid json {{{")
+        out = os.path.join(tmp, "out")
+        summary = run_formal_search(
+            execution_head_sha=_exec_head(),
+            contract_snapshot_sha256=_contract_sha(),
+            output_dir=out,
+            checkpoint_path=ckpt,
+            seeds=DEFAULT_SEEDS,
+            wall_clock_cap=60.0,
+            fake_dry_run=True,
+        )
+        self.assertTrue(summary["status"]["checkpoint_load_error"])
+
+    def test_identity_mismatch_fail_closed(self):
+        tmp = _tmp_dir()
+        ckpt = os.path.join(tmp, "checkpoint.json")
+        payload = {
+            "checkpoint_schema_version": CHECKPOINT_SCHEMA_VERSION,
+            "execution_head_sha": "0" * 40,
+            "contract_snapshot_sha256": _contract_sha(),
+            "q2_single_bomb_code_sha256": _q2_sha(),
+            "q3_three_bombs_code_sha256": _q3_sha(),
+            "q3_search_code_sha256": _q3s_sha(),
+            "formal_config_sha256": FORMAL_CONFIG_SHA256,
+            "candidate_schema_version": CANDIDATE_SCHEMA_VERSION,
+            "completed_q3_evaluations": 5,
+            "stage_counts": {"A": 5, "B": 0, "C": 0, "D": 0, "E": 0},
+            "next_schedule_index": 5,
+            "evaluated_q3_ids": [],
+            "completed_records": [],
+            "current_best_candidate": None,
+            "current_best_evaluation_payload": None,
+            "elapsed_seconds": 0.0,
+            "status": "running",
+        }
+        _atomic_write_json(ckpt, payload)
+        out = os.path.join(tmp, "out")
+        summary = run_formal_search(
+            execution_head_sha=_exec_head(),
+            contract_snapshot_sha256=_contract_sha(),
+            output_dir=out,
+            checkpoint_path=ckpt,
+            seeds=DEFAULT_SEEDS,
+            wall_clock_cap=60.0,
+            fake_dry_run=True,
+        )
+        self.assertTrue(summary["status"]["resume_identity_mismatch"])
+
+
 if __name__ == "__main__":
     unittest.main()
