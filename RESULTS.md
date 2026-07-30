@@ -674,3 +674,46 @@ DOC-ONLY P2 CLOSED BY CURRENT COMMIT
 - 不冒充 VERIFIED GLOBAL OPTIMUM / FINAL OFFICIAL ANSWER / ANALYTICAL OPTIMUM /
   LOCAL CONVERGENCE ESTABLISHED。
 - 本轮 P1 RERUN 阶段 FIX 前后可见性边界、收敛判定、几何/时序拆分均有变更, 详见 MODEL.md §12.
+
+---
+
+## Q3 Pilot (TASK_006-P0P1 / EXPERIMENTAL Q3 PILOT / RESULT1.XLSX NOT GENERATED)
+
+> 本节为 Q3 三弹 evaluator + bounded pilot 的实测记录。
+> 等级: **EXPERIMENTAL Q3 PILOT / NOT A FORMAL Q3 RESULT / RESULT1.XLSX NOT GENERATED**。
+> Pilot 完成后写入；本轮填写前为占位骨架。
+> 独立审查签字 + MAIN 显式立项 TASK_006-P2 后才能升 `BUDGET_LIMITED_BEST_KNOWN`
+> 或进一步生成 result1.xlsx。
+
+### 0. 等级与不冒充
+
+- 等级: `EXPERIMENTAL Q3 PILOT`
+- `LOCAL CONVERGENCE NOT ESTABLISHED`
+- `NOT A PROVEN GLOBAL OPTIMUM`
+- `RESULT1.XLSX NOT GENERATED`
+- 实际 Q3 evaluation count：待 Pilot 完成后回填
+- 实际 single-bomb evaluator calls：待 Pilot 完成后回填
+- best Pilot candidate：待 Pilot 完成后回填
+- actual wall-clock：待 Pilot 完成后回填
+
+### 1. Pilot 维度实测
+
+待 Pilot 完成后回填：
+
+- median Q3 evaluation seconds by profile
+- p90 Q3 evaluation seconds by profile
+- median single-bomb seconds
+- p90 single-bomb seconds
+
+### 2. Budget recommendation（向 MAIN 提交）
+
+待 Pilot 完成后回填：
+- recommended_formal_q3_evaluations
+- recommended_seed_count
+- recommended_formal_wall_clock_seconds
+- recommended_refinement_evaluations
+- recommended_verification_q3_calls
+- calculation_basis
+- safety_factor
+
+预算建议必须来自实测 median / p90，不得照抄 TASK_005 的 3×1000 / 32 / 5 / 6。

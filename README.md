@@ -73,5 +73,25 @@ TASK_005 Q2 FORMAL SEARCH + BOUNDED REFINEMENT + CLEAN-HEAD VERIFICATION IDENTIT
 
 TASK_005 canonical Q2 output 是 **FORMAL BUDGET-LIMITED BEST-KNOWN**，
 **NOT A PROVEN GLOBAL OPTIMUM**，**LOCAL CONVERGENCE NOT ESTABLISHED**。
-要继续推进到 Q3 / Q4 / Q5 / result1/2/3.xlsx / 论文，必须先经过 Hermes 只读核验
-（不修改任何文件），然后由 MAIN / 用户决定 Ready / merge，并另立 TASK_006。
+PR #12（TASK_GOV_003 bounded verification Skill v0.1）已 merged；TASK_006 启动。
+
+## TASK_006 当前阶段（Q3 三弹 evaluator + bounded pilot）
+
+- branch: `task/TASK_006-q3-three-bombs`（基于 `main` = `007b93d3…`）
+- phase: `TASK_006-P0P1`
+- 本轮目标：
+  - 冻结 Q3 三弹数学与工程合同（8 维决策变量 + 共享 heading/speed + 投放间隔 ≥ 1 s + union 目标）；
+  - 实现真实三弹 evaluator（必须复用 `src.q2_single_bomb.evaluate_single_bomb_strategy`，不得复制）；
+  - bounded pilot（96 Q3 evaluations / 900 s wall-clock / 3 真实 TASK 测试）；
+  - checkpoint / resume + identity binding；
+  - 实测 evaluator 成本；
+  - 向 MAIN 提交正式搜索预算建议。
+- 本轮**不**执行：
+  - Q3 Formal Search；
+  - 生成 result1.xlsx；
+  - 修改官方空白模板；
+  - 启动 Audit CC / Hermes（MAIN 决定）；
+  - 自动 Ready / merge；
+  - 进入 TASK_006-P2 / Q4 / Q5 / 论文。
+- 最终等级只能是 `EXPERIMENTAL`。
+- 详细任务边界见 [NEXT_TASK.md](./NEXT_TASK.md)；模型合同见 [MODEL.md](./MODEL.md) §"Q3 三弹串接评估合同"；Pilot 预算见 [bounded_verification/templates/task-contract.md](./.claude/skills/bounded-verification/templates/task-contract.md) Phase contract lifecycle。

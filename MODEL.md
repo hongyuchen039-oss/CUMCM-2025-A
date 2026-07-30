@@ -1030,3 +1030,259 @@ DOC-ONLY P2 CLOSED → canonical promotion
 ```
 
 不得把 Audit PASS 解释为 local optimum 或 global optimum。
+
+---
+
+## Q3 三弹串接评估合同 (TASK_006-P0P1 / PILOT / NOT A FORMAL Q3 RESULT)
+
+> 已在 `src/q3_three_bombs.py` 实现，通过 `tests/test_q3.py` 单元测试验证。
+> 本节固定 Q3 Three-Bomb Model Contract：8 维决策变量、共享 heading/speed、
+> 投放间隔 ≥ 1 s、union 目标、search-domain pruning 约定与 result1.xlsx J 列约定。
+> 等级: **EXPERIMENTAL Q3 PILOT / NOT A FORMAL Q3 RESULT / RESULT1.XLSX NOT GENERATED**。
+> 独立审查签字 + MAIN 显式立项 TASK_006-P2 后才能升 `BUDGET_LIMITED_BEST_KNOWN` 或
+> 进一步生成 result1.xlsx。
+
+### 1. 官方事实（FACTS.md §4 + §10 + §12 + §13.1）
+
+- **[官]** FY1 投放 3 枚烟幕干扰弹对 M1 实施干扰（FACTS.md §4）。
+- **[官]** 同架相邻两枚投放间隔 ≥ 1 s（FACTS.md §10 / §12）。
+- **[官]** FY1 任务期间只使用一个 heading、一个 speed（FACTS.md §9：本任务指令"一旦确定就不再调整"；
+  本节对 Q3 的工程化解释见 §3 [约定]）。
+- **[官]** FY1 速度 70~140 m/s，等高度匀速直线飞行（FACTS.md §9 / §12）。
+- **[官]** 烟幕干扰弹脱离无人机后受重力作用；起爆后形成半径 R = 10 m 的下沉云团；
+  起爆后有效持续 20 s（FACTS.md §10）。
+- **[官]** 结果保存到 result1.xlsx；模板 10 列 × 3 行（FACTS.md §13.1）。
+
+### 2. 8 维决策变量
+
+```python
+@dataclass(frozen=True)
+class ThreeBombCandidate:
+    heading_rad: float              # θ ∈ [0, 2π), 三枚弹共享
+    speed_mps: float                # v ∈ [70, 140], 三枚弹共享
+    release_time_1_s: float         # ≥ 0
+    delay_1_s: float                # ≥ 0
+    release_time_2_s: float         # ≥ release_time_1_s + 1
+    delay_2_s: float                # ≥ 0
+    release_time_3_s: float         # ≥ release_time_2_s + 1
+    delay_3_s: float                # ≥ 0
+```
+
+候选合同：
+
+- `0 ≤ heading_rad < 2π`
+- `70 ≤ speed_mps ≤ 140`
+- `release_time_i_s ≥ 0`
+- `delay_i_s ≥ 0`
+- `release_time_2_s − release_time_1_s ≥ 1`
+- `release_time_3_s − release_time_2_s ≥ 1`
+
+### 3. 共享 heading / speed（[约定]）
+
+**[约定]** 三枚烟幕干扰弹在任务期间共用同一架 FY1 的 heading 与 speed；
+因此 `ThreeBombCandidate` 中 `heading_rad` 与 `speed_mps` 各只出现一次，三枚弹各自的
+4 元子策略 `SingleBombStrategy(heading_rad, speed_mps, release_time_i_s, delay_i_s)`
+由该候选直接推导。该约定继承自 FACTS.md §9 中"无人机一旦确定航向与速度就不再调整"
+的 [官] 表述；若未来需要按 Q4 / Q5 的多机结构拆分 heading / speed，本合同不再适用。
+
+### 4. 运动学与几何（全部复用 Q2）
+
+每枚弹直接映射为 `SingleBombStrategy`：
+
+```python
+strat_i = SingleBombStrategy(
+    heading_rad=candidate.heading_rad,
+    speed_mps=candidate.speed_mps,
+    release_time_s=candidate.release_time_i_s,
+    delay_s=candidate.delay_i_s,
+)
+```
+
+`evaluate_three_bomb_strategy(...)` 强制调用三次
+`src.q2_single_bomb.evaluate_single_bomb_strategy`（不得复制、不得绕过）。
+返回的 `SingleBombEvaluation` 在 §5 / §6 / §7 中被合并到三弹 union。
+
+### 5. 单弹合法性继承 Q2（保留其语义）
+
+| 状态 | valid | 含义 |
+|---|---|---|
+| `invalid` | False | 物理 / 合同非法（非有限 / 越界 / 起爆 z < -EPS_GROUND） |
+| `pruned_zero` | True | t_detonate > t_arrival（搜索域无损剪枝, 不是官方物理禁令） |
+| `zero_window` | True | 合法但评估窗口为空 |
+| `ok` | True | 物理合法并完成评估 |
+
+继承语义（来自 `src/q2_single_bomb.EPS_GROUND` + `validate_strategy` + `evaluate_single_bomb_strategy`）：
+- 非有限值 → invalid；
+- speed 越界 / release < 0 / delay < 0 / 起爆点明显低于地面 → invalid；
+- t_detonate > t_arrival → pruned_zero（不是物理非法，是合法候选的 0 收益）；
+- zero_window（合法但窗口为空）→ 合法；
+- 程序异常（空可见集、类型错误、内部断言失败）→ 由 evaluator 抛出，不吞掉，
+  外层 Pilot 记录 `system_error` 并停止，不得冒充 zero。
+
+### 6. Q3 整体合法性
+
+- 三枚弹均物理合法 → Q3 candidate valid；
+- 某枚弹 pruned_zero / zero_window → 整组仍 valid，该弹贡献空区间；
+- 某枚弹 invalid → 整组 Q3 candidate invalid；
+- 任一单弹 evaluator 抛出程序异常 → Q3 evaluator 必须抛出，外层 Pilot 记录
+  `system_error` 并停止，不得继续冒充结果。
+
+### 7. Search-domain pruning（[约定] / 搜索域剪枝）
+
+Pilot 候选生成器可以优先生成 `t_detonate < t_arrival` 的候选，作为无损搜索域剪枝。
+这不是官方物理约束，是项目级搜索约定。必须在 MODEL.md 中标记为 **[约定]**：
+> t_detonate > t_arrival 的候选被搜索域剪枝为 `pruned_zero`（valid=True, total=0），
+> 不是物理非法；Q3 candidate 的搜索域为单弹释放时刻 + 延迟满足
+> `(release + delay) < t_arrival`。
+
+### 8. 三弹区间并集目标
+
+每枚弹得到严格有效区间 `I_1, I_2, I_3`（来自 Q2 evaluator）。
+
+Q3 目标：
+
+```
+total_union_duration = measure(union(I_1 ∪ I_2 ∪ I_3))
+```
+
+必须：
+- 重叠部分只计算一次；
+- 不连续区间分别累加；
+- nested interval 正确；
+- touching interval 使用确定性规范化（epsilon = 1e-12 s，固定、极小）；
+- 空区间合法（贡献 0）；
+- 区间排序稳定（按 start 升序，相同 start 按 end 升序）；
+- 不得把三枚单弹 duration 直接相加冒充 union；
+- 不得使用会改变可观测时长的大容差。
+
+实现：
+
+```python
+normalize_intervals(intervals) -> tuple  # 排序 + touching 合并 + epsilon 规范化
+union_intervals(*interval_lists) -> tuple  # 多组区间并集
+total_union_duration(intervals) -> float   # sum(end - start)
+```
+
+### 9. Q3 Evaluator 输出结构
+
+```python
+@dataclass(frozen=True)
+class ThreeBombEvaluation:
+    candidate: ThreeBombCandidate
+    valid: bool
+    status: str           # "invalid" | "zero_union" | "ok"
+    reason: str
+    bomb_evaluations: tuple  # 3 × SingleBombEvaluation
+    union_intervals: tuple
+    total_union_duration_s: float
+    q3_evaluation_id: str
+    sample_level: str
+    scan_step_s: float
+    elapsed_s: float
+    single_bomb_evaluator_calls: int
+```
+
+- `status ∈ {"invalid", "zero_union", "ok"}`；
+- 程序异常不放进普通 status，由 evaluator 抛出并由 Pilot 外层记录 system_error；
+- `q3_evaluation_id` 基于 canonical JSON + SHA-256，至少绑定：
+  - candidate 8 个变量；
+  - `sample_level`；
+  - `scan_step`；
+  - candidate schema version；
+  - Q2 evaluator code SHA；
+  - Pilot config SHA；
+- 同一候选、同一配置必须产生同一 ID。
+
+### 10. result1.xlsx 合同（[约定]，不生成）
+
+- A 列 / B 列：无人机运动方向（度）、速度（m/s）三行相同；
+- C 列：烟幕干扰弹编号 1、2、3；
+- D–F 列：每枚弹的投放点 xyz；
+- G–I 列：每枚弹的起爆点 xyz；
+- J 列：每枚弹自身有效遮蔽时长（单弹 duration，不写 union）；
+- 三弹 union 总时长写入 `outputs/q3/q3_pilot_summary.json` 与 `RESULTS.md`；
+- 方向角规则：+x = 0°，逆时针为正，范围 0~360°（继承 FACTS.md §13.4 [官]）；
+- 本合同标注 **[约定]**，**不得**冒充官方逐字规定。
+
+本轮**禁止**：
+- 创建 `outputs/submission/result1.xlsx`；
+- 复制或修改官方模板；
+- 引入 openpyxl；
+- 写 Excel writer。
+
+### 11. 候选来源（必须标注 `candidate_source`）
+
+Pilot 候选必须标注来源：
+
+1. `q2_canonical_seed_family`：从 canonical Q2 candidate 派生三弹合法 seed family；
+2. `deterministic_random_seed_2025`：seed=2025；
+3. `deterministic_random_seed_2026`：seed=2026；
+4. `profile_calibration`：粗 / 中 / 细各 1 候选（每种 sample grade 的成本校准）；
+5. `finalist_medium_recheck`：从 medium recheck top-K 重评；
+6. `finalist_fine_spotcheck`：从 fine finalist top-2 重评。
+
+Q2 canonical anchor（仅作 seed 来源）：
+```
+heading_rad = 3.126767217560497
+speed_mps   = 116.43351397802584
+release_time_s = 1.2672692031529031
+delay_s    = 3.789202402720746
+```
+
+不得宣称"复制三次就是 Q3 最优"。`candidate_source` 必须出现在每个 Q3 evaluation
+的行日志与 `outputs/q3/q3_pilot_summary.json` 的 per-row 统计中。
+
+### 12. Pilot 固定预算（不冒充）
+
+| 维度 | 上限 |
+|---|---|
+| Pilot 顶层 Q3 candidate evaluation | 96 |
+| Pilot wall-clock | 900 s |
+| 单弹 evaluator 调用上限 | 96 × 3 = 288 |
+| 真实 TASK 测试 Q3 evaluation | 3 |
+
+阶段分配建议：
+
+- Stage A — profile calibration：`2 candidates × coarse/medium/fine` = 6 Q3 evals
+- Stage B — deterministic coarse exploration：≤ 80 Q3 evals
+- Stage C — medium finalist recheck：≤ top 8 Q3 evals
+- Stage D — fine spot-check：≤ top 2 Q3 evals
+
+总计 ≤ 96。执行前检查剩余 budget。
+
+| 触发 | 状态 | 后续 |
+|---|---|---|
+| wall-clock 命中 | `WALL_CLOCK_GATE_HIT` | 原子写 checkpoint；保存 best pilot candidate；不自动延长 |
+| evaluation 预算耗尽 | `EVALUATION_BUDGET_EXHAUSTED` | 原子写 checkpoint；不写 `CODE_TEST_FAILED`；保留 best pilot candidate |
+| TASK 测试失败 | `CODE_TEST_FAILED` | 不进入 Pilot；只修真实失败；`FIX:` 前缀；`contract_version` +1 |
+| 任意单弹 evaluator 异常 | `RUN_SYSTEM_ERROR` | Pilot 立即停止；记录；不冒充结果 |
+
+本轮结果仍只能是 `EXPERIMENTAL`。**不得**因为出现较好候选就升级
+`BUDGET_LIMITED_BEST_KNOWN`（该等级留给 TASK_006-P2 正式预算运行）。
+
+### 13. 当前状态（本轮 P0/P1）
+
+- `src/q3_three_bombs.py` 已实现 `ThreeBombCandidate` / `validate_candidate` /
+  `evaluate_bomb_sequence` / `evaluate_three_bomb_strategy` /
+  `normalize_intervals` / `union_intervals` / `total_union_duration` /
+  `ThreeBombEvaluation` / Pilot CLI `--pilot-only`。
+- `tests/test_q3.py` 已覆盖：interval union（overlapping/disjoint/touching/nested/empty）、
+  非有限输入、speed bounds、release spacing（exactly 1 s accepted / below 1 s rejected）、
+  deterministic evaluation ID、candidate serialization、Q2 one-bomb degeneration exact
+  comparison、三弹共享 heading / speed、three-bomb union consistency、invalid candidate
+  fail-closed、pruned_zero 仍是 legal、system_error 不得变成 zero、checkpoint atomic
+  write、resume success、resume identity mismatch blocked、actual evaluation count、
+  unique evaluation IDs、repeated run determinism。
+- Pilot 已执行；budget / wall-clock / counts / timing / best candidate 全部记录在
+  `outputs/q3/q3_pilot_summary.json`。
+- 等级：`EXPERIMENTAL Q3 PILOT / NOT A FORMAL Q3 RESULT / RESULT1.XLSX NOT GENERATED`。
+- **不**进入 TASK_006-P2（Q3 Formal Search + result1.xlsx）。
+
+### 14. 局限
+
+- Q3 Pilot 是 deterministic uniform pseudorandom + 5 candidate source；
+  **不是**全局最优证明，**不是**解析极值，**不是**官方答案。
+- 本轮不启动完整 16 项 one-var 扰动；不启动 coordinate refinement；
+  不启动 multi-seed 调度；不写 result1.xlsx。
+- 候选生成与 budget 都按 Pilot 固定上限；不冒充正式 Q3 结果。
+- 共享 heading / speed 是项目约定，不是官方物理常量；Q4 / Q5 不复用本合同的共享规则。
