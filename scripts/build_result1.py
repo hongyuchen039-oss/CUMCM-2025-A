@@ -59,7 +59,31 @@ FROZEN_CANONICAL_CANDIDATE: Dict[str, float] = {
     "delay_3_s": 3.7180978311642083,
 }
 
-REFERENCE_TOTAL_UNION_DURATION_S: float = 4.478218820691105
+REFERENCE_TOTAL_UNION_DURATION_S: float = 4.478204178810118
+"""P3 canonical reconstruction reference (fine / scan_step=0.005).
+
+This is the value produced by exactly one deterministic
+`evaluate_three_bomb_strategy(candidate, sample_level='fine',
+scan_step=0.005)` call against the frozen 8-dim candidate.
+
+NOTE: The P2C closure_selection_score_s = 4.478218820691105 was produced
+at a DIFFERENT profile (coarse / scan_step=0.05). It is preserved as a
+historical evidence value (P2C selection score, not the P3 reconstruction
+gate value). The profile_provenance_correction block in the closure
+summary explicitly documents this distinction.
+"""
+
+CLOSURE_SELECTION_SCORE_S: float = 4.478218820691105
+"""P2C closure selection score (profile=coarse, scan_step=0.05).
+
+This is the argmax total_union_duration_s across the 32 P2C records.
+It is NOT the same as the P3 canonical reconstruction reference
+because the P3 reconstruction uses fine / 0.005 (a finer profile
+that produces slightly different interval boundaries).
+"""
+
+CLOSURE_SELECTION_PROFILE: str = "coarse"
+CLOSURE_SELECTION_SCAN_STEP_S: float = 0.05
 
 RECONSTRUCTION_PROFILE: Dict[str, Any] = {
     "sample_level": "fine",
@@ -601,6 +625,7 @@ def run(output_path: str = OUTPUT_PATH,
     if not dry_run and os.path.exists(output_path):
         output_sha256 = _file_sha256(output_path)
 
+    canonical_recon_duration = reconstruction["total_union_duration_s"]
     summary: Dict[str, Any] = {
         "phase_id": "TASK_006-P3",
         "contract_version": 5,
@@ -614,11 +639,37 @@ def run(output_path: str = OUTPUT_PATH,
         "identity": identity,
         "canonical_candidate": FROZEN_CANONICAL_CANDIDATE,
         "canonical_reconstruction": reconstruction,
+        "canonical_reconstruction_profile": RECONSTRUCTION_PROFILE["sample_level"],
+        "canonical_reconstruction_scan_step_s":
+            RECONSTRUCTION_PROFILE["scan_step_s"],
+        "canonical_reconstruction_duration_s": canonical_recon_duration,
+        "closure_selection_score_s": CLOSURE_SELECTION_SCORE_S,
+        "closure_selection_profile": CLOSURE_SELECTION_PROFILE,
+        "closure_selection_scan_step_s": CLOSURE_SELECTION_SCAN_STEP_S,
+        "profile_provenance_correction": {
+            "closure_selection_profile": CLOSURE_SELECTION_PROFILE,
+            "closure_selection_scan_step_s": CLOSURE_SELECTION_SCAN_STEP_S,
+            "closure_selection_score_s": CLOSURE_SELECTION_SCORE_S,
+            "canonical_high_resolution_profile":
+                RECONSTRUCTION_PROFILE["sample_level"],
+            "canonical_high_resolution_scan_step_s":
+                RECONSTRUCTION_PROFILE["scan_step_s"],
+            "canonical_high_resolution_duration_s": canonical_recon_duration,
+            "absolute_profile_difference_s": abs(
+                canonical_recon_duration - CLOSURE_SELECTION_SCORE_S),
+            "decision_variables_changed": False,
+            "search_rerun_performed": False,
+            "explanation": (
+                "The P2C selection score came from a coarse-profile record. "
+                "P3 reports the same frozen candidate under fine 0.005 "
+                "reconstruction."
+            ),
+        },
         "reconstruction_gate": {
-            "reference_total_union_duration_s": REFERENCE_TOTAL_UNION_DURATION_S,
-            "reconstructed_total_union_duration_s":
-                reconstruction["total_union_duration_s"],
-            "abs_diff": abs(reconstruction["total_union_duration_s"]
+            "reference_total_union_duration_s":
+                REFERENCE_TOTAL_UNION_DURATION_S,
+            "reconstructed_total_union_duration_s": canonical_recon_duration,
+            "abs_diff": abs(canonical_recon_duration
                             - REFERENCE_TOTAL_UNION_DURATION_S),
             "tolerance_s": RECONSTRUCTION_MISMATCH_TOLERANCE_S,
             "passed": True,

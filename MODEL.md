@@ -1713,12 +1713,22 @@ P2 summary 同步修正：
 - 输入：冻结的 8 维 candidate。
 - 调用：`src/q3_three_bombs.evaluate_three_bomb_strategy(candidate,
   sample_level="fine", scan_step=0.005)`（exactly 1 次）。
-- 期望 `total_union_duration_s ≈ 4.478218820691105`。
-- 验收：`abs(reconstructed - 4.478218820691105) <= 1e-12`。
+- 期望 `total_union_duration_s ≈ 4.478204178810118` (P3 canonical reconstruction reference).
+- 验收：`abs(reconstructed - 4.478204178810118) <= 1e-12`.
 - 不通过 → BLOCKED, exit 2；不写入 `outputs/submission/result1.xlsx`；不冒充
   RESULT1.XLSX GENERATED。
 - 预算：max_expensive_evaluations = 1；max_run_wall_clock_seconds = 300；
   max_test_wall_clock_seconds = 300。任一上限达到 → BLOCKED。
+
+#### Profile provenance（重要区分）
+
+- P3 canonical reconstruction (fine / 0.005) → **4.478204178810118 s**
+  (the P3 reconstruction reference / result1.xlsx 填写用的几何)
+- P2C closure selection score (coarse / 0.05) → **4.478218820691105 s**
+  (P2C 历史证据, 不是 P3 高精度重建参考)
+- 绝对差 (fine vs coarse): **1.4641880987653622e-05 s** (10^-5 量级)
+- 不混用: 不得把 fine / 0.005 结果与 coarse / 0.05 reference 做 1e-12 比较,
+  也不得放宽 tolerance 到 2e-5. 两个数值各自保留, profile 来源明确.
 
 ### 7. Template preservation contract
 

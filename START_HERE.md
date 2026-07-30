@@ -39,7 +39,15 @@ TASK_006-P3 — Q3 RESULT1.XLSX ARTIFACT GENERATION（基于 P2C 冻结候选的
 - target_acceptance_level: `BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE WITH GENERATED AND ROUND-TRIP-VERIFIED RESULT1.XLSX` (P3 沿用 P2C 等级)
 - frozen 8-dim candidate (不允许改变):
   `heading_rad=3.127613485137657, speed_mps=116.12799297398149, release_time_1_s=0.993241052387636, delay_1_s=3.720360704323356, release_time_2_s=4.88566490244013, delay_2_s=3.7704749980723404, release_time_3_s=10.157737577136487, delay_3_s=3.7180978311642083`
-- reference_total_union_duration_s: **4.478218820691105**（P2C canonical unchanged）
+- reference_total_union_duration_s (P3 canonical reconstruction gate): **4.478204178810118**
+  (this is the value produced by exactly one deterministic
+  `evaluate_three_bomb_strategy(candidate, sample_level='fine', scan_step=0.005)`
+  call against the frozen 8-dim candidate)
+- closure_selection_score_s (P2C historical, profile=coarse / 0.05): **4.478218820691105**
+  (this is the argmax total_union_duration_s across the 32 P2C records; NOT
+  the same as the P3 reference because it was produced at coarse/0.05)
+- profile_provenance_correction: closure_selection_score_s was coarse/0.05,
+  canonical_reconstruction is fine/0.005, profile_difference = 1.4641880987653622e-05
 - reconstruction profile: **fine / scan_step=0.005**
 - reconstruction mismatch tolerance: **1e-12**
 

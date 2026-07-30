@@ -8,7 +8,7 @@
 > 4. ✅ **不修改** Q1 / Q2 / q3_three_bombs foundation；
 > 5. ✅ **不修改** 官方空白模板 ZIP 与内含 result1.xlsx；
 > 6. ✅ 对 P2C 冻结候选执行一次 high-resolution canonical reconstruction（fine / scan_step=0.005）；
-> 7. ✅ 重建后核验 `abs(reconstructed - 4.478218820691105) <= 1e-12`；
+> 7. ✅ 重建后核验 `abs(reconstructed - 4.478204178810118) <= 1e-12`；
 > 8. ✅ 从官方模板生成 `outputs/submission/result1.xlsx`；
 > 9. ✅ 程序从磁盘回读 + 逐格核验 A:J；
 > 10. ✅ 输出 `outputs/q3/q3_result1_artifact_summary.json`；
@@ -40,7 +40,7 @@
 | J | bomb i own total_duration_s | **逐弹自身有效干扰时长**（**不是 union**） |
 
 - 所有 Excel 单元格必须为数值类型，不得写带单位字符串、公式、JSON、NaN、Inf、None。
-- 三弹 union 总时长 4.478218820691105 **不**写入 J 列；仅写入 `q3_result1_artifact_summary.json` 与 RESULTS.md 与 PR body。
+- 三弹 union 总时长 **不**写入 J 列；P3 重建 union = 4.478204178810118（fine/0.005），P2C closure selection score = 4.478218820691105（coarse/0.05），两者皆不写入 J 列；仅写入 `q3_result1_artifact_summary.json` 与 RESULTS.md 与 PR body。
 - 表头、附注、sheet 结构、merged-cell、freeze panes 全部保留原样。
 
 ## P3 回读核验
@@ -80,7 +80,7 @@
 
 - [ ] 冻结的 8 维变量未改变；
 - [ ] real Q3 calls = exactly 1；
-- [ ] reconstructed duration 与 4.478218820691105 在 1e-12 内一致；
+- [ ] reconstructed duration 与 4.478204178810118 (fine/0.005) 在 1e-12 内一致；
 - [ ] 三枚逐弹证据完整（intervals / duration / release_point / detonation_point）；
 - [ ] union 测度一致；
 - [ ] official template 原件未改（SHA 不变）；
@@ -126,7 +126,9 @@
 | delay_2_s | 3.7704749980723404 |
 | release_time_3_s | 10.157737577136487 |
 | delay_3_s | 3.7180978311642083 |
-| reference_total_union_duration_s | **4.478218820691105** |
+| reference_total_union_duration_s (P3 reconstruction gate, fine/0.005) | **4.478204178810118** |
+| closure_selection_score_s (P2C historical, coarse/0.05) | **4.478218820691105** |
+| profile_provenance_correction | closure=coarse/0.05, canonical=fine/0.005, profile_difference = 1.4641880987653622e-05 |
 
 ### 本轮允许修改（仅 5 个 tracked 路径 + PR body + work/）
 

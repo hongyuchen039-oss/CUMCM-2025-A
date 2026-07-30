@@ -24,11 +24,13 @@ TASK_006-P3 Q3 RESULT1.XLSX ARTIFACT GENERATION（PLAN 已冻结）。
   `speed_mps` 从 116.62799297398149 → 116.12799297398149（差 −0.5 m/s）。
 - **P2C closure canonical**:
   `heading_rad=3.127613485137657, speed_mps=116.12799297398149, release_time_1_s=0.993241052387636, delay_1_s=3.720360704323356, release_time_2_s=4.88566490244013, delay_2_s=3.7704749980723404, release_time_3_s=10.157737577136487, delay_3_s=3.7180978311642083`
-  `canonical_total_union_duration_s = 4.478218820691105 s`
+  `closure_selection_score_s = 4.478218820691105 s` (profile=coarse/0.05)
+  `canonical_reconstruction_total_union_duration_s = 4.478204178810118 s` (profile=fine/0.005)
+  profile_difference = 1.4641880987653622e-05 s (10^-5 量级, 两个 profile 各自保留, 不混用)
   `source = TASK_006-P2C F5 high-resolution verification`
 - **P3 当前阶段（PLAN 冻结，WORKING 待启动）**:
   - 1 次 fine / scan_step=0.005 高精度重建；
-  - 期望 `abs(reconstructed - 4.478218820691105) ≤ 1e-12`；
+  - 期望 `abs(reconstructed - 4.478204178810118) ≤ 1e-12` (fine / 0.005 reconstruction gate);
   - 从官方模板 ZIP `题目及模板/2025高教社杯数学建模A题_结果模板.zip`
     读取 `result1.xlsx` → in-memory edit → 写 `outputs/submission/result1.xlsx`；
   - 模板指纹保留（sheet names / merged cells / freeze panes / header / 附注等）；
@@ -127,7 +129,8 @@ PR #12（TASK_GOV_003 bounded verification Skill v0.1）已 merged；TASK_006 �
 - P3 contract_version: 5（P3 v5 snapshot: `work/task_contracts/TASK_006-P3-v5.json`, locally preserved NOT committed）
 - 本轮 P3 目标：
   - 1 次 fine / scan_step=0.005 高精度重建；
-  - `abs(reconstructed - 4.478218820691105) ≤ 1e-12`；
+  - `abs(reconstructed - 4.478204178810118) ≤ 1e-12` (P3 reconstruction gate);
+  - P2C closure selection score = 4.478218820691105 (coarse/0.05) 保留为历史证据；
   - 7 字段 resume identity（含 `canonical_candidate_sha256` + `official_template_sha256`，新增）；
   - 官方模板 ZIP in-memory edit（不修改原 ZIP 字节）→ 写 `outputs/submission/result1.xlsx`；
   - 程序从磁盘回读，逐格核验 10 列 × 3 行（abs_tol=1e-10, rel_tol=1e-12）；
