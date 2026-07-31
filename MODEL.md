@@ -1911,8 +1911,8 @@ temporary workbook，**不**调用真实 Q3 evaluator）：
 
 | 阶段 | 范围 | 输出物 / artifact root | 触发条件 |
 |---|---|---|---|
-| **TASK_007-P0/P1** (本轮) | preflight + 12-dim candidate 合同 + work/ ignore 治理 + result2.xlsx 模板 read-only 验证 + Q2 u0 复用审计 | MODEL.md / NEXT_TASK.md / FACTS.md / work/task_contracts/TASK_007-P0P1-v1.json (历史) / work/task_contracts/TASK_007-P0P1-v2.json (canonical) / work/q4_foundation/ | MAIN 立项 |
-| **TASK_007-P2A** | Q4 evaluator 实现 + 单元测试 (静态 / 受控 / stub / fixture); 真实 Q4 evaluator 调用 = 0 | src/q4_three_drones.py / tests/test_q4.py | MAIN 显式授权 + AUDIT DELTA RECHECK 通过 + P0/P1 v2 冻结 |
+| **TASK_007-P0/P1** (本轮) | preflight + 12-dim candidate 合同 + work/ ignore 治理 + result2.xlsx 模板 read-only 验证 + Q2 u0 复用审计 + D1-D4 final semantic / hash-scope / heading label / budget flow 修复 | MODEL.md / NEXT_TASK.md / FACTS.md / work/task_contracts/TASK_007-P0P1-v1.json (历史, immutable) / work/task_contracts/TASK_007-P0P1-v2.json (superseded, immutable) / work/task_contracts/TASK_007-P0P1-v3.json (canonical, absorbs v2 + D1-D4) / work/q4_foundation/ | MAIN 立项 |
+| **TASK_007-P2A** | Q4 evaluator 实现 + 单元测试 (静态 / 受控 / stub / fixture); 真实 Q4 evaluator 调用 = 0; stub/mock runtime 不作预算依据 | src/q4_three_drones.py / tests/test_q4.py | MAIN 显式授权 + FINAL MICRO DELTA RECHECK 通过 + P0/P1 v3 冻结 |
 | **TASK_007-P2B** | tiny bounded pilot + runtime calibration (在 MAIN 显式冻结的 pilot self-budget 内运行有限真实 Q4 评估) | work/q4_pilot/ (P2 唯一目录) | MAIN 显式授权 + P2A MAIN REVIEW 通过 + pilot self-budget 显式冻结 |
 | **TASK_007-P3** | Q4 正式 bounded search (使用 P2B 推荐的 task-specific 预算) | work/q4_search/ (P3 唯一目录; 含 formal_search_config.json, checkpoint.json, finalists.json, formal_search_summary.json 等) | MAIN 显式授权 + P2B runtime calibration 完成 + P3 budget 冻结 |
 | **TASK_007-P4** | candidate closure + 局部 refined re-evaluation + 跨 seed 鲁棒性 (基于 P3 冻结的 finalists) | work/q4_candidate_closure/ (P4 唯一目录; 含 closure_context.json, checkpoint.json, input_manifest.json, final_candidate.json, candidate_closure_summary.json) | MAIN 显式授权 + P3 主搜索完成 + finalists 冻结 |
@@ -1954,8 +1954,10 @@ temporary workbook，**不**调用真实 Q3 evaluator）：
 - **[官]** 结果保存到 result2.xlsx（FACTS.md §5 / §13.2，§13.2 已由 FIX commit `6f52c39`
   修正为"官方要求 vs 模板格式行"两个不同事实分离）。
 - **[官]** 模板附注：方向角 +x=0°，逆时针为正，0~360°（FACTS.md §13.4）。
-- **[官]** Q4 heading 原始字段约束 (来自 FACTS.md §9 + §10 + 几何约定): 任何合法
-  candidate 的原始 `heading_rad_fyi` 必须满足 `0 ≤ heading_rad_fyi < 2π`。
+- **[约定]** Q4 heading 的内部弧度表示合同: 任何合法 candidate 的原始
+  `heading_rad_fyi` 必须满足 `0 ≤ heading_rad_fyi < 2π`。该约定等价映射自
+  `FACTS.md §13.4 [官]` 方向角规则（0° ≤ heading_deg < 360°）；内部使用 radians 是
+  工程表示，用于消除周期重复；该内部表示**不是**官方原文。
   原始 heading 在 prevalidation 阶段强制，Q2 返回的 `normalized_heading_rad` **不**替换
   identity payload 中的 candidate raw heading。
 
@@ -2131,18 +2133,39 @@ Q2 合法 status 仍然只有：
 - `zero_window`
 - `ok`
 
-若 Q2 正常返回 `valid=False`（`status="invalid"` 或 `pruned_zero` 或 `zero_window`），
-它仍是**正常返回**的 Q2 evaluation，**不是** system error。
+若 Q2 正常返回 `valid=False` 且 `status="invalid"`，它仍然是 Q2 evaluator 的**正常返回**，
+而不是 system error。
 
-三次 Q2 调用正常结束后，如果任一 Q2 result `valid=False`：
+冻结完整 Q2 status → Q2 valid → Q4 聚合语义映射表：
+
+| Q2 status | Q2 valid | Q4 聚合语义 |
+|---|---:|---|
+| `invalid` | `false` | Q4 candidate 返回 `valid=false, status="invalid"` |
+| `pruned_zero` | `true` | 合法零贡献，intervals 为空；Q4 candidate 仍可 `valid=true`，参与 union 合法 |
+| `zero_window` | `true` | 合法零贡献，intervals 为空；Q4 candidate 仍可 `valid=true`，参与 union 合法 |
+| `ok` | `true` | 使用真实 intervals 参加三机 union |
+
+聚合规则（三个 Q2 调用**正常结束**后）：
 
 ```
-ThreeDroneEvaluation.valid = False
-ThreeDroneEvaluation.status = "invalid"
-ThreeDroneEvaluation.drone_evaluations 保留 3 个真实 Q2 返回 (长度=3)
+如果至少一个真实 Q2 返回是 (valid=false, status="invalid")：
+  ThreeDroneEvaluation.valid = False
+  ThreeDroneEvaluation.status = "invalid"
+  ThreeDroneEvaluation.drone_evaluations 保留 3 个真实 Q2 返回 (长度=3)
+
+否则 (所有 Q2 都是 pruned_zero / zero_window / ok，valid 均为 true)：
+  ThreeDroneEvaluation 仍可 valid=True；union 按 intervals 真实计算
+  (空区间合法贡献 0)
 ```
 
-`pruned_zero` / `zero_window`: Q4 仍可 `valid=True`，但该单弹贡献空区间，参与 union 仍合法。
+明确冻结：
+
+- `pruned_zero` **不得**导致 Q4 invalid；
+- `zero_window` **不得**导致 Q4 invalid；
+- 二者都是 Q2 evaluator 的正常、合法、零收益结果；
+- system error 与上述四个 status **完全分离**，不属于 Q2 status；
+- 仅当至少一个真实 Q2 返回是 `(valid=false, status="invalid")` 时，Q4 才返回 invalid；
+- `pruned_zero`、`zero_window` 与其他合法 evaluation 可以共同计算 union。
 
 ### 5. ThreeDroneEvaluation 输出结构 (v2 冻结, NOT implemented)
 
@@ -2262,34 +2285,92 @@ schema 由以下 8 个 category 构成：
 
 - `sample_level`
 - `scan_step_s`
-- `cylinder_sample_profile_parameters`
-- `cylinder_sample_profile_sha256`
+- `cylinder_sample_profile_identity_payload` (required, fixed schema)：
+  - `cylinder_sample_profile_schema_version`
+  - `sample_level`
+  - `sampling_algorithm_id`
+  - `effective_profile_parameters` (required; 必须包含 Q1 cylinder sampler 实际读取、
+    并会影响采样点或权重的全部最终有效参数 — 例如周向采样数量 / 高度方向采样数量 /
+    顶面/底面/侧面是否采样 / 顶面/底面/侧面采样规则 / 边界点处理 / 权重或去重规则 /
+    任何 profile-dependent tolerance；最终字段必须以真实 sampler 实现为准；
+    不得只保存 `sample_level = "medium"` 而省略 medium 实际展开后的参数；
+    若任一影响结果的 sampler 参数未进入 payload: **fail closed**, 不得生成正式 ID)
+- `cylinder_sample_profile_sha256` = SHA-256 over canonical JSON of
+  `cylinder_sample_profile_identity_payload` (payload **不得**包含
+  `cylinder_sample_profile_sha256` 自身)
 - `interval_touching_epsilon_s`
 - `candidate_raw_heading_policy` (固定: 0 ≤ heading_rad < 2π, identity 用 raw)
 
 #### 5. Code identity (本类所有项必须存在)
 
-- `q1_baseline_code_sha`
-- `q1_cylinder_code_sha`
-- `q2_single_bomb_code_sha`
-- `q3_union_helper_code_sha`
-- `q4_evaluator_code_sha` ← **REQUIRED**
+所有正式 code identity 字段均为 **lowercase 64-character SHA-256 hex digest**。
+
+**统一代码文件 hash 算法 (SHA-256 over exact Git blob content bytes at `execution_head_sha`)**：
+
+1. 冻结 `execution_head_sha`；
+2. 通过 `git rev-parse <execution_head_sha>:<path>` 解析 blob；
+3. 通过 `git cat-file blob <blob_oid>` 读取 blob 原始 content bytes；
+4. **不**做换行转换；
+5. **不**做 UTF-8 解码再编码；
+6. **不**删除 trailing whitespace；
+7. 直接对原始 blob bytes 执行 SHA-256；
+8. 保存以下证据：
+   - repository path；
+   - `execution_head_sha`；
+   - `git_blob_oid`；
+   - `blob_size`；
+   - SHA-256 (lowercase 64-character hex digest)。
+
+> **不得**使用工作树文件 bytes：Windows autocrlf / 编码设置可能改变 bytes，
+> dirty worktree **不**能作为正式证据。
+> **不得**通过 PowerShell 文本管道读取后再 hash。
+
+正式 code identity 字段：
+
+- `q1_baseline_code_sha256` = SHA-256 over exact Git blob content bytes of
+  `src/q1_baseline.py` at `execution_head_sha`；
+- `q1_cylinder_code_sha256` = SHA-256 over exact Git blob content bytes of
+  `src/q1_cylinder.py` at `execution_head_sha`；
+- `q2_single_bomb_code_sha256` = SHA-256 over exact Git blob content bytes of
+  `src/q2_single_bomb.py` at `execution_head_sha`；
+- `q3_three_bombs_code_sha256` = SHA-256 over exact Git blob content bytes of
+  `src/q3_three_bombs.py` at `execution_head_sha`（范围为整个 Git blob；
+  **不**做函数文本抽取 — 函数抽取会引入 AST / 注释 / 缩进 / 边界定义差异）；
+- `q4_evaluator_code_sha256` ← **REQUIRED** = SHA-256 over exact Git blob content
+  bytes of `src/q4_three_drones.py` at `execution_head_sha`。
+
+旧字段名（含 `q1_baseline_code_sha` / `q1_cylinder_code_sha` /
+`q2_single_bomb_code_sha` /
+`q4_evaluator_code_sha` 等无 `_sha256` 后缀的旧字段名）已废止，不得进入正式
+evaluation identity。
 
 > **NO FORMAL Q4 EVALUATION ID MAY BE GENERATED BEFORE
-> `q4_evaluator_code_sha` EXISTS**。
+> `q4_evaluator_code_sha256` EXISTS**。
 >
-> 在 P0/P1 阶段, `q4_evaluator_code_sha` 尚不存在；P0/P1 阶段**不得**生成任何
+> 在 P0/P1 阶段, `q4_evaluator_code_sha256` 尚不存在；P0/P1 阶段**不得**生成任何
 > 正式 `q4_evaluation_id`。任何 `null` / `"pending"` / `""` / 占位 SHA 替代
-> `q4_evaluator_code_sha` 都是**禁止**的。
+> `q4_evaluator_code_sha256` 都是**禁止**的。
 >
-> **不得**用 `q4_pilot_config_sha` 代替 `q4_evaluator_code_sha`。
+> **不得**用 `q4_pilot_config_sha` 代替 `q4_evaluator_code_sha256`。
 
 #### 6. Runtime / config identity
 
 - `q4_config_schema_version`
-- `q4_config_sha256`
+- `q4_config_sha256` = SHA-256 over canonical JSON of
+  `q4_config_identity_payload`，其中：
+  - payload **仅**包含影响 evaluator 结果或调用语义的**有效**配置字段；
+  - payload **不**包含日志路径、生成时间、主机名等**非结果**字段；
+  - payload 拥有明确的 `q4_config_schema_version`；
+  - payload 使用 MODEL.md canonical JSON 规则；
+  - payload **不**包含 `q4_config_sha256` 自身（**不**对包含自身 hash 的对象求 hash）。
 - `objective_identity` (= `"measure(I_FY1 ∪ I_FY2 ∪ I_FY3)"`)
-- `evaluation_call_contract_version` (= v2 冻结的两阶段 + EXCEPTION PROPAGATION)
+- `evaluation_call_contract_version` (= v3 冻结的两阶段 + EXCEPTION PROPAGATION)
+
+明确禁止：
+
+- 对普通 Python `repr()` 求 hash；
+- 对带缩进的显示 JSON 求 hash；
+- 对包含自身 hash 字段的对象求 hash。
 
 #### 7. Physical constants
 
@@ -2303,10 +2384,40 @@ schema 由以下 8 个 category 构成：
 #### 8. Contract identity
 
 - `q4_model_contract_version`
-- `q4_model_contract_sha256`
+- `q4_model_contract_sha256` (computed via
+  `SHA256_CANONICAL_JSON_EXCLUDING_SELF_FIELD_V1`，algorithm label
+  必须出现在正式 evidence 中)
 
-> 用于证明正式 evaluator 依照哪个冻结合同执行。P0/P1 阶段正式 `q4_evaluator_code_sha`
-> 不存在 → 不得生成正式 `q4_evaluation_id`。
+**`q4_model_contract_sha256` 算法 (SHA256_CANONICAL_JSON_EXCLUDING_SELF_FIELD_V1)**：
+
+1. 读取 v3 (`work/task_contracts/TASK_007-P0P1-v3.json`) JSON object；
+2. 从 top level **删除**字段 `q4_model_contract_sha256`（自引用排除）；
+3. 对剩余 object 递归执行 canonical normalization：
+   - `-0.0` → `0.0`；
+   - tuple / sequence → stable JSON array；
+   - NaN / +Inf / -Inf 禁止（必须 prevalidation 拒绝）；
+4. 序列化 canonical JSON：
+   - UTF-8；
+   - `ensure_ascii=False`；
+   - `sort_keys=True`；
+   - `separators=(",", ":")`；
+   - `allow_nan=False`；
+5. 对 canonical JSON UTF-8 bytes 计算 SHA-256；
+6. 将结果写入 v3 顶层 `q4_model_contract_sha256`；
+7. 验证：再次删除该字段并重算，**必须**等于存储值。
+
+冻结字段：
+
+- `contract_hash_algorithm` = `"SHA256_CANONICAL_JSON_EXCLUDING_SELF_FIELD_V1"`；
+- `contract_hash_excluded_fields` = `["q4_model_contract_sha256"]`；
+- **不**得对包含自身 hash 值的完整文件 bytes 直接求 hash。
+
+> 用于证明正式 evaluator 依照哪个冻结合同执行。P0/P1 阶段正式
+> `q4_evaluator_code_sha256` 不存在 → 不得生成正式 `q4_evaluation_id`。
+>
+> 顺序约束：1) 完成 tracked commit；2) 得到最终 commit SHA；3) 将 v3 local-only
+> `created_by_fix_head` 更新为最终 SHA；4) 重算 `q4_model_contract_sha256`；
+> 5) **不**为 local-only 更新创建新的 tracked commit。
 
 #### 措辞 (避免过强)
 
@@ -2408,14 +2519,61 @@ schema 由以下 8 个 category 构成：
 
 Q4 未来预算冻结规则 (TASK_007-P2A / P2B / P3 contract 必须遵守)：
 
+**严禁把 P2A 任何运行时测量当作 P2B / P3 预算依据** — P2A real Q4 evaluator
+calls = 0，不存在真实 Q4 runtime；P2A 的 stub / mock / fixture wall-clock **不得**
+用作 P2B 或 P3 预算依据。
+
+正确的预算时序 (P2A → P2B → P3, 三阶段串行依赖)：
+
+```
+P2A:
+  - 实现 evaluator；
+  - 实现 tests；
+  - stub / injected evaluator / fixture；
+  - 静态和受控测试；
+  - real Q4 evaluation = 0;
+  - 不产生可用于预算估计的真实 Q4 wall-clock。
+  - stub/mock wall-clock: 不得用作 P2B / P3 预算依据。
+
+P2B self-budget (首次真实 Q4 call 前冻结):
+  - MAIN 根据以下依据冻结一个保守的小型安全预算：
+    (a) Q3 历史实测 wall-clock；
+    (b) 单次 Q4 正常路径包含 3 次 Q2 evaluator；
+    (c) 12 维 candidate 的静态复杂度；
+    (d) 当前机器和 Python 环境；
+    (e) 保守安全上界；
+    (f) 用户明确授权。
+  - 不得依赖不存在的 P2A 真实 runtime。
+
+P2B runtime calibration (self-budget 内):
+  - 真实 Q4 candidate wall-clock；
+  - 真实 single-bomb call wall-clock；
+  - valid / invalid / zero / system-error 比例；
+  - checkpoint 开销；
+  - resume 开销。
+
+P3 formal budget (P2B 结束后):
+  - MAIN 根据 P2B 真实 runtime 冻结 P3 formal budget；
+  - 可以且必须依赖 P2B 真实 runtime；
+  - 不得混用 P2B pilot budget 与 P3 formal budget。
+```
+
 - 真实 Q4 evaluation 调用上限 `max_expensive_evaluations` 必须在 P2B 启动前由 MAIN
-  基于 P2A 实际 evaluator 性能 **重新冻结 task-specific 数值**；
+  按上述 P2B self-budget 依据**冻结 task-specific 数值**；
 - 不得沿用 Q3 数字；
 - wall-clock `max_run_wall_clock_seconds` 同上；
 - seeds 数量与具体 seed 列表必须在 P2B 启动前由 MAIN 重新冻结；本 P0/P1 不得声称
   seeds 数量、具体 seed 列表、wall-clock 上限、evaluation 上限已 frozen；
 - 单次 Q4 evaluation = 阶段 A (prevalidation, 0 次 evaluate_single_bomb_strategy)
   + 阶段 B (3 次 evaluate_single_bomb_strategy, FY1 → FY2 → FY3 顺序)；
+- **预算上限是硬上限, 不是实际调用数恒等式**：
+  ```
+  max_attempted_single_bomb_calls = 3 × max_q4_evaluations
+  ```
+  实际 attempted calls 可能更少 (prevalidation invalid: 0 / 第 1 或 2 次 system
+  error 提前停止 / wall-clock stop / 用户中止 / checkpoint stop)；
+  正常且全部完成的单个 Q4 evaluation: attempted=3, completed=3；
+  不得把预算上限与实际调用会计混为一谈。
 - P2B pilot self-budget 与 P3 formal budget 是**两套不同**预算集合, 不得混用;
 - 严禁在 P0/P1 阶段**冻结**任何未来 P2B / P3 budget / wall-clock / seed 数；
   本节只声明预算冻结的**规则**，不声明预算数字。
@@ -2428,7 +2586,19 @@ Q4 未来预算冻结规则 (TASK_007-P2A / P2B / P3 contract 必须遵守)：
 - ✅ 冻结 EXCEPTION PROPAGATION MODEL + 两阶段调用会计 (§4, N1)；
 - ✅ 冻结 interval-union 目标 + Q3/Q4 union 措辞统一 (§5)；
 - ✅ 冻结 `ThreeDroneEvaluation` 输出结构 (含 attempted/completed) + Q4 FORMAL
-  EVALUATION IDENTITY SCHEMA 8 category + `q4_evaluator_code_sha` required (§5, §6, N2)；
+  EVALUATION IDENTITY SCHEMA 8 category + `q4_evaluator_code_sha256` required (§5, §6, N2)；
+- ✅ 冻结 Q2 status → valid → Q4 聚合语义映射 (D1, §4.1)；
+- ✅ 冻结 code identity 算法: SHA-256 over exact Git blob content bytes at
+  `execution_head_sha`（D2, §6.5）；所有 code identity 字段使用 `_sha256` 后缀；
+- ✅ 冻结 `cylinder_sample_profile_identity_payload` schema + `effective_profile_parameters`
+  强制 (D2, §6.4)；
+- ✅ 冻结 `q4_config_identity_payload` 约束（仅结果影响字段，不含自身 hash）(D2, §6.6)；
+- ✅ 冻结 `q4_model_contract_sha256` 算法: SHA256_CANONICAL_JSON_EXCLUDING_SELF_FIELD_V1
+  (D2, §6.8)；
+- ✅ 冻结 Q4 heading 内部弧度表示为 `[约定]` 而非 `[官]` (D3, §1)；
+- ✅ 冻结 P2A/P2B/P3 预算时序: P2A real Q4 calls = 0 → 不作预算依据；
+  P2B self-budget 基于 Q3 历史 + 12 维静态 + 保守上界 + 用户授权；P3 budget 基于
+  P2B 真实 runtime (D4, §10 / §16)；
 - ✅ 冻结 canonical JSON 规则 (§7)；
 - ✅ 冻结 result2.xlsx 写盘合同 (rows 2-4 / row 5 保留 / B6 / A1:J6) (§8)；
 - ✅ 占位候选来源 (具体 seed 数字 NOT frozen) (§9)；
@@ -2438,14 +2608,17 @@ Q4 未来预算冻结规则 (TASK_007-P2A / P2B / P3 contract 必须遵守)：
 - ✅ 冻结 P3 = work/q4_search/ + P4 = work/q4_candidate_closure/ 目录所有权
   + 各自 checkpoint + P4 input_manifest 绑定 P3 SHAs (§15, N4)；
 - ✅ 冻结单 PR 规则 PR #14 整个 TASK_007 期间 Draft 不合并 (§13)；
-- ✅ 冻结 v1 historical overwrite record + v2 canonical 治理 (§14, N3)；
+- ✅ 冻结 v1 historical overwrite record + v2 superseded + v3 canonical 治理
+  (§14, N3)；
 - ✅ 修改 `.gitignore` 覆盖 `work/task_contracts/`, `work/q3_*/`, `work/q4_*/`,
   `work/p3_closeout/` (governance fix, P0/P1 阶段完成);
 - ✅ read-only 验证官方 result2.xlsx 模板 SHA + 结构，存到
   `work/q4_foundation/result2_template_readonly_check.json` (FACTS.md §13.2 状态
   已在本文件中刷新为 "CORRECTED in FIX commit 6f52c39");
 - ✅ 写入 `work/task_contracts/TASK_007-P0P1-v1.json` 不可变 snapshot (历史覆盖记录);
-- ✅ 写入 `work/task_contracts/TASK_007-P0P1-v2.json` canonical corrected contract;
+- ✅ 写入 `work/task_contracts/TASK_007-P0P1-v2.json` superseded corrected contract;
+- ✅ 写入 `work/task_contracts/TASK_007-P0P1-v3.json` canonical final P0/P1 contract
+  (absorbs v2 + D1-D4);
 - ✅ 修正 `problem/FACTS.md §13.2` (官方要求 vs 模板格式行分离, 写入策略明确)。
 
 不得在本轮：
@@ -2510,7 +2683,7 @@ Q4 未来预算冻结规则 (TASK_007-P2A / P2B / P3 contract 必须遵守)：
   - "PR 合并 OR MAIN 显式授权"
 - 任何此类旧措辞已删除; 仅保留本节唯一规则。
 
-### 14. v1 historical + v2 canonical 治理 (N3, 治理说明)
+### 14. v1 historical + v2 superseded + v3 canonical 治理 (N3 + D1-D4, 治理说明)
 
 历史事件（不可变事实）：
 
@@ -2519,22 +2692,43 @@ Q4 未来预算冻结规则 (TASK_007-P2A / P2B / P3 contract 必须遵守)：
 - v1 文件 (`work/task_contracts/TASK_007-P0P1-v1.json`) 从未被 Git tracked；
 - v1 原 bytes 不可独立恢复；不得猜测、不得从当前 v1 反推、不得用 reflog 声称恢复、
   不得删除当前 v1 隐瞒覆盖事件；
-- v1 当前内容已带 `snapshot_status = "HISTORICAL_OVERWRITE_RECORDED"` 标记。
+- v1 当前内容已带 `snapshot_status = "HISTORICAL_OVERWRITE_RECORDED"` 标记；
+- v1 在本轮 (FINAL SEMANTIC AND HASH-SCOPE FIX) 与本轮之前 SHA-256 / size **完全
+  一致** (immutable)。
 
-v2 canonical (后续 P2A / P2B / P3 / P4 / P5 唯一引用)：
+v2 superseded (后续**不得**作为 canonical 引用)：
 
 - `work/task_contracts/TASK_007-P0P1-v2.json`
 - `contract_version = 2`
-- `status = "CANONICAL_CORRECTED_CONTRACT"`
+- `status = "SUPERSEDED_CORRECTED_CONTRACT"`
 - `supersedes = "TASK_007-P0P1-v1.json"`
 - `audit_basis_head = "6f52c39c14b957d466f39248fcbfa8fae923a234"`
 - `created_by_fix_round = "CONSOLIDATED_AUDIT_FIX"`
-- `next_gate = "AUDIT_DELTA_RECHECK"`
+- `next_gate = "AUDIT_DELTA_RECHECK"` (at time of v2)
+- v2 在本轮 (FINAL SEMANTIC AND HASH-SCOPE FIX) 与本轮之前 SHA-256 / size **完全
+  一致** (immutable, no overwrite)。
 
-合同修订规则 (v2 之后)：
+v3 canonical (后续 P2A / P2B / P3 / P4 / P5 **唯一引用**；absorbs v2 + D1-D4)：
+
+- `work/task_contracts/TASK_007-P0P1-v3.json`
+- `contract_version = 3`
+- `status = "CANONICAL_FINAL_P0P1_CONTRACT"`
+- `supersedes = "TASK_007-P0P1-v2.json"`
+- `audit_basis_head = "2f3a38a5af867569b23cc9bed958cf1a8d4b5b10"`
+- `created_by_fix_round = "FINAL_SEMANTIC_AND_HASH_SCOPE_FIX"`
+- `next_gate = "FINAL_MICRO_DELTA_RECHECK"`
+- `contract_hash_algorithm = "SHA256_CANONICAL_JSON_EXCLUDING_SELF_FIELD_V1"`
+- `contract_hash_excluded_fields = ["q4_model_contract_sha256"]`
+- `q4_model_contract_sha256` 通过 §6 冻结算法计算 (exclude self field, NOT hashing
+  complete v3 bytes including own hash)
+- `canonical_for_future_execution = true`
+
+合同修订规则 (v3 之后)：
 
 - 每次合同修订**必须**创建 `vN+1` 新文件，**不得**覆盖 `vN`；
-- 未来 P2A / P2B / P3 / P4 / P5 context 全部引用最新 `vN`；
+- v1 / v2 在本轮与后续任何 commit 中**不得修改** (immutable historical /
+  superseded records)；
+- 未来 P2A / P2B / P3 / P4 / P5 context **全部**引用 v3 (或 v3 之后 vN+1)；
 - 完整本机 JSON 内容**不**塞入 tracked 文档；tracked 文档只做治理说明。
 
 ### 15. P3 / P4 artifact 所有权 (N4, v2 冻结)
@@ -2661,7 +2855,10 @@ P2B 结束后, MAIN 再冻结 P3 formal search budget。
 
 - 12 维决策变量比 Q3 8 维大 50%, 候选空间更大；本轮未做任何 pilot / 单 seed /
   multi-seed 实测, 因此 TASK_007-P2B 预算 / wall-clock / seed 数均**未冻结**,
-  留到 P2B 启动前由 MAIN 基于 P2A 实测 + 12 维搜索工程经验重新冻结。
+  留到 P2B 启动前由 MAIN 按 §10 冻结的 P2B self-budget 依据（Q3 历史耗时 +
+  12 维静态复杂度 + 保守安全上界 + 用户授权）**显式冻结**。P2B self-budget 不得
+  基于 P2A 真实 runtime (P2A real Q4 calls = 0)。P3 formal budget 必须基于 P2B
+  真实 runtime 冻结（详见 §16）。
 - 候选源 (§9) 是占位；具体 seed 数字 NOT frozen 在 P0/P1；正式 P2B 启动前 MAIN 必须
   重新冻结：
   - seeds 数量；
