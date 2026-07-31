@@ -234,9 +234,9 @@
     "closeout_is_docs_metadata_only": true,
     "q3_evaluation_rerun_performed": false,
     "result1_regenerated": false,
-    "p3_resume_identity_bound_to": "official_template_member_sha256",
-    "legacy_identity_official_template_sha256_semantics": "ZIP member bytes: result1.xlsx",
-    "legacy_workbook_official_template_sha256_semantics": "ZIP archive bytes",
+    "p3_resume_identity_bound_to": "identity.official_template_sha256 (ZIP archive bytes)",
+    "legacy_identity_official_template_sha256_semantics": "ZIP archive bytes",
+    "legacy_workbook_official_template_sha256_semantics": "ZIP member bytes: result1.xlsx",
     "legacy_fields_preserved": true,
     "template_hashes_independently_recomputed_read_only": true,
     "template_zip_read_only_open_passed": true,
@@ -247,6 +247,8 @@
     "result1_bytes_modified": false,
     "final_audit_status": "NOT_STARTED",
     "hermes_status": "NOT_STARTED",
-    "task_007_status": "NOT_STARTED"
+    "task_007_status": "NOT_STARTED",
+    "legacy_identity_field_semantically_equals": "official_template_zip_sha256",
+    "legacy_workbook_field_semantically_equals": "official_template_member_sha256"
   }
 }
