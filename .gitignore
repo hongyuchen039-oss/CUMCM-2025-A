@@ -69,3 +69,7 @@ work/p3_closeout/
 
 # TASK_GOV_002 本地 runtime task-context lock (本机真实路径, 不得提交)
 work/task_context.json
+
+# 所有 work/ 内容均为本机 runtime evidence、contract snapshot、checkpoint 或 audit context
+# 禁止提交；正式交付物必须写入已明确允许的 tracked/output 路径
+work/

@@ -1,8 +1,258 @@
-# TASK_007-P0/P1 FINAL SEMANTIC AND HASH-SCOPE FIX
+# TASK_007-P0/P1 WORKTREE HYGIENE FINAL CLOSEOUT
 
-> 唯一当前门是 **TASK_007-P0/P1 FINAL SEMANTIC AND HASH-SCOPE FIX**: 对 PR #14
-> Delta Audit 报告（object = `2f3a38a5af867569b23cc9bed958cf1a8d4b5b10`, verdict =
-> `CHANGES_REQUIRED`, open findings = D1 / D2 / D3 / D4）的最终 P0/P1 文本级定向修复。
+> 唯一当前门是 **TASK_007-P0/P1 WORKTREE HYGIENE FINAL CLOSEOUT**: P0/P1 最终
+> 验收前唯一剩余的小型治理修复（仅 G1 work/ ignore 卫生 + G2
+> `result2_generated` 严格 boolean false），不修改任何 Q4 模型合同语义，
+> 不修改 v1 / v2 / v3。
+>
+> **不**实现 Q4 evaluator、**不**创建 Q4 测试、**不**运行 Q4 evaluator、
+> **不**运行 pilot / search / benchmark、**不**生成 result2.xlsx、
+> **不**启动 Audit full rerun / Hermes（Hermes 已完成实测 / 此处仅做 closeout
+> 状态登记）、**不** Mark Ready、**不** merge、**不**启动 TASK_007-P2A /
+> P2B / P3 / P4 / P5、**不**启动 TASK_008。
+
+## Worktree hygiene closeout 状态
+
+| 字段 | 值 |
+|---|---|
+| Final Micro Delta Audit | **PASS WITH NON-BLOCKING OBSERVATIONS** |
+| Hermes | **PASS WITH NON-BLOCKING OBSERVATIONS** |
+| G1 work ignore hygiene | **FIXED** |
+| G2 `result2_generated` boolean | **VERIFIED FALSE** |
+| canonical contract | `TASK_007-P0P1-v3.json` |
+| v1 / v2 / v3 | **UNMODIFIED** (hash 全部冻结) |
+| Q4 implementation | **NOT STARTED** |
+| P2A | **NOT STARTED** |
+| P2B | **NOT STARTED** |
+| result2.xlsx | **NOT GENERATED** |
+| Ready | **NO** |
+| Merge | **NO** |
+| next gate | **MAIN P0/P1 FINAL ACCEPTANCE AND P2A AUTHORIZATION DECISION** |
+
+## 本轮范围 (CLOSEOUT, NOT IMPLEMENTATION)
+
+### G1 — work/ 未被完整 ignore，Hermes 实测 git status 显示 `?? work/`
+
+- 诊断：`git status --short --untracked-files=all` 在修复前显示 12 个未跟踪 work/ 路径
+  （`work/bounded_verification_skill_plan.md` / `work/pr_11_body.md` /
+  `work/pr_13_p2c_body.md` / `work/pr_14_consolidated_fix_body.md` /
+  `work/pr_14_contract_correction_body.md` / `work/pr_gov003_*.md` /
+  `work/q2_formal_refinement/checkpoint.json` / `work/task006_readiness.md`），全部
+  `check-ignore` 返回 `NOT IGNORED`；
+- 修复：在 `.gitignore` 增加总规则 `work/`（在已有更具体规则后追加）；保留所有
+  已有的更具体 `work/...` 规则，不删除；**不**添加任何 `!work/...` 例外；
+- 修复后验证：`git check-ignore -v work/task_context.json` →
+  `.gitignore:work/`；`work/task_contracts/TASK_007-P0P1-v1.json` /
+  `work/task_contracts/TASK_007-P0P1-v2.json` /
+  `work/task_contracts/TASK_007-P0P1-v3.json` /
+  `work/q4_foundation/result2_template_readonly_check.json` /
+  `work/q4_pilot/` / `work/q4_candidate_closure/` / `work/q4_search/` /
+  `work/q4_result2/` 全部命中 `.gitignore:work/`；
+- `git status --short --untracked-files=all` 提交前**仅**显示 `M .gitignore` +
+  `M NEXT_TASK.md`；**不**再出现 `?? work/`；**不**再出现任何 untracked path；
+- `git ls-files work` 仍为空（work/ 整体不是 tracked source）。
+
+### G2 — `result2_generated` 被 Hermes 读取为 None
+
+- 诊断：`work/task_context.json` 顶层**无** `result2_generated` 字段；Hermes
+  默认读到 `None` 而非严格 boolean `false`；
+- 修复：在 `work/task_context.json` 顶层（与 `next_gate` / `current_action` 同级）
+  新增 `"result2_generated": false`（**严格** boolean, **不**是 `null`、
+  **不**是字符串 `"false"`、**不**仅在说明文字或 `do_not_claim` 字段中）；
+- `bounded_verification.real_evaluator_call_count` 已有完整调用计数 schema：
+  `q1` / `q2` / `q3` / `q4` / `search` / `excel_save` 均为 integer `0`；
+  本轮**不**重复创造冲突字段，保留原 schema；
+- 严格 Python 验证（`python -B`）：
+  ```
+  assert "result2_generated" in data
+  assert type(data["result2_generated"]) is bool
+  assert data["result2_generated"] is False
+  ```
+  输出：`RESULT2_GENERATED_FIELD_VALID = TRUE`；
+- `python scripts/verify_task_context.py --context work/task_context.json` →
+  `CONTEXT_VALID_AUTHORIZED_DIRTY`（per directive 允许的两种状态之一）。
+
+## 阶段状态
+
+| 阶段 | 状态 |
+|---|---|
+| TASK_006-P3 (Q3 result1.xlsx) | **COMPLETE + MERGED** (PR #13 → main @ `2839151c9ef027c200f84ec342e17d43874ca254`) |
+| TASK_007-P0/P1 (FINAL SEMANTIC AND HASH-SCOPE FIX) | **COMPLETE** (commit `f47f5d09f79fb21159a57d0e475924a90ee5ec67`) |
+| TASK_007-P0/P1 (WORKTREE HYGIENE FINAL CLOSEOUT) | **CLOSEOUT COMPLETE — THIS COMMIT** |
+| TASK_007-P2A (Q4 evaluator + 单元测试) | **NOT STARTED** |
+| TASK_007-P2B (tiny bounded pilot + runtime calibration) | **NOT STARTED** |
+| TASK_007-P3 (Q4 formal bounded search) | **NOT STARTED** |
+| TASK_007-P4 (candidate closure) | **NOT STARTED** |
+| TASK_007-P5 (result2.xlsx write + round-trip) | **NOT STARTED** |
+| TASK_008 | **NOT STARTED** |
+
+## 起点身份 (HYGIENE CLOSEOUT 启动)
+
+| 字段 | 值 |
+|---|---|
+| 起始 HEAD (main) | `2839151c9ef027c200f84ec342e17d43874ca254` (PR #13 mergeCommit) |
+| branch | `task/TASK_007-q4-result2` |
+| base_branch | `main` |
+| base_sha | `2839151c9ef027c200f84ec342e17d43874ca254` |
+| 上一轮 FINAL SEMANTIC FIX commit (HYGIENE CLOSEOUT 起点 HEAD) | `f47f5d09f79fb21159a57d0e475924a90ee5ec67` |
+| 上一个 CONSOLIDATED FIX commit (Delta Audit basis HEAD) | `2f3a38a5af867569b23cc9bed958cf1a8d4b5b10` |
+| 上一个 FIX commit (Audit basis HEAD) | `6f52c39c14b957d466f39248fcbfa8fae923a234` |
+| 上上一个 commit (PLAN) | `217985bd4f03a1e023d37e896c4035c1a58f515f` |
+| 本轮 HYGIENE CLOSEOUT commit | (本轮生成, 第五个普通 commit, 非 amend, 非 squash) |
+| task_id | `TASK_007-P0P1-WORKTREE-HYGIENE-FINAL-CLOSEOUT` |
+| phase_id | `TASK_007-P0P1` |
+| contract_version | 3 (v3 canonical; v2 superseded immutable; v1 historical immutable) |
+| pr_number | 14 |
+| pr_state_target | open, draft=true, merged=false, mergeable=true |
+| pr_commits_target | 5 (PLAN + FIX + CONSOLIDATED FIX + FINAL SEMANTIC FIX + HYGIENE CLOSEOUT) |
+| current_action | `WORKTREE_HYGIENE_FINAL_CLOSEOUT` |
+| next_gate | `MAIN_P0P1_FINAL_ACCEPTANCE_AND_P2A_AUTHORIZATION_DECISION` |
+
+## 不可变 hash 复核 (本轮前后必须完全一致)
+
+| 文件 | SHA-256 | Size |
+|---|---|---|
+| v1 (`work/task_contracts/TASK_007-P0P1-v1.json`) | `21fffb2653c43da371ffe0b17fbff25d8fd6bec9c4043f1d4045cc20b9db6e2e` | 14988 |
+| v2 (`work/task_contracts/TASK_007-P0P1-v2.json`) | `e28d35901b9d39b8621f31bb12bdfeb778ebddcdfe5665098e7eb9f274c6bb1d` | 18470 |
+| v3 file (`work/task_contracts/TASK_007-P0P1-v3.json`) | `9b4f824c67a42e164e454365e0c920622095871843625db2c01b96853cea59a4` | 30724 |
+| v3 contract hash (`q4_model_contract_sha256`) | `394cbd3557696594caa229be1018e999e69171597d0736823b6c6387c09cb62e` | (32 bytes hex) |
+
+任一变化 → **BLOCKED — CANONICAL CONTRACT MUTATED DURING HYGIENE CLOSEOUT**。
+
+## 官方 result2.xlsx 模板 read-only 验证 (保持)
+
+| 字段 | 值 |
+|---|---|
+| 官方 ZIP SHA-256 | `f9879c0d36b7bdccb99fb330a8032e62851ab1a1f0a1636c92440a1cdaec658e` (14884 bytes, 3 members) |
+| result2.xlsx member size | 5272 bytes |
+| result2.xlsx member SHA-256 | `91fbc42459aa4c98838b0a4dbe740ec5b970436c3f86d8a22dd7303f127cf106` |
+| sheet | `Sheet1` (唯一) |
+| header | row 1, A1:J1 (10 列) |
+| 模板空白格式行 | rows 2-5 (4 行) |
+| 实际写入区 | rows 2, 3, 4 (FY1 → row 2, FY2 → row 3, FY3 → row 4) |
+| 保留空白格式行 | row 5 (官方模板预存, 不删除不重排不写入) |
+| 附注 cell | B6 |
+| workbook footprint | A1:J6 |
+| FACTS.md §13.2 修正 | CORRECTED in FIX commit `6f52c39c14b957d466f39248fcbfa8fae923a234` |
+| result2.xlsx generated | **NO** |
+
+## 当前 result level
+
+- `TASK_007 Q4 FOUNDATION CONTRACT — CONTRACT_ONLY`
+- `FINAL SEMANTIC AND HASH-SCOPE FIX COMPLETE`
+- `WORKTREE HYGIENE FINAL CLOSEOUT COMPLETE` (本轮)
+- IMPLEMENTATION NOT STARTED
+- RESULT2.XLSX NOT GENERATED
+- TASK_007-P2A NOT STARTED
+- TASK_007-P2B NOT STARTED
+- TASK_007-P3 NOT STARTED
+- TASK_007-P4 NOT STARTED
+- TASK_007-P5 NOT STARTED
+- TASK_008 NOT STARTED
+- seeds 数量 / 具体 seed 列表 / wall-clock / evaluation cap / search config / pilot self-budget NOT FROZEN
+- Audit (full rerun) NOT STARTED
+- Hermes NOT STARTED (Final closeout 状态: PASS WITH NON-BLOCKING OBSERVATIONS)
+- NOT Q4 IMPLEMENTED
+- NOT Q4 SEARCHED
+- NOT Q4 EVALUATOR VALIDATED
+- NOT FORMAL_RESULT_VERIFIED
+- NOT local convergence
+- NOT global optimum
+- NOT 官方答案
+
+## result1.xlsx 状态 (保留不变)
+
+| 字段 | 值 |
+|---|---|
+| result1.xlsx output SHA | `b938a90b96181be14990d5bd3395c2cff72e93035828542617571ddc1d754847` |
+| result1_run_identity_sha256 | `82065aa5fe4d4e6036691a053b38732b9ff1f50497083e3306e262e82a4bfc65` |
+| 状态 | GENERATED + ROUND-TRIP-VERIFIED (TASK_006-P3, NOT touched by TASK_007) |
+
+## 任务编号 (固定)
+
+| 编号 | 范围 |
+|---|---|
+| `TASK_006` | Q3 + result1.xlsx |
+| `TASK_007-P0P1` | Q4 foundation preflight + contract freeze + CONTRACT CORRECTION + CONSOLIDATED AUDIT FIX + FINAL SEMANTIC AND HASH-SCOPE FIX + WORKTREE HYGIENE FINAL CLOSEOUT (本轮) |
+| `TASK_007-P2A` | Q4 evaluator + 单元测试 (real Q4 calls = 0) |
+| `TASK_007-P2B` | tiny bounded pilot + runtime calibration (pilot self-budget NOT FROZEN) |
+| `TASK_007-P3` | Q4 formal bounded search (artifact root = work/q4_search/) |
+| `TASK_007-P4` | candidate closure (artifact root = work/q4_candidate_closure/) |
+| `TASK_007-P5` | fine reconstruction + result2.xlsx 写盘 + round-trip 验证 |
+| `TASK_008` | Q5 + result3.xlsx |
+| `TASK_009` | unified recomputation / sensitivity / robustness / figures |
+| `TASK_010` | paper / consistency / final package |
+
+## 本轮允许的 tracked 文件变更 (2 个)
+
+| 文件 | 类型 |
+|---|---|
+| `.gitignore` | 新增 `work/` 总规则（保留所有已有 `work/...` 规则, 不删除） |
+| `NEXT_TASK.md` | 重写为本轮 WORKTREE HYGIENE FINAL CLOSEOUT scope（不改模型合同） |
+
+## 本轮允许的 untracked 文件变更 (work/)
+
+| 文件 | 类型 |
+|---|---|
+| `work/task_context.json` | 顶层新增 `result2_generated: false`（严格 boolean） |
+| `work/task_contracts/TASK_007-P0P1-v1.json` | 本轮**不修改** (immutable historical record) |
+| `work/task_contracts/TASK_007-P0P1-v2.json` | 本轮**不修改** (immutable superseded record) |
+| `work/task_contracts/TASK_007-P0P1-v3.json` | 本轮**不修改** (canonical final contract) |
+
+## 关闭条件 (本门)
+
+- ✅ `work/` 全部被 `.gitignore` 总规则覆盖；`git check-ignore -v work/task_context.json`
+  → `.gitignore:work/`
+- ✅ `git status --short --untracked-files=all` 不再显示 `?? work/`；提交前仅显示
+  `M .gitignore` + `M NEXT_TASK.md`
+- ✅ `work/task_context.json` 顶层 `result2_generated` 为**严格 boolean false**
+  (`RESULT2_GENERATED_FIELD_VALID = TRUE`)
+- ✅ `bounded_verification.real_evaluator_call_count` 中 `q1` / `q2` / `q3` /
+  `q4` / `search` / `excel_save` 均为 integer `0`
+- ✅ v1 / v2 / v3 SHA-256 / size 本轮前后**完全一致** (immutable)
+- ✅ `python scripts/verify_task_context.py --context work/task_context.json` →
+  `CONTEXT_VALID_AUTHORIZED_DIRTY`
+- ✅ 单次 commit "FIX: close TASK_007 worktree hygiene and context state gaps"
+  (第五个普通 commit, 非 amend, 非 squash, 非 force)
+- ✅ push 到 origin
+- ✅ PR #14 仍为 Draft；描述更新为 WORKTREE HYGIENE FINAL CLOSEOUT 状态
+- ✅ PR #14 验证: state=OPEN, draft=true, merged=false, mergeable=true,
+  head=新 HYGIENE CLOSEOUT commit, commits=5, base=2839151c
+- ✅ 累计 changed files 仍为 {.gitignore, MODEL.md, NEXT_TASK.md, problem/FACTS.md}
+  (4 个, 不得出现第五个 — 本轮仅修改 `.gitignore` 和 `NEXT_TASK.md`, 二者均
+  在该 4 个文件集合内)
+
+不自动 (本轮 boundary):
+
+- ❌ 启动 Q4 evaluator 实现 (TASK_007-P2A)
+- ❌ 启动 Q4 tiny pilot / runtime calibration (TASK_007-P2B)
+- ❌ 启动 Q4 正式搜索 (TASK_007-P3)
+- ❌ 启动 candidate closure (TASK_007-P4)
+- ❌ 启动 result2.xlsx 写盘 (TASK_007-P5)
+- ❌ 启动 Audit full rerun
+- ❌ 启动 Hermes（仅做 closeout 状态登记）
+- ❌ Mark Ready / merge
+- ❌ 启动 TASK_008
+- ❌ 冻结 seeds / wall-clock / evaluation cap / search config / pilot self-budget /
+  任何 P2B / P3 数字
+- ❌ 冒充 Q4 IMPLEMENTED / Q4 SEARCHED / RESULT2 GENERATED / P2A 启动 /
+  P2B 启动 / P3 启动 / P4 启动 / P5 启动 / FORMAL_RESULT_VERIFIED / 官方答案
+- ❌ 修改 MODEL.md（HYGIENE CLOSEOUT 边界）
+- ❌ 修改 v1 / v2 / v3 任何 byte（HYGIENE CLOSEOUT 边界, immutable）
+- ❌ 修改 problem/FACTS.md / .gitignore 已有规则 / 任何 src/ tests/ outputs/ 模板 workflow
+
+## 下一门 (待 MAIN 显式授权)
+
+**MAIN P0/P1 FINAL ACCEPTANCE AND P2A AUTHORIZATION DECISION** — MAIN 决定:
+1. P0/P1 阶段是否最终接受；
+2. 是否授权启动 TASK_007-P2A (Q4 evaluator + 单元测试, real Q4 calls = 0)。
+
+PR #14 整个 TASK_007 期间保持 Draft, 不合并 (单 PR 规则)。
+
+---
+
+> 旧版 (TASK_007-P0/P1 FINAL SEMANTIC AND HASH-SCOPE FIX) 状态见 git history,
+> 本轮 (WORKTREE HYGIENE FINAL CLOSEOUT) 仅做 closeout 状态登记, 不改模型合同。
 >
 > **不**实现 Q4 evaluator、**不**创建 Q4 测试、**不**运行 Q4 evaluator、
 > **不**运行 pilot / search / benchmark、**不**生成 result2.xlsx、
