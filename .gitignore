@@ -56,5 +56,16 @@ work/q2_pilot_calib/
 work/q2_formal/
 work/_test_run.log
 
+# TASK_006 / TASK_007 本地 runtime snapshots 与 checkpoint (不得提交)
+work/task_contracts/
+work/q3_formal/
+work/q3_candidate_closure/
+work/q3_result1/
+work/q3_pilot/
+work/q4_foundation/
+work/q4_search/
+work/q4_result2/
+work/p3_closeout/
+
 # TASK_GOV_002 本地 runtime task-context lock (本机真实路径, 不得提交)
 work/task_context.json
