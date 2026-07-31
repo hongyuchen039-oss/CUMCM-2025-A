@@ -1896,15 +1896,38 @@ temporary workbook，**不**调用真实 Q3 evaluator）：
 
 > 本节为 TASK_007-P0/P1 冻结的 12 维 Q4 candidate 评估合同，**仅合同**，不实现。
 > 本轮 (TASK_007-P0/P1) 输出上限 = CONTRACT_ONLY / IMPLEMENTATION NOT STARTED /
-> RESULT2.XLSX NOT GENERATED。后续 TASK_007-P2 / P3 才进入 Q4 evaluator + search + 写盘。
+> RESULT2.XLSX NOT GENERATED。后续 TASK_007-P2 / P3 / P4 / P5 才进入 Q4 evaluator +
+> search + 写盘。
 >
 > 等级: **TASK_007 Q4 FOUNDATION CONTRACT — CONTRACT_ONLY**。
 > 不得冒充 Q4 IMPLEMENTED / Q4 SEARCHED / RESULT2.XLSX GENERATED / VERIFIED / FINAL /
 > local convergence / global optimum / 官方答案。
 
+### 0. TASK_007 阶段映射 (phase map, TASK_007-P0/P1 冻结)
+
+| 阶段 | 范围 | 输出物 | 触发条件 |
+|---|---|---|---|
+| **TASK_007-P0/P1** (本轮) | preflight + 12-dim candidate 合同 + work/ ignore 治理 + result2.xlsx 模板 read-only 验证 + Q2 u0 复用审计 | MODEL.md / NEXT_TASK.md / FACTS.md / work/task_contracts/TASK_007-P0P1-v1.json / work/q4_foundation/result2_template_readonly_check.json | MAIN 立项 |
+| **TASK_007-P2** | Q4 evaluator 实现 (`src/q4_three_drones.py`) + 单元测试 (`tests/test_q4.py`) + **tiny bounded pilot** (有限调用 + 有限 wall-clock + 1 seed) + **runtime calibration** (测得 task-specific 数值) | src/q4_three_drones.py / tests/test_q4.py / work/q4_pilot/ artifacts | MAIN 显式授权 |
+| **TASK_007-P3** | Q4 正式 bounded search (基于 P2 冻结的 evaluation 上限 / wall-clock 上限 / seeds 列表 / search config) | work/q4_search/ artifacts + work/q4_candidate_closure/ artifacts + checkpoint + best-so-far candidate | MAIN 显式授权 + P2 runtime calibration 完成 |
+| **TASK_007-P4** | candidate closure + 局部 refined re-evaluation + 跨 seed 鲁棒性 (基于 P3 冻结的 finalists) | work/q4_candidate_closure/ artifacts + 最终 candidate | MAIN 显式授权 + P3 主搜索完成 |
+| **TASK_007-P5** | fine reconstruction (反算 per-drone release / detonation / duration) + 写盘 `outputs/submission/result2.xlsx` + round-trip 验证 (含 row 5 保留 / B6 附注 / A1:J6 footprint) | `outputs/submission/result2.xlsx` + work/q4_result2/ evidence | MAIN 显式授权 + P4 closure 完成 |
+
+约束：
+- **P0/P1** 本轮**不**实现 evaluator / **不**运行 search / **不**写盘；
+- **P2** 启动前 P0/P1 必须已经 MAIN REVIEW 通过 + PR merged (或显式授权冻结在 P0/P1);
+- **P3** 启动前 P2 必须已经 runtime calibration 完成 + P2 specific 数值 frozen
+  (seeds 数量 / 具体 seed 列表 / wall-clock / evaluation 上限);
+- **P4** 启动前 P3 必须已经产出 best-so-far candidate;
+- **P5** 启动前 P4 必须已经 candidate closure 完成;
+- P5 写盘前必须完成 §7 写盘合同全部 round-trip 验证 (rows 2-4 写入 / row 5 保留 /
+  B6 附注保留 / A1:J6 footprint / sheet name / header A1:J1);
+- 任一阶段不通过 MAIN REVIEW 不得跳级进入下一阶段.
+
 ### 1. 官方事实 (FACTS.md §5 + §8 + §9 + §13.2 + §13.4)
 
-- **[官]** FY1, FY2, FY3 各投放 1 枚烟幕干扰弹对 M1 实施干扰（FACTS.md §5）。
+- **[官]** FY1、FY2、FY3 各投放**恰好 1 枚**烟幕干扰弹对 M1 实施干扰（FACTS.md §5）；
+  Q4 文本为"利用 FY1、FY2、FY3 共 3 架无人机**各投放 1 枚**烟幕干扰弹"。
 - **[官]** 三架无人机初始位置（FACTS.md §8）：
 
   | 编号 | 坐标 (x, y, z) |
@@ -1913,8 +1936,9 @@ temporary workbook，**不**调用真实 Q3 evaluator）：
   | FY2 | (12000, 1400, 1400) |
   | FY3 | (6000, −3000, 700) |
 
-- **[官]** 每架无人机投放 ≤ 1 枚（Q4 文本）；投放间隔 ≥ 1 s 的同架限制在 Q4 不触发
-  （每架仅 1 枚，FACTS.md §10 / §12 文本仍为 [官]）。
+- **[官]** Q4 每架 1 枚，FACTS.md §10 / §12 "同架两枚之间投放间隔 ≥ 1 s" 在 Q4 **不触发**
+  （每架仅 1 枚，不存在"同架次两枚之间"的间隔场景）。FACTS.md §10 / §12 文本仍为 [官]
+  规则，但 Q4 不调用该约束。
 - **[官]** 每架无人机 70~140 m/s 等高度匀速直线，**且各架 heading / speed 独立**：
   FACTS.md §9 "每架无人机的航向、速度可不相同，但一旦确定就不再调整"。
   Q4 没有"三架共享航向 / 速度"约束，与 Q3 §3 [约定] 严格区分。
@@ -1968,7 +1992,7 @@ class ThreeDroneCandidate:
 | 候选维度 | 8 = 2 共享 + 3 × 2 | **12 = 3 × 4** (每架独立 4 变量) |
 | 共享 heading / speed | YES (Q3 §3 [约定]) | **NO** (FACTS.md §9 明确"每架可不相同") |
 | 共享 release / delay | NO (本来就是各弹独立) | NO |
-| 同架投放间隔约束 | YES (≥ 1 s, FACTS §10) | **不触发** (每架 1 枚) |
+| 同架投放间隔约束 | YES (≥ 1 s, FACTS §10) | **不触发** (FY1/FY2/FY3 各恰好 1 枚) |
 | 跨架耦合约束 | 不存在 | **不引入** (避免人为耦合) |
 | 三弹 union | YES (Q3 §8) | **NO → 三机 union** (本节 §5) |
 | evaluator 单弹调用数 | 3 × 1 = 3 (同架多弹) | 3 × 1 = 3 (跨架各 1) |
@@ -2012,11 +2036,22 @@ fy_evs = (
 )
 ```
 
-约束：
-- 三次单弹 evaluator 调用**全部必须执行**（no fail-fast partial call）；
-- 任一调用抛出程序异常 → Q4 evaluation 整体抛出，外层 Pilot 记录 `system_error`，
-  不得静默吞掉；
-- 三次调用各自的 `valid` / `status` 字段语义严格继承 Q2 §7。
+约束 (evaluator 调用会计, 严格两阶段):
+- **阶段 A — prevalidation (0 次 evaluate_single_bomb_strategy 调用)**：
+  仅做轻量级输入合法性检查（finite 数值 / heading_rad 范围 / speed_mps 范围 /
+  release_time ≥ 0 / delay ≥ 0）。失败时直接返回 invalid，不进入阶段 B。
+  阶段 A 不消耗 evaluate_single_bomb_strategy 调用预算。
+- **阶段 B — 顺序执行 3 次 evaluate_single_bomb_strategy 调用**：
+  - 阶段 A 全部通过后才进入阶段 B；
+  - 阶段 B **按 FY1 → FY2 → FY3 顺序**执行，**所有 3 次调用必须完整跑完**，
+    不得 fail-fast 部分调用；
+  - 阶段 B 中任一次调用抛出系统异常 → Q4 evaluation 整体抛出，外层 Pilot 记录
+    `system_error`，**不得静默吞掉**；已运行完成的 evaluation 结果保留在
+    `drone_evaluations` 相应位置（顺序位置），异常位置的 evaluation 标记为
+    `valid=False, status="system_error"`，并附 `reason`；
+  - 阶段 B 完成后必须满足：成功执行的 evaluate_single_bomb_strategy 调用数 = 3
+    （prevalidation 阶段不计入此 3 次）；
+  - 阶段 B 中三次调用各自的 `valid` / `status` 字段语义严格继承 Q2 §7。
 
 ### 5. Q4 目标：区间并集 (interval union, NOT sum)
 
@@ -2072,20 +2107,51 @@ class ThreeDroneEvaluation:
 
 约束：
 - `drone_evaluations` 必须是长度为 3 的 tuple，下标 0=FY1, 1=FY2, 2=FY3；
-- `q4_evaluation_id` = SHA-256 of canonical JSON，至少绑定：
-  - candidate 12 个变量；
-  - `drone_order = ["FY1", "FY2", "FY3"]` (固定, 不允许重排)；
-  - `sample_level` / `scan_step`；
-  - `candidate_schema_version`；
-  - Q2 evaluator code SHA；
-  - Q3 helper code SHA (复用 union)；
-  - Q4 pilot config SHA (待 TASK_007-P2 frozen)；
+- `q4_evaluation_id` = SHA-256 of canonical JSON，**至少绑定以下 21 字段**：
+  1. candidate 12 个变量 (`heading_rad_fy1`, `speed_mps_fy1`, `release_time_s_fy1`,
+     `delay_s_fy1`, `heading_rad_fy2`, `speed_mps_fy2`, `release_time_s_fy2`,
+     `delay_s_fy2`, `heading_rad_fy3`, `speed_mps_fy3`, `release_time_s_fy3`,
+     `delay_s_fy3`)；
+  2. `drone_order = ["FY1", "FY2", "FY3"]` (固定, 不允许重排)；
+  3. `sample_level` (Q2 evaluator 参数)；
+  4. `scan_step_s` (Q2 evaluator 参数)；
+  5. `candidate_schema_version` (ThreeDroneCandidate schema 版本号)；
+  6. `q2_evaluator_code_sha` (Q2 evaluator 代码 SHA)；
+  7. `q3_helper_code_sha` (Q3 union helper 代码 SHA)；
+  8. `q4_pilot_config_sha` (TASK_007-P2 冻结的 pilot config SHA)；
+  9. `evaluator_call_count_per_q4 = 3` (合同常量, 防止 fail-fast partial call)；
+  10. `prevalidation_call_count = 0` (合同常量, 阶段 A 不消耗 evaluate 调用)；
+  11. `objective = "measure(I_FY1 ∪ I_FY2 ∪ I_FY3)"` (合同常量)；
+  12. `missile_target = "M1"` (Q4 锁定)；
+  13. `missile_initial_position_m = [20000, 0, 2000]` (M1 初始)；
+  14. `missile_speed_mps = 300` (M1 速度)；
+  15. `missile_heading_to = "fake_target_origin"` (M1 航向)；
+  16. `true_target_geometry_id` (完整圆柱 r=7 h=10 / 底面中心 (0,200,0) 指纹)；
+  17. `smoke_cloud_radius_m = 10`；
+  18. `smoke_cloud_sink_mps = 3`；
+  19. `smoke_cloud_duration_s = 20` (起爆后有效持续)；
+  20. `gravity_mps2 = 9.8` (MODEL 假设, -z 方向)；
+  21. `eps_interval_touching_s = 1e-12` (union touching 判定阈值, 与 Q3 §8 一致)；
 - 同一候选 + 同一配置 + 同一 code identity ⇒ 同一 ID；
-- 三次单弹 evaluator 调用数必须 **始终 = 3**（no fail-fast partial calls）。
+- 同一 ID ⇒ 同一 (valid, status, drone_evaluations, union_intervals,
+  total_union_duration_s) 5 元组；
+- 阶段 B 成功执行的 evaluate_single_bomb_strategy 调用数必须 = 3
+  （no fail-fast partial calls；prevalidation 阶段不计入此 3 次）。
 
 ### 7. result2.xlsx 写盘合同 (TASK_007-P3 冻结, NOT yet generated)
 
-列写入合同（继承 FACTS.md §13.2 + §13.4）：
+**模板结构 (TASK_007-P0/P1 实测)**：
+
+| 区域 | 范围 | 说明 |
+|---|---|---|
+| sheet name | `Sheet1` | 唯一 sheet (TASK_007-P0/P1 实测) |
+| header 范围 | A1:J1 | row 1, 10 列 (TASK_007-P0/P1 实测) |
+| output_rows (写入区) | rows 2, 3, 4 | FY1 → row 2, FY2 → row 3, FY3 → row 4 (drone_order 锁定) |
+| preserved_blank_row (保留) | row 5 | 官方模板预存的空白格式行, **不删除、不重排、不写入** 任何数据 |
+| note_cell (附注) | B6 | 「注：以 x 轴为正向，逆时针方向为正，取值 0~360（度）」保留原样 |
+| workbook 整体 footprint | A1:J6 | 6 行 × 10 列, 含 header + 3 数据行 + 1 保留行 + 1 附注行 |
+
+**列写入合同 (rows 2, 3, 4 三行, drone_order 锁定)**:
 
 | 列 | 写入值 |
 |---|---|
@@ -2097,13 +2163,24 @@ class ThreeDroneEvaluation:
 | J | drone_i own `total_duration_s` (**每架自身**, 不是 union) |
 
 约束：
-- **三行** 数据（FY1 / FY2 / FY3 顺序，drone_order 锁定），与官方模板预留的 4 行中
-  实际占用 3 行；第 4 个 reserved row 在生成时留空；
-- **不**写入三机 union 总时长到 J 列；
+- **rows 2, 3, 4** 写入三条数据（FY1 / FY2 / FY3 顺序，drone_order 锁定）；
+- **row 5 保持官方模板原状和空白**，**不删除、不重排、不写入** 第四条记录；
+  row 5 是官方模板预存的空白格式行, 不是 Q4 第四条结果;
+- **不**写入三机 union 总时长到 J 列；J 列是 per-drone own duration；
 - 方向角规则：+x=0°，逆时针为正，0~360°（FACTS.md §13.4 [官]）；
-- sheet name `Sheet1` / header row / merged cells / freeze panes / B6 附注 全部保留原样；
-- 模板 fingerprint（sheet names / header row / B6 note / row heights / column widths）
-  round-trip 校验必须 PASS；
+- header A1:J1 保留原样 (官方模板 10 列表头, **不得覆盖、不得改字段名、不得改列宽**);
+- B6 附注 (「注：以 x 轴为正向, 逆时针方向为正, 取值 0~360（度）」) 保留原样,
+  不得修改、不得删除、不得改写到其他单元格;
+- sheet name `Sheet1` 保留, 不得新增、删除、重命名 sheet;
+- merged cells / freeze panes / row heights / column widths 全部保留原样;
+- 模板 fingerprint (sheet names / A1:J1 header / B6 note / row 5 空白 / 整体 A1:J6
+  footprint / merged cells / freeze panes / row heights / column widths)
+  round-trip 校验必须 PASS, 包括 row 5 必须保持空白和 B6 附注必须保持原文;
+- 写入流程必须使用 `BytesIO` 打开官方模板副本, **不**直接修改磁盘上官方模板文件;
+  写入完成后 BytesIO 内容 save 到 `outputs/submission/result2.xlsx`;
+- 写盘后必须由程序**重新读回** `outputs/submission/result2.xlsx`, 验证:
+  sheet name / A1:J1 header / rows 2-4 内容 (3 行 FY1/FY2/FY3) / row 5 保持空白 /
+  B6 附注原文 / A1:J6 footprint;
 - 本合同**冻结**于 TASK_007-P3 启动前；本轮 (P0/P1) 不生成 result2.xlsx。
 
 ### 8. Q4 候选来源 (TASK_007-P2 冻结, NOT yet implemented)
@@ -2114,25 +2191,29 @@ class ThreeDroneEvaluation:
    Q3 candidate closure P2C winner 的部分时序种子；
 2. `q2_canonical_seed_family_fy2` — 同上，对 FY2 角色；
 3. `q2_canonical_seed_family_fy3` — 同上，对 FY3 角色；
-4. `deterministic_random_seed_2025` — 12 维独立均匀采样，seed=2025；
-5. `deterministic_random_seed_2026` — seed=2026；
-6. `deterministic_random_seed_2027` — seed=2027；
-7. `finalist_medium_recheck` — 从 medium recheck top-K；
-8. `finalist_fine_spotcheck` — 从 fine finalist top-K。
+4. `deterministic_random_seed_<n>` — 12 维独立均匀采样，`<n>` 为占位 seed 整数
+   （具体 seed 列表 NOT frozen 在 P0/P1；P2 启动前由 MAIN 在新 contract_version
+   中冻结 seeds 列表，本 P0/P1 不预先固定具体数字）；
+5. `finalist_medium_recheck` — 从 medium recheck top-K；
+6. `finalist_fine_spotcheck` — 从 fine finalist top-K。
 
-注：占位候选源列表，不在 P0/P1 实施；最终 candidate_source 集合在 TASK_007-P2 启动前
-由 MAIN 在新的 contract_version 中冻结。
+注：占位候选源列表，不在 P0/P1 实施；最终 candidate_source 集合 + 数字 seed
+列表在 TASK_007-P2 启动前由 MAIN 在新的 contract_version 中冻结。本 P0/P1
+**不**预先固定任何具体 seed 数字，不声称 seeds 列表已 frozen，不声称
+"multi-seed 必须 ≥ 3"。
 
 ### 9. 未来预算与运行边界 (placeholder, NOT frozen)
 
 Q4 未来预算冻结规则 (TASK_007-P2 contract 必须遵守)：
 
 - 真实 Q4 evaluation 调用上限 `max_expensive_evaluations` 必须在 P2 启动前由 MAIN
-  基于 Q3 P2 实测 (512 evaluations / 834.07 s) **重新冻结 task-specific 数值**；
+  基于 Q3 P2 实测 wall-clock **重新冻结 task-specific 数值**；
 - 不得沿用 Q3 数字；
 - wall-clock `max_run_wall_clock_seconds` 同上；
-- multi-seed 必须 ≥ 3 seeds；
-- 单次 Q4 evaluation = 3 × 单弹 evaluator (FY1 / FY2 / FY3 各一次)；
+- seeds 数量与具体 seed 列表必须在 P2 启动前由 MAIN 重新冻结；本 P0/P1 不得声称
+  seeds 数量、具体 seed 列表、wall-clock 上限、evaluation 上限已 frozen；
+- 单次 Q4 evaluation = 阶段 A (prevalidation, 0 次 evaluate_single_bomb_strategy)
+  + 阶段 B (3 次 evaluate_single_bomb_strategy, FY1 → FY2 → FY3 顺序)；
 - 严禁在 P0/P1 阶段**冻结**任何未来 P2 budget / wall-clock / seed 数；
   本节只声明预算冻结的**规则**，不声明预算数字。
 
@@ -2141,16 +2222,19 @@ Q4 未来预算冻结规则 (TASK_007-P2 contract 必须遵守)：
 - ✅ 冻结 12-dim `ThreeDroneCandidate` 合同 (§2)；
 - ✅ 明确"三架 heading / speed 独立" (§1 / §2 / §3)；
 - ✅ 确认 Q2 evaluator u0 复用路径 (§4)；
+- ✅ 冻结 evaluator 调用会计 (阶段 A prevalidation 0 次 + 阶段 B 顺序 3 次) (§4)；
 - ✅ 冻结 interval-union 目标 (§5)；
-- ✅ 冻结 `ThreeDroneEvaluation` 输出结构合同 (§6)；
-- ✅ 冻结 result2.xlsx 写盘合同 (§7)；
-- ✅ 占位候选来源 (§8)；
-- ✅ 占位未来预算规则 (§9)；
+- ✅ 冻结 `ThreeDroneEvaluation` 输出结构 + 21 字段 q4_evaluation_id 绑定 (§6)；
+- ✅ 冻结 result2.xlsx 写盘合同 (rows 2-4 / row 5 保留 / B6 / A1:J6) (§7)；
+- ✅ 占位候选来源 (具体 seed 数字 NOT frozen) (§8)；
+- ✅ 占位未来预算规则 (seeds 数量 / wall-clock / evaluation 上限 NOT frozen) (§9)；
+- ✅ 冻结 TASK_007 阶段映射 P0P1 / P2 / P3 / P4 / P5 (§0)；
 - ✅ 修改 `.gitignore` 覆盖 `work/task_contracts/`, `work/q3_*/`, `work/q4_*/`,
-  `work/p3_closeout/` (governance fix)；
+  `work/p3_closeout/` (governance fix, P0/P1 阶段完成);
 - ✅ read-only 验证官方 result2.xlsx 模板 SHA + 结构，存到
   `work/q4_foundation/result2_template_readonly_check.json`；
-- ✅ 写入 `work/task_contracts/TASK_007-P0P1-v1.json` 不可变 snapshot。
+- ✅ 写入 `work/task_contracts/TASK_007-P0P1-v1.json` 不可变 snapshot；
+- ✅ 修正 `problem/FACTS.md §13.2` (官方要求 vs 模板格式行分离, 写入策略明确)。
 
 不得在本轮：
 
@@ -2177,25 +2261,30 @@ Q4 未来预算冻结规则 (TASK_007-P2 contract 必须遵守)：
 - `tests/test_q4.py` **不存在**；
 - `outputs/submission/result2.xlsx` **不存在**；
 - `work/q4_search/` **不存在**；
+- `work/q4_pilot/` **不存在**；
+- `work/q4_candidate_closure/` **不存在**；
 - `work/q4_result2/` **不存在**；
 - `work/q4_foundation/` 仅含 `result2_template_readonly_check.json` (read-only inspection)；
 - 等级: **TASK_007 Q4 FOUNDATION CONTRACT — CONTRACT_ONLY**。
-- 不进入 TASK_007-P2 (Q4 formal bounded search) / P3 (result2.xlsx generation)，
+- 不进入 TASK_007-P2 (Q4 evaluator + tiny pilot + runtime calibration) /
+  P3 (Q4 formal bounded search) / P4 (candidate closure) / P5 (result2.xlsx 写盘)，
   必须 MAIN 显式立项后才能进入。
+- seeds 数量 / 具体 seed 列表 / wall-clock / evaluation 上限 **均 NOT frozen**。
 
 ### 12. 局限
 
 - 12 维决策变量比 Q3 8 维大 50%，候选空间更大；本轮未做任何 pilot / 单 seed /
   multi-seed 实测，因此 TASK_007-P2 预算 / wall-clock / seed 数均**未冻结**，
-  留到 P2 启动前。
-- 候选源 (§8) 是占位；正式 P2 启动前 MAIN 必须基于 Q3 P2 / P2C 实测 wall-clock
-  + 单次 Q4 evaluation = 3 × 单弹 evaluator 的工程经验，**重新冻结**：
+  留到 P2 启动前由 MAIN 基于 Q3 P2 / P2C 实测 + 12 维搜索工程经验重新冻结。
+- 候选源 (§8) 是占位；具体 seed 数字 NOT frozen 在 P0/P1；正式 P2 启动前 MAIN 必须
+  重新冻结：
+  - seeds 数量；
+  - 具体 seed 列表；
   - 每 seed evaluation cap；
   - 每 seed wall-clock cap；
-  - seeds 列表；
-  - finalist / refinement 子阶段预算分配。
+  - finalist / refinement 子阶段预算分配 (P3 → P4 → P5 各阶段预算分配)。
 - 本合同不包含 result2.xlsx 之外的额外 Excel 副作用（如不在 result2 写入 union
-  total 时长，不在 result1 跨写）。
+  total 时长，不在 result1 跨写，不修改 result1.xlsx 任何 evidence）。
 - 不引入 Q4-specific 的新第三套遮蔽几何；Q4 复用 Q1 完整圆柱 §3-§6 几何。
 - 不引入跨架协同 / 通信延迟 / 视线接力等第三套模型；
   本合同仅按 FACTS.md §5 文本冻结 3 架独立单弹协同 (interval union)。
