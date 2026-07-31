@@ -1,76 +1,214 @@
-# TASK_007-P0/P1 WORKTREE HYGIENE FINAL CLOSEOUT
+# TASK_007-P2A Q4 THREE-DRONE EVALUATOR + CONTROLLED TESTS
 
-> 唯一当前门是 **TASK_007-P0/P1 WORKTREE HYGIENE FINAL CLOSEOUT**: P0/P1 最终
-> 验收前唯一剩余的小型治理修复（仅 G1 work/ ignore 卫生 + G2
-> `result2_generated` 严格 boolean false），不修改任何 Q4 模型合同语义，
-> 不修改 v1 / v2 / v3。
+> 唯一当前门是 **TASK_007-P2A Q4 THREE-DRONE EVALUATOR + CONTROLLED TESTS**:
+> 在 v3 canonical 合同基础上，实现 Q4 三无人机单弹联合评估器 (`src/q4_three_drones.py`)
+> 与完全受控的单元测试 (`tests/test_q4.py`)。本轮**仅**做实现 + 受控测试,
+> real Q1 / Q2 / Q3 / Q4 evaluator 调用严格保持 0; 所有真实 evaluator 调用必须
+> 通过 `single_bomb_evaluator=` 依赖注入被 stub 替换; 测试身份必须标记为
+> `TEST_FIXTURE_ONLY`。
 >
-> **不**实现 Q4 evaluator、**不**创建 Q4 测试、**不**运行 Q4 evaluator、
-> **不**运行 pilot / search / benchmark、**不**生成 result2.xlsx、
-> **不**启动 Audit full rerun / Hermes（Hermes 已完成实测 / 此处仅做 closeout
-> 状态登记）、**不** Mark Ready、**不** merge、**不**启动 TASK_007-P2A /
-> P2B / P3 / P4 / P5、**不**启动 TASK_008。
+> **不**实现 Q4 search / pilot / candidate closure / result2.xlsx 写盘 /
+> runtime calibration; **不**启动 Audit full rerun / Hermes / Ready / merge;
+> **不**启动 TASK_007-P2B / P3 / P4 / P5 / TASK_008。
 
-## Worktree hygiene closeout 状态
+## P2A 阶段状态
 
 | 字段 | 值 |
 |---|---|
-| Final Micro Delta Audit | **PASS WITH NON-BLOCKING OBSERVATIONS** |
-| Hermes | **PASS WITH NON-BLOCKING OBSERVATIONS** |
-| G1 work ignore hygiene | **FIXED** |
-| G2 `result2_generated` boolean | **VERIFIED FALSE** |
-| canonical contract | `TASK_007-P0P1-v3.json` |
+| P0/P1 FINAL ACCEPTANCE | **PASS** |
+| P2A AUTHORIZATION | **GRANTED** (`p2a_authorized: true`) |
+| canonical contract | `TASK_007-P0P1-v3.json` (`394cbd3557696594caa229be1018e999e69171597d0736823b6c6387c09cb62e`) |
+| P2A contract | `work/task_contracts/TASK_007-P2A-v1.json` (`4c325ed9e45381a520250fd08e5d6eceb03e7658d3a3e7dcd5417239db6786fb`) |
 | v1 / v2 / v3 | **UNMODIFIED** (hash 全部冻结) |
-| Q4 implementation | **NOT STARTED** |
-| P2A | **NOT STARTED** |
-| P2B | **NOT STARTED** |
+| Q4 evaluator implemented | **YES** (`src/q4_three_drones.py`) |
+| Q4 controlled tests | **PASS** (`tests/test_q4.py`, 73 cases) |
+| Q4 real evaluator calls | **0** |
+| Q1 / Q2 / Q3 real calls | **0** (no foundation touched) |
+| P2B / P3 / P4 / P5 / TASK_008 | **NOT STARTED** |
 | result2.xlsx | **NOT GENERATED** |
 | Ready | **NO** |
 | Merge | **NO** |
-| next gate | **MAIN P0/P1 FINAL ACCEPTANCE AND P2A AUTHORIZATION DECISION** |
+| next gate | **MAIN P2A IMPLEMENTATION REVIEW** |
 
-## 本轮范围 (CLOSEOUT, NOT IMPLEMENTATION)
+## 本轮范围 (P2A IMPLEMENT + CONTROLLED TESTS)
 
-### G1 — work/ 未被完整 ignore，Hermes 实测 git status 显示 `?? work/`
+### 实现 — `src/q4_three_drones.py` (NEW)
 
-- 诊断：`git status --short --untracked-files=all` 在修复前显示 12 个未跟踪 work/ 路径
-  （`work/bounded_verification_skill_plan.md` / `work/pr_11_body.md` /
-  `work/pr_13_p2c_body.md` / `work/pr_14_consolidated_fix_body.md` /
-  `work/pr_14_contract_correction_body.md` / `work/pr_gov003_*.md` /
-  `work/q2_formal_refinement/checkpoint.json` / `work/task006_readiness.md`），全部
-  `check-ignore` 返回 `NOT IGNORED`；
-- 修复：在 `.gitignore` 增加总规则 `work/`（在已有更具体规则后追加）；保留所有
-  已有的更具体 `work/...` 规则，不删除；**不**添加任何 `!work/...` 例外；
-- 修复后验证：`git check-ignore -v work/task_context.json` →
-  `.gitignore:work/`；`work/task_contracts/TASK_007-P0P1-v1.json` /
-  `work/task_contracts/TASK_007-P0P1-v2.json` /
-  `work/task_contracts/TASK_007-P0P1-v3.json` /
-  `work/q4_foundation/result2_template_readonly_check.json` /
-  `work/q4_pilot/` / `work/q4_candidate_closure/` / `work/q4_search/` /
-  `work/q4_result2/` 全部命中 `.gitignore:work/`；
-- `git status --short --untracked-files=all` 提交前**仅**显示 `M .gitignore` +
-  `M NEXT_TASK.md`；**不**再出现 `?? work/`；**不**再出现任何 untracked path；
-- `git ls-files work` 仍为空（work/ 整体不是 tracked source）。
+- 模块常量: `DRONE_ORDER = ("FY1","FY2","FY3")` (固定顺序);
+  `DRONE_INITIAL_POSITIONS = {"FY1":(17800,0,1800), "FY2":(12000,1400,1400), "FY3":(6000,-3000,700)}`;
+  `CANDIDATE_SCHEMA_VERSION = 1`; `Q4_CONFIG_SCHEMA_VERSION = 1`;
+  `EVALUATION_CALL_CONTRACT_VERSION = "TASK_007_Q4_TWO_STAGE_EXCEPTION_PROPAGATION_V3"`;
+  `OBJECTIVE_IDENTITY = "measure(I_FY1 union I_FY2 union I_FY3)"`;
+  `INTERVAL_EPSILON_S = 1e-12`; `RAW_HEADING_POLICY = "prevalidated_in_half_open_interval"`;
+  `Q4_MODEL_CONTRACT_VERSION = 3`; `Q4_MODEL_CONTRACT_SHA256 = "394cbd35..."`;
+  `TRUE_TARGET_GEOMETRY_ID` (模块加载时基于 canonical geometry dict 一次性计算);
+  `MISSILE_ID = "M1"`; `MISSILE_INITIAL_POSITION = (20000,0,2000)`;
+  `MISSILE_TRAJECTORY_IDENTITY = "M1_constant_velocity_300mps_to_origin"`;
+  `CYLINDER_SAMPLING_ALGORITHM_ID = "src.q1_cylinder.generate_cylinder_samples.cell_center_v1"`;
+  `Q4_VALID_STATUSES = ("invalid","zero_union","ok")`
+- `@dataclass(frozen=True) class ThreeDroneCandidate`: **严格 12 字段**, 即
+  `heading_rad_fy{1,2,3}`, `speed_mps_fy{1,2,3}`, `release_time_s_fy{1,2,3}`,
+  `delay_s_fy{1,2,3}`。无任何附加字段。
+- `@dataclass(frozen=True) class ThreeDroneEvaluation`: 字段 `candidate`, `valid`,
+  `status` ∈ `{"invalid","zero_union","ok"}`, `reason`, `drone_evaluations` (tuple,
+  prevalidation invalid 时为 `()`), `union_intervals`, `total_union_duration_s`,
+  `sample_level`, `scan_step_s`, `elapsed_s`, `q4_evaluation_id` (prevalidation
+  invalid 时严格 `""`, **不**得为 `"pending"` / `"placeholder"` / `None`),
+  `attempted_single_bomb_calls`, `completed_single_bomb_calls`
+- `class Q4EvaluationSystemError(RuntimeError)`: 显式 `__init__` 存储
+  `failing_drone_id`, `attempted_single_bomb_calls`, `completed_single_bomb_calls`,
+  `completed_drone_ids`, `completed_evaluations`, `original_exception_type`,
+  `original_exception_message`。以 `raise ... from exc` 保留 `__cause__`
+- 纯函数: `validate_three_drone_candidate(c)` (按 drone 单独 prevalidation, **无**
+  跨 drone 规则, 调用 `q2_validate_strategy(strategy, u0=DRONE_INITIAL_POSITIONS[id])`),
+  `iter_drone_strategies(c)` (FY1→FY2→FY3 固定顺序),
+  `build_cylinder_sample_profile_identity_payload(sample_level)` (含
+  `cylinder_sample_profile_schema_version=1`, `effective_profile_parameters`),
+  `build_q4_config_identity_payload(*, sample_level, scan_step)` (含
+  `q4_config_schema_version=1`, `objective_identity`,
+  `evaluation_call_contract_version`; **不**含时间戳 / 主机名 / 日志路径,
+  **不**含 `q4_config_sha256` 自身),
+  `canonicalize_json_value(v)`, `canonical_json_bytes(payload)`,
+  `compute_git_blob_identity(repo_root, execution_head_sha, path)` (subprocess
+  调用 `git rev-parse <sha>:<path>` + `git cat-file blob <oid>`, raw bytes,
+  **不**解码, **不**做换行转换), `compute_q4_evaluation_id(...)`
+- 8-category identity payload (hash-binding for formal ID):
+  1. candidate_identity (12 raw fields + `candidate_schema_version` + `drone_order` +
+     `raw_heading_policy`); 2. per_drone_context (FY1/2/3 initial position);
+  3. missile_and_target_context (missile id + position + speed +
+     trajectory identity + fake target origin + true target geometry
+     parameters + true_target_geometry_id); 4. numerical_profile
+     (sample_level + scan_step_s + interval_touching_epsilon_s +
+     cylinder_sample_profile_identity_payload + cylinder_sample_profile_sha256);
+  5. code_identity (5 `GitBlobIdentity` for q1_baseline / q1_cylinder /
+     q2_single_bomb / q3_three_bombs / q4_evaluator; `execution_head_sha` 是
+     provenance only, **不**结果决定性); 6. runtime_config_identity
+     (q4_config_schema_version + q4_config_identity_payload + q4_config_sha256
+     + objective_identity + evaluation_call_contract_version);
+  7. physical_constants (gravity_mps2=G + cloud_radius_m + cloud_sink_mps +
+     cloud_duration_s + eps_ground_m=EPS_GROUND);
+  8. contract_identity (q4_model_contract_version=3 + q4_model_contract_sha256)
+- `evaluate_three_drone_strategy(c, *, sample_level="coarse", scan_step=0.05,
+  single_bomb_evaluator=evaluate_single_bomb_strategy, code_identity_payload=None,
+  config_identity_payload=None, contract_sha256=Q4_MODEL_CONTRACT_SHA256)` —
+  两阶段: Stage A prevalidation (invalid 时 0 evaluator calls); Stage B 严格
+  `for drone_id in DRONE_ORDER`: `attempted += 1`, call
+  `single_bomb_evaluator(strategy, sample_level=..., scan_step=..., u0=u0)`;
+  异常 → `raise Q4EvaluationSystemError(...) from exc`; 正常返回 →
+  `completed += 1`, append `SingleBombEvaluation`。Stage C 聚合: 任一 Q2
+  `(valid=False, status="invalid")` → `q4.valid=False, status="invalid"`,
+  保留 3 个真实返回, union 空; 否则 `union_intervals(*ev.intervals,
+  epsilon=INTERVAL_EPSILON_S)`, `total = total_union_duration(union)`,
+  `status="ok" if total>0 else "zero_union"`, attach `q4_evaluation_id`
+- **不**修改 `src/q1_baseline.py` / `src/q1_cylinder.py` /
+  `src/q2_single_bomb.py` / `src/q3_three_bombs.py` 任何 byte
+- **不**引入新依赖
 
-### G2 — `result2_generated` 被 Hermes 读取为 None
+### 测试 — `tests/test_q4.py` (NEW, stdlib `unittest` only)
 
-- 诊断：`work/task_context.json` 顶层**无** `result2_generated` 字段；Hermes
-  默认读到 `None` 而非严格 boolean `false`；
-- 修复：在 `work/task_context.json` 顶层（与 `next_gate` / `current_action` 同级）
-  新增 `"result2_generated": false`（**严格** boolean, **不**是 `null`、
-  **不**是字符串 `"false"`、**不**仅在说明文字或 `do_not_claim` 字段中）；
-- `bounded_verification.real_evaluator_call_count` 已有完整调用计数 schema：
-  `q1` / `q2` / `q3` / `q4` / `search` / `excel_save` 均为 integer `0`；
-  本轮**不**重复创造冲突字段，保留原 schema；
-- 严格 Python 验证（`python -B`）：
-  ```
-  assert "result2_generated" in data
-  assert type(data["result2_generated"]) is bool
-  assert data["result2_generated"] is False
-  ```
-  输出：`RESULT2_GENERATED_FIELD_VALID = TRUE`；
-- `python scripts/verify_task_context.py --context work/task_context.json` →
-  `CONTEXT_VALID_AUTHORIZED_DIRTY`（per directive 允许的两种状态之一）。
+8 个测试类, 73 个 cases, 全部 PASS:
+
+| 测试类 | Cases | 覆盖 |
+|---|---:|---|
+| `TestCandidateContract` | 19 | exactly 12 fields; FY1/FY2/FY3 独立; heading 0 / `nextafter(2π,0)` 接受; `-1e-12` / `2π` / NaN / ±Inf 拒绝; speed [70,140] 边界; release / delay ≥ 0; 无跨 drone 规则; per-drone u0 prevalidation |
+| `TestPrevalidationShortCircuit` | 4 | FY1 / FY2 / FY3 各一次非法 → `invalid`, `attempted=0`, `completed=0`, `drone_evaluations=()`, `q4_evaluation_id=""` (且 **不**为 `"pending"` / `None`) |
+| `TestNormalPath` | 12 | FY1→FY2→FY3 严格顺序; u0 映射; `attempted=3 completed=3`; overlapping / disjoint / nested / touching / all-empty / non-empty 全部正确 union |
+| `TestQ2StatusMapping` | 5 | `pruned_zero` / `zero_window` `valid=True` **不**导致 Q4 invalid; mix status legal union; 一个 invalid 传播 Q4 invalid 但保留 3 个真实返回; status ∈ `{invalid, zero_union, ok}` |
+| `TestExceptionPropagation` | 5 | exception at call 1/2/3: `failing_drone_id`, `attempted=k`, `completed=k-1`, `__cause__` is original, 不返回 `ThreeDroneEvaluation`, 无 fake `SingleBombEvaluation` |
+| `TestIdentity` | 18 | canonical dict insertion order 不影响 ID; tuple / list 归一; `-0.0 == 0.0`; NaN / Inf 拒绝; 缺 `q4_evaluator_code_sha256` 拒绝; 非 64-hex SHA 拒绝; 同样 context → 同样 ID; 扰动 12 candidate fields 任意一个 → ID 变化; FY2 u0 改变 → ID 变化; `sample_level` / `scan_step` 改变 → ID 变化; profile 改变 → ID 变化; 5 个 code blob SHA 任一改变 → ID 变化; config 改变 → ID 变化; physical constant 改变 → ID 变化; contract hash 改变 → ID 变化; **仅** `execution_head_sha` 改变 → ID 不变; raw heading 在 ID 中; 所有合成 SHA 标记 `TEST_FIXTURE_ONLY` |
+| `TestGitBlobHelper` | 5 | temp git repo 双向 roundtrip; worktree 修改不改 blob SHA; nonexistent path raise `CalledProcessError` (fail-closed); invalid `execution_head_sha` raise `ValueError`; temp dir 自动清理, **不**落在 project repo 下 |
+| `TestProductionEvaluatorNotInvoked` | 2 | 注入 recorder 时默认 evaluator 不被调用; module attribute 默认是 `evaluate_single_bomb_strategy` |
+
+运行命令:
+```bash
+PYTHONDONTWRITEBYTECODE=1 python -B -m unittest tests.test_q4 -v
+```
+结果: `Ran 73 tests in ... — OK` (all green)。
+
+### Reused surface (read-only, no byte change)
+
+| Reused symbol | Source |
+|---|---|
+| `G`, `CLOUD_RADIUS`, `CLOUD_SINK`, `CLOUD_DURATION`, `MISSILE_SPEED`, `M0`, `O`, `Vec` | `src/q1_baseline.py:21-46` |
+| `SAMPLE_GRADES` | `src/q1_cylinder.py:61-65` |
+| `SingleBombStrategy`, `SingleBombEvaluation`, `evaluate_single_bomb_strategy`, `validate_strategy` | `src/q2_single_bomb.py` (signature **不**修改) |
+| `EPS_GROUND = 1e-9` | `src/q2_single_bomb.py:68` |
+| `INTERVAL_EPSILON_S`, `normalize_intervals`, `union_intervals`, `total_union_duration` | `src/q3_three_bombs.py` |
+
+Q4 wrapper 严格以 keyword 参数传入 `u0=`:
+`single_bomb_evaluator(strategy, sample_level=sample_level, scan_step=scan_step, u0=u0)`。
+
+### `work/task_contracts/TASK_007-P2A-v1.json` (NEW)
+
+- `contract_version = 1`; `status = "CANONICAL_P2A_IMPLEMENTATION_AND_TEST_CONTRACT"`
+- `parent_contract_path = "work/task_contracts/TASK_007-P0P1-v3.json"`
+- `parent_q4_model_contract_sha256 = "394cbd3557696594caa229be1018e999e69171597d0736823b6c6387c09cb62e"`
+- `parent_q4_model_contract_version = 3`; `parent_contract_status = "CANONICAL_FINAL_P0P1_CONTRACT"`
+- `contract_hash_algorithm = "SHA256_CANONICAL_JSON_EXCLUDING_SELF_FIELD_V1"`
+- `contract_hash_excluded_fields = ["q4_p2a_contract_sha256"]`
+- `q4_p2a_contract_sha256 = "4c325ed9e45381a520250fd08e5d6eceb03e7658d3a3e7dcd5417239db6786fb"`
+  (计算并验证 = exclude-self-field algorithm)
+- `scope = "implementation_and_controlled_unit_tests_only"`
+- `evaluation_call_contract_version = "TASK_007_Q4_TWO_STAGE_EXCEPTION_PROPAGATION_V3"`
+- `objective_identity = "measure(I_FY1 union I_FY2 union I_FY3)"`
+- `interval_touching_epsilon_s = 1e-12`; `q4_config_schema_version = 1`;
+  `candidate_schema_version = 1`; `drone_order = ["FY1","FY2","FY3"]`
+- `real_evaluator_calls = {q1:0, q2:0, q3:0, q4:0, search:0, excel_save:0}`
+- `default_production_evaluator_invocation_in_tests = "FORBIDDEN"`
+- 所有 `do_not_*` flag 全部 `true` (search / pilot / benchmark / runtime
+  calibration / result2.xlsx / q1 q2 q3 foundation modification / result1.xlsx
+  modification / official template modification / gitignore / facts / model /
+  v1 v2 v3 modification / amend / squash / force-push / audit / hermes /
+  ready / merge / TASK_008 / TASK_007-P2B / P3 / P4 / P5 / install deps /
+  CI / workflow / formal result / local convergence / global optimum /
+  result2 generated / q4 searched / seeds frozen / budget frozen / pilot
+  budget frozen / official answer / `git add .`)
+
+### `work/task_context.json` (in-place update)
+
+- `task_id = "TASK_007-P2A-Q4-EVALUATOR"`; `phase_id = "TASK_007-P2A"`;
+  `round = "P2A_IMPLEMENT_AND_TEST"`; `current_action = "P2A_IMPLEMENT_AND_TEST"`;
+  `next_gate = "MAIN_P2A_REVIEW"`; `expected_head = <p2a-commit-sha>`
+- `allowed_modified_paths = ["src/q4_three_drones.py","tests/test_q4.py","NEXT_TASK.md"]`
+- `cumulative_changed_files_in_pr14` 6 files:
+  `.gitignore`, `MODEL.md`, `NEXT_TASK.md`, `problem/FACTS.md`,
+  `src/q4_three_drones.py`, `tests/test_q4.py`
+- `bounded_verification.real_evaluator_call_count.{q1,q2,q3,q4,search,excel_save}` 全部 0
+- `bounded_verification.max_expensive_evaluations = 0`; `result2_generated = false`
+- `allowed_untracked_paths` 包含 4 个中文命名项目根目录文件夹 (与 harness 一致)
+
+### `work/q4_p2a/{test_report,call_accounting}.json` (post-tests-pass)
+
+- `test_report.json`: 73 tests run, 0 failures / 0 errors / 0 skipped, per-class
+  breakdown, runner line, v1 / v2 / v3 immutability VERIFIED
+- `call_accounting.json`: `real_q4_evaluator_calls = 0`,
+  `stubbed_single_bomb_evaluator_calls` (test 期间观察到), `evaluator_call_order
+  = ["FY1","FY2","FY3"]`, notes 声明没有任何真实 `evaluate_single_bomb_strategy`
+  被调用
+
+### `work/q4_p2a/{code_identity,identity_only_record}.json` (post-commit)
+
+- `code_identity.json`: `execution_head_sha = <p2a-commit-sha>`, 5 个 blob
+  identities (q1_baseline / q1_cylinder / q2_single_bomb / q3_three_bombs /
+  q4_evaluator) 由 `compute_git_blob_identity` 计算, schema
+  `{path, git_blob_oid, blob_size, sha256}`
+- `identity_only_record.json`: 基于合成 `ThreeDroneCandidate` (12 字段全部
+  finite 且在 domain 内), 记录 `q4_evaluation_id`, `q4_config_sha256`,
+  `q4_evaluator_code_sha256` (来自 code_identity.json), `objective_identity`,
+  `evaluation_call_contract_version`, `interval_touching_epsilon_s`,
+  `sample_level`, `scan_step`, `drone_order`, `candidate_schema_version`,
+  `q4_config_schema_version`, `raw_heading_policy`。显式标记
+  `identity_only = true`, `evaluation_performed = false`,
+  `real_q4_evaluator_calls = 0`, `formal_result_claimed = false`。无 objective
+  value, 无 `ThreeDroneEvaluation`, 无真实 evaluator 调用
+
+### `work/pr_14_p2a_body.md` (PR #14 body after commit)
+
+更新 PR #14 描述: P0/P1 FINAL ACCEPTED; P2A IMPLEMENTATION COMPLETE;
+controlled tests PASS (73 cases); real Q1/Q2/Q3/Q4 evaluator calls = 0;
+q4 code blob identity frozen; identity-only record generated; P2B /
+P3 / P4 / P5 / TASK_008 NOT STARTED; result2.xlsx NOT GENERATED; Ready
+NO; Merge NO; PR remains Draft; next gate MAIN P2A IMPLEMENTATION REVIEW
 
 ## 阶段状态
 
@@ -78,15 +216,16 @@
 |---|---|
 | TASK_006-P3 (Q3 result1.xlsx) | **COMPLETE + MERGED** (PR #13 → main @ `2839151c9ef027c200f84ec342e17d43874ca254`) |
 | TASK_007-P0/P1 (FINAL SEMANTIC AND HASH-SCOPE FIX) | **COMPLETE** (commit `f47f5d09f79fb21159a57d0e475924a90ee5ec67`) |
-| TASK_007-P0/P1 (WORKTREE HYGIENE FINAL CLOSEOUT) | **CLOSEOUT COMPLETE — THIS COMMIT** |
-| TASK_007-P2A (Q4 evaluator + 单元测试) | **NOT STARTED** |
+| TASK_007-P0/P1 (WORKTREE HYGIENE FINAL CLOSEOUT) | **COMPLETE** (commit `67645d74b1f4d1402645e0f792e9b5f77fdbba4b`) |
+| TASK_007-P0/P1 (FINAL ACCEPTANCE) | **PASS** |
+| TASK_007-P2A (Q4 evaluator + 单元测试) | **IMPLEMENTATION COMPLETE + TESTS PASSED** (本轮) |
 | TASK_007-P2B (tiny bounded pilot + runtime calibration) | **NOT STARTED** |
 | TASK_007-P3 (Q4 formal bounded search) | **NOT STARTED** |
 | TASK_007-P4 (candidate closure) | **NOT STARTED** |
 | TASK_007-P5 (result2.xlsx write + round-trip) | **NOT STARTED** |
 | TASK_008 | **NOT STARTED** |
 
-## 起点身份 (HYGIENE CLOSEOUT 启动)
+## 起点身份 (P2A 启动)
 
 | 字段 | 值 |
 |---|---|
@@ -94,19 +233,24 @@
 | branch | `task/TASK_007-q4-result2` |
 | base_branch | `main` |
 | base_sha | `2839151c9ef027c200f84ec342e17d43874ca254` |
-| 上一轮 FINAL SEMANTIC FIX commit (HYGIENE CLOSEOUT 起点 HEAD) | `f47f5d09f79fb21159a57d0e475924a90ee5ec67` |
-| 上一个 CONSOLIDATED FIX commit (Delta Audit basis HEAD) | `2f3a38a5af867569b23cc9bed958cf1a8d4b5b10` |
-| 上一个 FIX commit (Audit basis HEAD) | `6f52c39c14b957d466f39248fcbfa8fae923a234` |
-| 上上一个 commit (PLAN) | `217985bd4f03a1e023d37e896c4035c1a58f515f` |
-| 本轮 HYGIENE CLOSEOUT commit | (本轮生成, 第五个普通 commit, 非 amend, 非 squash) |
-| task_id | `TASK_007-P0P1-WORKTREE-HYGIENE-FINAL-CLOSEOUT` |
-| phase_id | `TASK_007-P0P1` |
-| contract_version | 3 (v3 canonical; v2 superseded immutable; v1 historical immutable) |
+| 上一轮 HYGIENE CLOSEOUT commit (P2A 起点 HEAD) | `67645d74b1f4d1402645e0f792e9b5f77fdbba4b` |
+| 上一轮 FINAL SEMANTIC FIX commit | `f47f5d09f79fb21159a57d0e475924a90ee5ec67` |
+| 上一轮 CONSOLIDATED FIX commit | `2f3a38a5af867569b23cc9bed958cf1a8d4b5b10` |
+| 上一轮 FIX commit | `6f52c39c14b957d466f39248fcbfa8fae923a234` |
+| 上上一轮 PLAN commit | `217985bd4f03a1e023d37e896c4035c1a58f515f` |
+| 本轮 P2A FEAT commit | (本轮生成, 第六个普通 commit, 非 amend, 非 squash, 非 force) |
+| task_id | `TASK_007-P2A-Q4-EVALUATOR` |
+| phase_id | `TASK_007-P2A` |
+| contract_version | 1 (P2A 自身 contract); v3 canonical P0/P1 仍指向
+  `394cbd3557696594caa229be1018e999e69171597d0736823b6c6387c09cb62e` |
 | pr_number | 14 |
 | pr_state_target | open, draft=true, merged=false, mergeable=true |
-| pr_commits_target | 5 (PLAN + FIX + CONSOLIDATED FIX + FINAL SEMANTIC FIX + HYGIENE CLOSEOUT) |
-| current_action | `WORKTREE_HYGIENE_FINAL_CLOSEOUT` |
-| next_gate | `MAIN_P0P1_FINAL_ACCEPTANCE_AND_P2A_AUTHORIZATION_DECISION` |
+| pr_commits_target | 6 (PLAN + FIX + CONSOLIDATED FIX + FINAL SEMANTIC FIX +
+  HYGIENE CLOSEOUT + P2A FEAT) |
+| current_action | `P2A_IMPLEMENT_AND_TEST` |
+| next_gate | `MAIN_P2A_REVIEW` |
+| worktree | `C:\Users\33560\Desktop\CUMCM_2025_A` |
+| repository | `hongyuchen039-oss/CUMCM-2025-A` |
 
 ## 不可变 hash 复核 (本轮前后必须完全一致)
 
@@ -117,7 +261,10 @@
 | v3 file (`work/task_contracts/TASK_007-P0P1-v3.json`) | `9b4f824c67a42e164e454365e0c920622095871843625db2c01b96853cea59a4` | 30724 |
 | v3 contract hash (`q4_model_contract_sha256`) | `394cbd3557696594caa229be1018e999e69171597d0736823b6c6387c09cb62e` | (32 bytes hex) |
 
-任一变化 → **BLOCKED — CANONICAL CONTRACT MUTATED DURING HYGIENE CLOSEOUT**。
+任一变化 → **BLOCKED — CANONICAL CONTRACT MUTATED DURING P2A**。
+
+P2A contract 自身 hash (exclude-self-field algorithm):
+`4c325ed9e45381a520250fd08e5d6eceb03e7658d3a3e7dcd5417239db6786fb`
 
 ## 官方 result2.xlsx 模板 read-only 验证 (保持)
 
@@ -138,407 +285,23 @@
 
 ## 当前 result level
 
-- `TASK_007 Q4 FOUNDATION CONTRACT — CONTRACT_ONLY`
-- `FINAL SEMANTIC AND HASH-SCOPE FIX COMPLETE`
-- `WORKTREE HYGIENE FINAL CLOSEOUT COMPLETE` (本轮)
-- IMPLEMENTATION NOT STARTED
-- RESULT2.XLSX NOT GENERATED
-- TASK_007-P2A NOT STARTED
-- TASK_007-P2B NOT STARTED
-- TASK_007-P3 NOT STARTED
-- TASK_007-P4 NOT STARTED
-- TASK_007-P5 NOT STARTED
+- P2A result level = **EXPERIMENTAL**
+  - Q4 three-drone evaluator **实现完成**, **73 controlled tests PASS**
+  - real Q4 evaluator calls = 0 (零真实 evaluator 调用)
+  - **不**存在 formal Q4 evaluation
+  - **不**存在 local convergence
+  - **不**存在 global optimum
+  - **不**是官方答案
+- TASK_007-P2B / P3 / P4 / P5 NOT STARTED
 - TASK_008 NOT STARTED
-- seeds 数量 / 具体 seed 列表 / wall-clock / evaluation cap / search config / pilot self-budget NOT FROZEN
-- Audit (full rerun) NOT STARTED
-- Hermes NOT STARTED (Final closeout 状态: PASS WITH NON-BLOCKING OBSERVATIONS)
-- NOT Q4 IMPLEMENTED
-- NOT Q4 SEARCHED
-- NOT Q4 EVALUATOR VALIDATED
-- NOT FORMAL_RESULT_VERIFIED
-- NOT local convergence
-- NOT global optimum
-- NOT 官方答案
-
-## result1.xlsx 状态 (保留不变)
-
-| 字段 | 值 |
-|---|---|
-| result1.xlsx output SHA | `b938a90b96181be14990d5bd3395c2cff72e93035828542617571ddc1d754847` |
-| result1_run_identity_sha256 | `82065aa5fe4d4e6036691a053b38732b9ff1f50497083e3306e262e82a4bfc65` |
-| 状态 | GENERATED + ROUND-TRIP-VERIFIED (TASK_006-P3, NOT touched by TASK_007) |
-
-## 任务编号 (固定)
-
-| 编号 | 范围 |
-|---|---|
-| `TASK_006` | Q3 + result1.xlsx |
-| `TASK_007-P0P1` | Q4 foundation preflight + contract freeze + CONTRACT CORRECTION + CONSOLIDATED AUDIT FIX + FINAL SEMANTIC AND HASH-SCOPE FIX + WORKTREE HYGIENE FINAL CLOSEOUT (本轮) |
-| `TASK_007-P2A` | Q4 evaluator + 单元测试 (real Q4 calls = 0) |
-| `TASK_007-P2B` | tiny bounded pilot + runtime calibration (pilot self-budget NOT FROZEN) |
-| `TASK_007-P3` | Q4 formal bounded search (artifact root = work/q4_search/) |
-| `TASK_007-P4` | candidate closure (artifact root = work/q4_candidate_closure/) |
-| `TASK_007-P5` | fine reconstruction + result2.xlsx 写盘 + round-trip 验证 |
-| `TASK_008` | Q5 + result3.xlsx |
-| `TASK_009` | unified recomputation / sensitivity / robustness / figures |
-| `TASK_010` | paper / consistency / final package |
-
-## 本轮允许的 tracked 文件变更 (2 个)
-
-| 文件 | 类型 |
-|---|---|
-| `.gitignore` | 新增 `work/` 总规则（保留所有已有 `work/...` 规则, 不删除） |
-| `NEXT_TASK.md` | 重写为本轮 WORKTREE HYGIENE FINAL CLOSEOUT scope（不改模型合同） |
-
-## 本轮允许的 untracked 文件变更 (work/)
-
-| 文件 | 类型 |
-|---|---|
-| `work/task_context.json` | 顶层新增 `result2_generated: false`（严格 boolean） |
-| `work/task_contracts/TASK_007-P0P1-v1.json` | 本轮**不修改** (immutable historical record) |
-| `work/task_contracts/TASK_007-P0P1-v2.json` | 本轮**不修改** (immutable superseded record) |
-| `work/task_contracts/TASK_007-P0P1-v3.json` | 本轮**不修改** (canonical final contract) |
-
-## 关闭条件 (本门)
-
-- ✅ `work/` 全部被 `.gitignore` 总规则覆盖；`git check-ignore -v work/task_context.json`
-  → `.gitignore:work/`
-- ✅ `git status --short --untracked-files=all` 不再显示 `?? work/`；提交前仅显示
-  `M .gitignore` + `M NEXT_TASK.md`
-- ✅ `work/task_context.json` 顶层 `result2_generated` 为**严格 boolean false**
-  (`RESULT2_GENERATED_FIELD_VALID = TRUE`)
-- ✅ `bounded_verification.real_evaluator_call_count` 中 `q1` / `q2` / `q3` /
-  `q4` / `search` / `excel_save` 均为 integer `0`
-- ✅ v1 / v2 / v3 SHA-256 / size 本轮前后**完全一致** (immutable)
-- ✅ `python scripts/verify_task_context.py --context work/task_context.json` →
-  `CONTEXT_VALID_AUTHORIZED_DIRTY`
-- ✅ 单次 commit "FIX: close TASK_007 worktree hygiene and context state gaps"
-  (第五个普通 commit, 非 amend, 非 squash, 非 force)
-- ✅ push 到 origin
-- ✅ PR #14 仍为 Draft；描述更新为 WORKTREE HYGIENE FINAL CLOSEOUT 状态
-- ✅ PR #14 验证: state=OPEN, draft=true, merged=false, mergeable=true,
-  head=新 HYGIENE CLOSEOUT commit, commits=5, base=2839151c
-- ✅ 累计 changed files 仍为 {.gitignore, MODEL.md, NEXT_TASK.md, problem/FACTS.md}
-  (4 个, 不得出现第五个 — 本轮仅修改 `.gitignore` 和 `NEXT_TASK.md`, 二者均
-  在该 4 个文件集合内)
-
-不自动 (本轮 boundary):
-
-- ❌ 启动 Q4 evaluator 实现 (TASK_007-P2A)
-- ❌ 启动 Q4 tiny pilot / runtime calibration (TASK_007-P2B)
-- ❌ 启动 Q4 正式搜索 (TASK_007-P3)
-- ❌ 启动 candidate closure (TASK_007-P4)
-- ❌ 启动 result2.xlsx 写盘 (TASK_007-P5)
-- ❌ 启动 Audit full rerun
-- ❌ 启动 Hermes（仅做 closeout 状态登记）
-- ❌ Mark Ready / merge
-- ❌ 启动 TASK_008
-- ❌ 冻结 seeds / wall-clock / evaluation cap / search config / pilot self-budget /
-  任何 P2B / P3 数字
-- ❌ 冒充 Q4 IMPLEMENTED / Q4 SEARCHED / RESULT2 GENERATED / P2A 启动 /
-  P2B 启动 / P3 启动 / P4 启动 / P5 启动 / FORMAL_RESULT_VERIFIED / 官方答案
-- ❌ 修改 MODEL.md（HYGIENE CLOSEOUT 边界）
-- ❌ 修改 v1 / v2 / v3 任何 byte（HYGIENE CLOSEOUT 边界, immutable）
-- ❌ 修改 problem/FACTS.md / .gitignore 已有规则 / 任何 src/ tests/ outputs/ 模板 workflow
-
-## 下一门 (待 MAIN 显式授权)
-
-**MAIN P0/P1 FINAL ACCEPTANCE AND P2A AUTHORIZATION DECISION** — MAIN 决定:
-1. P0/P1 阶段是否最终接受；
-2. 是否授权启动 TASK_007-P2A (Q4 evaluator + 单元测试, real Q4 calls = 0)。
-
-PR #14 整个 TASK_007 期间保持 Draft, 不合并 (单 PR 规则)。
-
----
-
-> 旧版 (TASK_007-P0/P1 FINAL SEMANTIC AND HASH-SCOPE FIX) 状态见 git history,
-> 本轮 (WORKTREE HYGIENE FINAL CLOSEOUT) 仅做 closeout 状态登记, 不改模型合同。
->
-> **不**实现 Q4 evaluator、**不**创建 Q4 测试、**不**运行 Q4 evaluator、
-> **不**运行 pilot / search / benchmark、**不**生成 result2.xlsx、
-> **不**启动 Audit full rerun / Hermes、**不** Mark Ready、**不** merge、
-> **不**启动 TASK_007-P2A / P2B / P3 / P4 / P5、**不**启动 TASK_008。
->
-> 本轮最高状态: **TASK_007-P0/P1 FINAL SEMANTIC AND HASH-SCOPE FIX COMPLETE** /
-> Q4 IMPLEMENTATION NOT STARTED / RESULT2.XLSX NOT GENERATED /
-> P2A NOT STARTED / P2B NOT STARTED / P3 NOT STARTED / P4 NOT STARTED /
-> P5 NOT STARTED / SEEDS NOT FROZEN / BUDGET NOT FROZEN /
-> PILOT BUDGET NOT FROZEN / Audit (full rerun) NOT STARTED / Hermes NOT STARTED.
-
-## 阶段状态
-
-| 阶段 | 状态 |
-|---|---|
-| TASK_006-P3 (Q3 result1.xlsx) | **COMPLETE + MERGED** (PR #13 → main @ `2839151c9ef027c200f84ec342e17d43874ca254`) |
-| TASK_007-P0/P1 (FINAL SEMANTIC AND HASH-SCOPE FIX) | **FINAL FIX COMPLETE — FINAL MICRO DELTA RECHECK PENDING — THIS PR** |
-| TASK_007-P2A (Q4 evaluator + 单元测试) | **NOT STARTED** |
-| TASK_007-P2B (tiny bounded pilot + runtime calibration) | **NOT STARTED** |
-| TASK_007-P3 (Q4 formal bounded search) | **NOT STARTED** |
-| TASK_007-P4 (candidate closure) | **NOT STARTED** |
-| TASK_007-P5 (result2.xlsx write + round-trip) | **NOT STARTED** |
-| TASK_008 | **NOT STARTED** |
-
-## 起点身份 (FINAL FIX 启动)
-
-| 字段 | 值 |
-|---|---|
-| 起始 HEAD (main) | `2839151c9ef027c200f84ec342e17d43874ca254` (PR #13 mergeCommit) |
-| branch | `task/TASK_007-q4-result2` |
-| base_branch | `main` |
-| base_sha | `2839151c9ef027c200f84ec342e17d43874ca254` |
-| 上一轮 CONSOLIDATED FIX commit (Delta Audit basis HEAD) | `2f3a38a5af867569b23cc9bed958cf1a8d4b5b10` |
-| 上一个 FIX commit (Audit basis HEAD) | `6f52c39c14b957d466f39248fcbfa8fae923a234` |
-| 上上一个 commit (PLAN) | `217985bd4f03a1e023d37e896c4035c1a58f515f` |
-| 本轮 FINAL SEMANTIC FIX commit | (本轮生成, 第四个普通 commit, 非 amend, 非 squash) |
-| task_id | `TASK_007-P0P1-FINAL-SEMANTIC-HASH-FIX` |
-| phase_id | `TASK_007-P0P1` |
-| contract_version | 3 (v3 canonical 替换 v2 superseded；v1 immutable) |
-| pr_number | 14 |
-| pr_state_target | open, draft=true, merged=false, mergeable=true |
-| pr_commits_target | 4 (PLAN + FIX + CONSOLIDATED FIX + FINAL SEMANTIC FIX) |
-| pr_title | "TASK_007: freeze Q4 three-drone strategy contract" |
-| First full Audit verdict | `CHANGES REQUIRED` (object `6f52c39...`) |
-| Delta Audit verdict | `CHANGES REQUIRED` (object `2f3a38a...`) |
-| Delta Audit open findings | D1, D2, D3, D4 |
-| current_action | `FINAL_SEMANTIC_AND_HASH_SCOPE_FIX` |
-| next_gate | `FINAL_MICRO_DELTA_RECHECK` |
-| worktree | `C:\Users\33560\Desktop\CUMCM_2025_A` |
-| repository | `hongyuchen039-oss/CUMCM-2025-A` |
-
-## 本轮范围 (FINAL SEMANTIC FIX, NOT IMPLEMENTATION)
-
-### Delta Audit 阻塞项 (本轮关闭)
-
-**D1 — Q2 valid/status 映射错误**: 冻结完整 status → valid → Q4 聚合语义映射表。
-
-| Q2 status | Q2 valid | Q4 聚合语义 |
-|---|---:|---|
-| `invalid` | `false` | Q4 candidate 返回 `valid=false, status="invalid"` |
-| `pruned_zero` | `true` | 合法零贡献，intervals 为空；Q4 仍可 `valid=true` |
-| `zero_window` | `true` | 合法零贡献，intervals 为空；Q4 仍可 `valid=true` |
-| `ok` | `true` | 使用真实 intervals 参加三机 union |
-
-明确：
-- `pruned_zero` **不得**导致 Q4 invalid；
-- `zero_window` **不得**导致 Q4 invalid；
-- 二者都是 Q2 evaluator 的正常、合法、零收益结果；
-- system error 与以上四个 status **完全分离**，不属于 Q2 status；
-- 三个 Q2 调用正常结束后, **仅当**至少一个真实返回是
-  `(valid=false, status="invalid")` 时, Q4 才返回 invalid；
-- `pruned_zero`、`zero_window` 与其他合法 evaluation 可以共同计算 union。
-
-**D2 — identity hash scope 不明确及 contract hash 自引用**: 冻结所有 hash 字段的精确
-计算范围。
-
-- 统一字段后缀 `_sha256`，所有正式 identity hash 均为 lowercase 64-character
-  SHA-256 hex digest；
-- **不得**把 Git blob OID 当作 SHA-256 结果；
-- 正式 code identity 算法: **SHA-256 over exact Git blob content bytes at
-  `execution_head_sha`**；
-  - 冻结 `execution_head_sha`；通过 `git rev-parse <sha>:<path>` 解析 blob；
-    通过 `git cat-file blob <blob_oid>` 读取 blob 原始 bytes；
-    **不**做换行转换 / **不**做 UTF-8 解码再编码 / **不**删除 trailing whitespace；
-    直接 SHA-256；
-  - 保存: repository path / `execution_head_sha` / `git_blob_oid` / `blob_size` /
-    SHA-256；
-  - **不得**使用工作树文件 bytes（Windows autocrlf / 编码设置可能改变 bytes）；
-  - **不得**通过 PowerShell 文本管道读取后再 hash；
-- 正式 code identity 字段（范围为整个 Git blob，**不**做函数文本抽取）：
-  - `q1_baseline_code_sha256` = SHA-256 of exact Git blob content bytes of
-    `src/q1_baseline.py` at `execution_head_sha`；
-  - `q1_cylinder_code_sha256` = SHA-256 of exact Git blob content bytes of
-    `src/q1_cylinder.py` at `execution_head_sha`；
-  - `q2_single_bomb_code_sha256` = SHA-256 of exact Git blob content bytes of
-    `src/q2_single_bomb.py` at `execution_head_sha`；
-  - `q3_three_bombs_code_sha256` = SHA-256 of exact Git blob content bytes of
-    `src/q3_three_bombs.py` at `execution_head_sha`（整个 Git blob,
-    **不**做函数文本抽取 — 函数抽取会引入 AST / 注释 / 缩进 / 边界定义差异）；
-  - `q4_evaluator_code_sha256` = SHA-256 of exact Git blob content bytes of
-    `src/q4_three_drones.py` at `execution_head_sha`；该文件尚不存在前
-    **不得**生成正式 q4_evaluation_id；
-- `q4_config_sha256` 必须基于 `q4_config_identity_payload`，payload 仅含影响
-  evaluator 结果或调用语义的**有效**配置字段；不含日志路径 / 生成时间 / 主机名等
-  **非结果**字段；拥有 `q4_config_schema_version`；使用 MODEL.md canonical JSON 规则；
-  **不**包含 `q4_config_sha256` 自身；
-- `cylinder_sample_profile_sha256` 必须基于 `cylinder_sample_profile_identity_payload`，
-  payload 固定 schema: `cylinder_sample_profile_schema_version` /
-  `sample_level` / `sampling_algorithm_id` / `effective_profile_parameters`；
-  `effective_profile_parameters` 必须包含 Q1 cylinder sampler 实际读取、并会影响
-  采样点或权重的全部最终有效参数；不得只保存 `sample_level = "medium"` 而省略
-  medium 实际展开后的参数；任一影响结果的 sampler 参数未进入 payload: **fail closed**,
-  不得生成正式 ID；payload **不**包含 `cylinder_sample_profile_sha256` 自身；
-- `q4_model_contract_sha256` 解决自引用：算法 =
-  `SHA256_CANONICAL_JSON_EXCLUDING_SELF_FIELD_V1`；
-  - 读取 v3 JSON object；从 top level 删除字段 `q4_model_contract_sha256`；
-  - 递归 canonical normalization（`-0.0` → `0.0`；tuple → stable JSON array；
-    NaN / Inf 禁止）；serialize canonical JSON
-    (UTF-8 / `ensure_ascii=False` / `sort_keys=True` /
-    `separators=(",", ":")` / `allow_nan=False`)；
-  - 对 canonical JSON bytes 计算 SHA-256；写入 v3 顶层
-    `q4_model_contract_sha256`；
-  - 验证：再次删除该字段并重算，**必须**等于存储值；
-  - **不**对包含自身 hash 值的完整文件 bytes 直接求 hash；
-  - `contract_hash_excluded_fields = ["q4_model_contract_sha256"]`；
-- 旧字段名（无 `_sha256` 后缀的旧 code identity 字段名）已废止，不得进入正式
-  evaluation identity。
-
-**D3 — heading radians 约束来源标签错误**: 把 `[官]` 改为 `[约定]`。
-
-- 旧（错误）：`[官]` Q4 heading 原始字段约束: `0 ≤ heading_rad_fyi < 2π`；
-- 新（正确）：`[约定]` Q4 heading 的内部弧度表示合同: `0 ≤ heading_rad_fyi < 2π`；
-- 该内部 radians 表示等价映射自 `FACTS.md §13.4 [官]` 方向角规则
-  (0° ≤ heading_deg < 360°)；
-- 官方模板规定方向角单位和范围；内部使用 radians 是工程表示；`[0, 2π)` 用于
-  消除周期重复；该内部表示**不是**官方原文；
-- identity 使用 prevalidation 后的 raw radians 字段；
-- Q2 normalized heading **不**替换 identity candidate field。
-
-**D4 — P2A 零真实调用与 P2B 预算依据矛盾**: 删除所有"基于 P2A 实际 evaluator 性能" /
-"基于 P2A 实测" / "P2A runtime calibration" 措辞。P2A real Q4 evaluator calls = 0，
-**不**存在真实 Q4 runtime；P2A 的 stub / mock / fixture wall-clock **不得**用作 P2B
-或 P3 预算依据。
-
-冻结正确流程：
-
-```
-P2A:
-  - 实现 evaluator；
-  - 实现 tests；
-  - stub / injected evaluator / fixture；
-  - 静态和受控测试；
-  - real Q4 evaluation = 0；
-  - 不产生可用于预算估计的真实 Q4 wall-clock。
-  - stub/mock wall-clock: 不得用作 P2B / P3 预算依据。
-
-P2B self-budget (首次真实 Q4 call 前冻结):
-  MAIN 根据以下依据冻结一个保守的小型安全预算：
-    (a) Q3 历史实测 wall-clock；
-    (b) 单次 Q4 正常路径包含 3 次 Q2 evaluator；
-    (c) 12 维 candidate 的静态复杂度；
-    (d) 当前机器和 Python 环境；
-    (e) 保守安全上界；
-    (f) 用户明确授权。
-  P2B self-budget 不得依赖不存在的 P2A 真实 runtime。
-
-P2B runtime calibration (self-budget 内):
-  真实 Q4 candidate wall-clock / 真实 single-bomb call wall-clock /
-  valid / invalid / zero / system-error 比例 / checkpoint 开销 / resume 开销。
-
-P3 formal budget (P2B 结束后):
-  MAIN 根据 P2B 真实 runtime 冻结 P3 formal budget；
-  可以且必须依赖 P2B 真实 runtime；
-  不得混用 P2B pilot budget 与 P3 formal budget。
-```
-
-调用预算措辞修正：
-- `max_attempted_single_bomb_calls = 3 × max_q4_evaluations` 是**硬上限**,
-  **不是**实际调用数恒等式；
-- 实际 attempted calls 可能更少（prevalidation invalid: 0 / 第 1 或 2 次 system
-  error 提前停止 / wall-clock stop / 用户中止 / checkpoint stop）；
-- 正常且全部完成的单个 Q4 evaluation: `attempted = 3`, `completed = 3`；
-- 不得把预算上限与实际调用会计混为一谈。
-
-### 已关闭 (N3 / N4, 不重开)
-
-- **N3 — v1 historical overwrite + v2 canonical 治理**: v1 immutable (SHA / size
-  本轮前后完全一致); v2 superseded (immutable, 本轮不修改); v3 canonical
-  (absorbs v2 + D1-D4);
-- **N4 — P3/P4 artifact 所有权**: P3 = `work/q4_search/` (P3 own checkpoint);
-  P4 = `work/q4_candidate_closure/` (P4 own checkpoint); P4 input_manifest 绑定
-  P3 SHAs; P5 不修改 P3 / P4 checkpoint。
-
-## 显式不做 (本轮 boundary)
-
-- ❌ 修改 `main` / 在 main 直接 commit / 修改 origin；
-- ❌ 修改 Q1 / Q2 / Q3 任何 source / foundation；
-- ❌ 创建 `src/q4_three_drones.py`；
-- ❌ 创建 `tests/test_q4.py`；
-- ❌ 运行真实 Q1 / Q2 / Q3 / Q4 evaluator；
-- ❌ 运行 smoke / pilot / search / benchmark；
-- ❌ 生成 Excel / `workbook.save` / 写盘 result2.xlsx；
-- ❌ 修改官方模板 ZIP；
-- ❌ 创建 CI / 修改 workflow；
-- ❌ 安装任何依赖；
-- ❌ 创建额外 tracked 报告；
-- ❌ 重新修改 `.gitignore` (本轮 boundary)；
-- ❌ 重新修改 `problem/FACTS.md` (本轮 boundary, Audit 已通过)；
-- ❌ 重新修改 `work/task_contracts/TASK_007-P0P1-v1.json` (本轮 boundary,
-  immutable historical record)；
-- ❌ 重新修改 `work/task_contracts/TASK_007-P0P1-v2.json` (本轮 boundary,
-  immutable superseded record)；
-- ❌ 启动 Audit full rerun (Audit delta recheck 待 MAIN)；
-- ❌ 启动 Hermes (MAIN 决定)；
-- ❌ Mark Ready / merge；
-- ❌ 启动 TASK_007-P2A / P2B / P3 / P4 / P5；
-- ❌ 启动 TASK_008；
-- ❌ Amend 任何之前的 commit (PLAN / FIX / CONSOLIDATED FIX)；
-- ❌ Squash commits；
-- ❌ Force push；
-- ❌ 使用 `git add .`；
-- ❌ 不得声称 FORMAL_RESULT_VERIFIED / local convergence / global optimum / 官方答案
-  / Q4 IMPLEMENTED / Q4 SEARCHED / RESULT2.XLSX GENERATED / Q4 EVALUATOR VALIDATED
-  / P2A 启动 / P2B 启动 / P3 启动 / P4 启动 / P5 启动 /
-  seeds frozen / budget frozen / pilot budget frozen。
-
-## 身份链 (FINAL SEMANTIC FIX 锁定)
-
-| 字段 | SHA / 值 |
-|---|---|
-| 起始 HEAD (main) | `2839151c9ef027c200f84ec342e17d43874ca254` |
-| PLAN commit (原, 未 amend) | `217985bd4f03a1e023d37e896c4035c1a58f515f` |
-| 第一个 FIX commit (Audit basis HEAD) | `6f52c39c14b957d466f39248fcbfa8fae923a234` |
-| 第二个 CONSOLIDATED FIX commit (Delta Audit basis HEAD) | `2f3a38a5af867569b23cc9bed958cf1a8d4b5b10` |
-| 本轮 FINAL SEMANTIC FIX commit | (本轮生成, 第四个普通 commit) |
-| 起始 phase | `TASK_007-P0P1` |
-| contract_version | 3 (v3 canonical; v2 superseded immutable; v1 historical immutable) |
-| v1 historical snapshot | `work/task_contracts/TASK_007-P0P1-v1.json` (HISTORICAL_OVERWRITE_RECORDED, immutable) |
-| v2 superseded contract | `work/task_contracts/TASK_007-P0P1-v2.json` (SUPERSEDED_CORRECTED_CONTRACT, immutable) |
-| v3 canonical contract | `work/task_contracts/TASK_007-P0P1-v3.json` (CANONICAL_FINAL_P0P1_CONTRACT) |
-| v3 contract_hash_algorithm | `SHA256_CANONICAL_JSON_EXCLUDING_SELF_FIELD_V1` |
-| v3 contract_hash_excluded_fields | `["q4_model_contract_sha256"]` |
-| pr_commits_target | 4 (PLAN + FIX + CONSOLIDATED FIX + FINAL SEMANTIC FIX) |
-| pr_state_target | open, draft=true, merged=false, mergeable=true |
-
-## 官方 result2.xlsx 模板 read-only 验证 (保持)
-
-| 字段 | 值 |
-|---|---|
-| 官方 ZIP SHA-256 | `f9879c0d36b7bdccb99fb330a8032e62851ab1a1f0a1636c92440a1cdaec658e` (14884 bytes, 3 members) |
-| result2.xlsx member size | 5272 bytes |
-| result2.xlsx member SHA-256 | `91fbc42459aa4c98838b0a4dbe740ec5b970436c3f86d8a22dd7303f127cf106` |
-| sheet | `Sheet1` (唯一) |
-| header | row 1, A1:J1 (10 列) |
-| 模板空白格式行 | rows 2-5 (4 行) |
-| 实际写入区 | rows 2, 3, 4 (FY1 → row 2, FY2 → row 3, FY3 → row 4) |
-| 保留空白格式行 | row 5 (官方模板预存, 不删除不重排不写入) |
-| 附注 cell | B6 (注: 以 x 轴为正向, 逆时针方向为正, 取值 0~360（度）) |
-| workbook footprint | A1:J6 |
-| FACTS.md §13.2 修正 | CORRECTED in FIX commit `6f52c39c14b957d466f39248fcbfa8fae923a234` |
-
-详细验证日志: `work/q4_foundation/result2_template_readonly_check.json` (untracked, 已刷新 FACTS 状态)。
-
-## 当前 result level
-
-- `TASK_007 Q4 FOUNDATION CONTRACT — CONTRACT_ONLY`
-- `FINAL SEMANTIC AND HASH-SCOPE FIX COMPLETE` (本轮范围)
-- IMPLEMENTATION NOT STARTED
-- RESULT2.XLSX NOT GENERATED
-- TASK_007-P2A NOT STARTED
-- TASK_007-P2B NOT STARTED
-- TASK_007-P3 NOT STARTED
-- TASK_007-P4 NOT STARTED
-- TASK_007-P5 NOT STARTED
-- TASK_008 NOT STARTED
-- seeds 数量 / 具体 seed 列表 / wall-clock / evaluation cap / search config / pilot self-budget NOT FROZEN
+- seeds 数量 / 具体 seed 列表 / wall-clock / evaluation cap / search config /
+  pilot self-budget **均 NOT FROZEN**
 - Audit (full rerun) NOT STARTED
 - Hermes NOT STARTED
-- NOT Q4 IMPLEMENTED
-- NOT Q4 SEARCHED
-- NOT Q4 EVALUATOR VALIDATED
+- Ready = NO; Merge = NO
+- NOT Q4 SEARCHED (Q4 evaluator 仅做 controlled unit tests, **不**做 search /
+  pilot / benchmark / runtime calibration)
 - NOT FORMAL_RESULT_VERIFIED
-- NOT local convergence
-- NOT global optimum
-- NOT 官方答案
 
 ## result1.xlsx 状态 (保留不变)
 
@@ -553,8 +316,8 @@ P3 formal budget (P2B 结束后):
 | 编号 | 范围 |
 |---|---|
 | `TASK_006` | Q3 + result1.xlsx |
-| `TASK_007-P0P1` | Q4 foundation preflight + contract freeze + CONTRACT CORRECTION + CONSOLIDATED AUDIT FIX + FINAL SEMANTIC AND HASH-SCOPE FIX (本轮) |
-| `TASK_007-P2A` | Q4 evaluator + 单元测试 (real Q4 calls = 0) |
+| `TASK_007-P0P1` | Q4 foundation preflight + contract freeze + CONTRACT CORRECTION + CONSOLIDATED AUDIT FIX + FINAL SEMANTIC AND HASH-SCOPE FIX + WORKTREE HYGIENE FINAL CLOSEOUT |
+| `TASK_007-P2A` | Q4 evaluator + 单元测试 (real Q4 calls = 0) **(本轮)** |
 | `TASK_007-P2B` | tiny bounded pilot + runtime calibration (pilot self-budget NOT FROZEN) |
 | `TASK_007-P3` | Q4 formal bounded search (artifact root = work/q4_search/) |
 | `TASK_007-P4` | candidate closure (artifact root = work/q4_candidate_closure/) |
@@ -563,74 +326,66 @@ P3 formal budget (P2B 结束后):
 | `TASK_009` | unified recomputation / sensitivity / robustness / figures |
 | `TASK_010` | paper / consistency / final package |
 
-## 本轮允许的 tracked 文件变更 (2 个)
+## 本轮允许的 tracked 文件变更 (3 个)
 
 | 文件 | 类型 |
 |---|---|
-| `MODEL.md` | TASK_007 Q4 THREE-DRONE FOUNDATION CONTRACT 章节 (D1 status 映射 / D2 hash scope + algorithm / D3 heading 标签 / D4 budget flow + v3 canonical 治理) |
-| `NEXT_TASK.md` | 重写为本轮 FINAL SEMANTIC AND HASH-SCOPE FIX scope |
+| `src/q4_three_drones.py` | NEW (Q4 three-drone evaluator module) |
+| `tests/test_q4.py` | NEW (Q4 controlled tests, 73 cases) |
+| `NEXT_TASK.md` | 重写为本轮 TASK_007-P2A scope |
 
 ## 本轮允许的 untracked 文件 (work/)
 
 | 文件 | 类型 |
 |---|---|
-| `work/task_context.json` | task_context (TASK_007-P0P1-FINAL-SEMANTIC-HASH-FIX) |
-| `work/task_contracts/TASK_007-P0P1-v1.json` | 历史覆盖记录 (本轮 immutable, 不修改) |
-| `work/task_contracts/TASK_007-P0P1-v2.json` | superseded corrected contract (本轮 immutable, 不修改) |
-| `work/task_contracts/TASK_007-P0P1-v3.json` | canonical final P0/P1 contract (absorbs v2 + D1-D4, NEW) |
-| `work/q4_foundation/result2_template_readonly_check.json` | 模板 read-only 验证日志 |
-| `work/pr_14_contract_correction_body.md` | PR #14 描述 (本轮更新) |
+| `work/task_context.json` | 顶层 task_id / phase_id / round / current_action / next_gate / expected_head / allowed_modified_paths / allowed_untracked_paths / bounded_verification 调整 |
+| `work/task_contracts/TASK_007-P2A-v1.json` | NEW (P2A contract, contract_version=1) |
+| `work/task_contracts/TASK_007-P0P1-v{1,2,3}.json` | 本轮**不修改** (immutable) |
+| `work/q4_p2a/test_report.json` | NEW (post-tests-pass) |
+| `work/q4_p2a/call_accounting.json` | NEW (post-tests-pass) |
+| `work/q4_p2a/code_identity.json` | NEW (post-commit) |
+| `work/q4_p2a/identity_only_record.json` | NEW (post-commit) |
+| `work/pr_14_p2a_body.md` | NEW (PR #14 body) |
 
 ## 关闭条件 (本门)
 
-- ✅ Harness `verify_task_context.py` → `CONTEXT_VALID_CLEAN` 或
+- ✅ `src/q4_three_drones.py` import 无 error; 实现完整覆盖本 directive
+- ✅ `PYTHONDONTWRITEBYTECODE=1 python -B -m unittest tests.test_q4 -v` → 73 tests
+  PASS, 0 failures, 0 errors
+- ✅ Q3 pure-function regression (`tests.test_q3.TestIntervalUnion` +
+  `TestCandidateContract`) PASS — Q3 foundation 未被破坏
+- ✅ v1 / v2 / v3 file SHA-256 / size 本轮前后**完全一致** (immutable)
+- ✅ `python scripts/verify_task_context.py --context work/task_context.json` →
   `CONTEXT_VALID_AUTHORIZED_DIRTY`
-- ✅ `work/task_context.json` 含 `task_id = TASK_007-P0P1-FINAL-SEMANTIC-HASH-FIX` /
-  `starting_head = 2f3a38a` / `audit_delta_object = 2f3a38a` /
-  `audit_delta_verdict = CHANGES_REQUIRED` / `open_findings = [D1, D2, D3, D4]` /
-  `canonical_contract = TASK_007-P0P1-v3.json` /
-  `max_expensive_evaluations = 0` / `result2_generated = false` /
-  `next_gate = FINAL_MICRO_DELTA_RECHECK`
-- ✅ `work/task_contracts/TASK_007-P0P1-v1.json` SHA / size 本轮前后**完全一致**
-  (HISTORICAL_OVERWRITE_RECORDED, immutable)
-- ✅ `work/task_contracts/TASK_007-P0P1-v2.json` SHA / size 本轮前后**完全一致**
-  (SUPERSEDED_CORRECTED_CONTRACT, immutable)
-- ✅ `work/task_contracts/TASK_007-P0P1-v3.json` 含
-  `contract_version = 3` / `status = CANONICAL_FINAL_P0P1_CONTRACT` /
-  `supersedes = TASK_007-P0P1-v2.json` /
-  `audit_basis_head = 2f3a38a` / `next_gate = FINAL_MICRO_DELTA_RECHECK` /
-  `contract_hash_algorithm = SHA256_CANONICAL_JSON_EXCLUDING_SELF_FIELD_V1` /
-  `contract_hash_excluded_fields = ["q4_model_contract_sha256"]` /
-  `q4_model_contract_sha256` (算法 = exclude self field, NOT hashing complete
-  v3 bytes including own hash)
-- ✅ `MODEL.md` 包含 D1 status mapping (invalid→valid=false; pruned_zero/zero_window/ok
-  → valid=true) + D2 hash scope (`_sha256` 后缀; exact Git blob content bytes;
-  `execution_head_sha` / `git_blob_oid` / `blob_size`) + D2
-  `SHA256_CANONICAL_JSON_EXCLUDING_SELF_FIELD_V1` + `cylinder_sample_profile_identity_payload`
-  含 `effective_profile_parameters` + `q4_config_identity_payload` 排除非结果字段 +
-  D3 `[约定]` Q4 heading 内部弧度表示 + D4 P2A real Q4 calls = 0 → 不作预算依据 /
-  P2B self-budget 基于 Q3 历史 + 12 维静态 + 保守上界 + 用户授权 / P3 budget 基于
-  P2B 真实 runtime
-- ✅ `MODEL.md` 不存在 `q3_union_helper_code_sha` / `[官] Q4 heading 原始字段约束` /
-  `基于 P2A 实际` / `基于 P2A 实测` / `P2A runtime calibration` / `Q4 union = NO`
-- ✅ `NEXT_TASK.md` current gate = TASK_007-P0/P1 FINAL SEMANTIC AND HASH-SCOPE FIX,
-  next gate = FINAL MICRO DELTA RECHECK
-- ✅ `NEXT_TASK.md` 不写 P2A / P2B / P3 / P4 / P5 / Hermes / Audit full rerun
-  STARTED
-- ✅ 单次 commit "FIX: close TASK_007 final semantic and hash scope gaps"
-  (第四个普通 commit, 非 amend, 非 squash, 非 force)
+- ✅ `work/task_contracts/TASK_007-P2A-v1.json` `contract_hash_excluded_fields =
+  ["q4_p2a_contract_sha256"]`; `q4_p2a_contract_sha256` 自我一致 (删除自身字段
+  重算 == 存储值)
+- ✅ `work/q4_p2a/test_report.json` 记录 73 tests PASS, v1/v2/v3 SHA 全部一致
+- ✅ `work/q4_p2a/call_accounting.json` 记录 `real_q4_evaluator_calls = 0`
+- ✅ `NEXT_TASK.md` current gate = TASK_007-P2A Q4 THREE-DRONE EVALUATOR +
+  CONTROLLED TESTS; next gate = MAIN P2A REVIEW
+- ✅ `NEXT_TASK.md` 不写 P2B / P3 / P4 / P5 / TASK_008 / Audit / Hermes / Ready
+  / Merge 启动
+- ✅ 单次 commit "FEAT: implement TASK_007 P2A Q4 evaluator and controlled
+  tests" (第六个普通 commit, 非 amend, 非 squash, 非 force)
 - ✅ push 到 origin
-- ✅ PR #14 仍为 Draft, 描述更新为 FINAL SEMANTIC AND HASH-SCOPE FIX 状态
+- ✅ PR #14 仍为 Draft; 描述更新为 P2A closeout 状态
 - ✅ PR #14 验证: state=OPEN, draft=true, merged=false, mergeable=true,
-  head=新 FINAL SEMANTIC FIX commit, commits=4, base=2839151c
-- ✅ 累计 changed files = {.gitignore, MODEL.md, NEXT_TASK.md, problem/FACTS.md}
-  (4 个, 不得出现第五个)
+  base=2839151c..., head=新 P2A FEAT commit, commits=6, changedFiles=6
+- ✅ `work/q4_p2a/code_identity.json` 记录 5 个 source file 的 Git blob SHA-256
+  (基于 P2A commit SHA 作为 `execution_head_sha`); `q4_evaluator_code_sha256`
+  与 `src/q4_three_drones.py` blob 完全一致
+- ✅ `work/q4_p2a/identity_only_record.json` 记录 `q4_evaluation_id`,
+  `q4_config_sha256`, `objective_identity`,
+  `evaluation_call_contract_version`, `interval_touching_epsilon_s`,
+  `sample_level`, `scan_step`, `drone_order`, `candidate_schema_version`,
+  `q4_config_schema_version`, `raw_heading_policy`; 显式
+  `identity_only = true, evaluation_performed = false,
+  real_q4_evaluator_calls = 0, formal_result_claimed = false`
 
 不自动 (本轮 boundary):
 
-- ❌ 启动 Q4 evaluator 实现 (TASK_007-P2A)
-- ❌ 启动 Q4 tiny pilot / runtime calibration (TASK_007-P2B)
-- ❌ 启动 Q4 正式搜索 (TASK_007-P3)
+- ❌ 启动 Q4 search / pilot / benchmark / runtime calibration (TASK_007-P2B / P3)
 - ❌ 启动 candidate closure (TASK_007-P4)
 - ❌ 启动 result2.xlsx 写盘 (TASK_007-P5)
 - ❌ 启动 Audit full rerun
@@ -639,18 +394,44 @@ P3 formal budget (P2B 结束后):
 - ❌ 启动 TASK_008
 - ❌ 冻结 seeds / wall-clock / evaluation cap / search config / pilot self-budget /
   任何 P2B / P3 数字
-- ❌ 冒充 Q4 IMPLEMENTED / Q4 SEARCHED / RESULT2 GENERATED / P2A 启动 /
-  P2B 启动 / P3 启动 / P4 启动 / P5 启动 / FORMAL_RESULT_VERIFIED /
-  官方答案
+- ❌ 冒充 Q4 SEARCHED / Q4 EVALUATOR VALIDATED / RESULT2.XLSX GENERATED /
+  FORMAL_RESULT_VERIFIED / local convergence / global optimum / 官方答案 /
+  P2B 启动 / P3 启动 / P4 启动 / P5 启动 / TASK_008 启动 /
+  seeds frozen / budget frozen / pilot budget frozen
+- ❌ 修改 Q1 / Q2 / Q3 任何 source byte (foundation 冻结)
+- ❌ 修改 v1 / v2 / v3 任何 byte (immutable)
+- ❌ 修改 `.gitignore` 已有规则 / `MODEL.md` / `problem/FACTS.md` /
+  官方模板 / `outputs/`
+- ❌ Amend 任何之前的 commit (PLAN / FIX / CONSOLIDATED FIX / FINAL SEMANTIC /
+  HYGIENE CLOSEOUT)
+- ❌ Squash commits
+- ❌ Force push
+- ❌ 使用 `git add .` 或 `git add work/`
+- ❌ 安装任何依赖 / 创建 CI / 修改 workflow
 
 ## 下一门 (待 MAIN 显式授权)
 
-**FINAL MICRO DELTA RECHECK** — 验证本轮 FINAL SEMANTIC AND HASH-SCOPE FIX 的
-D1 / D2 / D3 / D4 修复是否完整, 是否仍 CONTRACT_ONLY, 是否不冒充实现 / 搜索 /
-写盘 / pilot / runtime calibration / P2A / P2B / P3 / P4 / P5 / Audit full rerun
-/ Hermes / Ready / merge / TASK_008。
-
-MAIN 显式授权后才能进入:
-- TASK_007-P2A (Q4 evaluator + 单元测试, real Q4 calls = 0)
+**MAIN P2A IMPLEMENTATION REVIEW** — MAIN 决定:
+1. P2A 阶段 (Q4 evaluator + 单元测试) 是否最终接受;
+2. 是否授权启动 TASK_007-P2B (tiny bounded pilot + runtime calibration,
+   pilot self-budget 待 MAIN 基于 Q3 历史 + 12 维静态 + 保守上界 + 用户授权
+   **首次真实 Q4 call 前** 冻结)。
 
 PR #14 整个 TASK_007 期间保持 Draft, 不合并 (单 PR 规则)。
+
+---
+
+> 旧版 (TASK_007-P0/P1 WORKTREE HYGIENE FINAL CLOSEOUT + FINAL SEMANTIC AND
+> HASH-SCOPE FIX) 状态见 git history, 本轮 (TASK_007-P2A) 仅重写 NEXT_TASK.md
+> 反映 P2A scope, 不改 P0/P1 任何 commit / contract / MODEL.md / FACTS.md /
+> .gitignore。
+>
+> **不**实现 Q4 search / pilot / candidate closure / result2.xlsx 写盘 /
+> runtime calibration; **不**启动 Audit full rerun / Hermes / Ready / merge;
+> **不**启动 TASK_007-P2B / P3 / P4 / P5 / TASK_008。
+>
+> 本轮最高状态: **P0/P1 FINAL ACCEPTED** / **P2A Q4 EVALUATOR IMPLEMENTED +
+> 73 CONTROLLED TESTS PASSED** (real Q4 calls = 0) /
+> P2B NOT STARTED / P3 NOT STARTED / P4 NOT STARTED / P5 NOT STARTED /
+> TASK_008 NOT STARTED / SEEDS NOT FROZEN / BUDGET NOT FROZEN /
+> PILOT BUDGET NOT FROZEN / Audit (full rerun) NOT STARTED / Hermes NOT STARTED.
