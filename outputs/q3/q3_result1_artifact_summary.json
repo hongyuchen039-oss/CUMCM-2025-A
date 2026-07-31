@@ -1,0 +1,254 @@
+{
+  "phase_id": "TASK_006-P3",
+  "contract_version": 5,
+  "result_level": {
+    "declared_level": "BUDGET_LIMITED_BEST_KNOWN",
+    "not_a_proven_global_optimum": true,
+    "local_convergence_established": false,
+    "result1_xlsx_generated": true,
+    "not_a_formal_q3_result": true
+  },
+  "identity": {
+    "execution_head_sha": "cb3dd83c834ec3b5f8c1e85213ddc63301e3d709",
+    "contract_snapshot_sha256": "95ae6d6ad2b415635b168d5f5e07dc9ac5ebbc55b81922fa7c1ed7015cdcef09",
+    "q2_single_bomb_code_sha256": "b3ee61216a996404e76d4fc361d0adfe84cd5c76847746062e01a3acda7dd75a",
+    "q3_three_bombs_code_sha256": "eb79963906bc68f7ace568ae14b8bf71d60666d3f561e287039c2acc47462fd3",
+    "result1_builder_code_sha256": "d961e0b6fcc4f22380c9c0545ce8b6cc22e29713c94a6080de3f01a2d4f821d2",
+    "canonical_candidate_sha256": "afe2a8e91e03ce49dac28c6ba9c607bc98c81d2e23186b08296c52104da31d72",
+    "official_template_sha256": "f9879c0d36b7bdccb99fb330a8032e62851ab1a1f0a1636c92440a1cdaec658e",
+    "official_template_member_sha256": "d1773205296034c0f02ed7f848f8f1e66af633d1e6562938e059450a554b930e"
+  },
+  "canonical_candidate": {
+    "heading_rad": 3.127613485137657,
+    "speed_mps": 116.12799297398149,
+    "release_time_1_s": 0.993241052387636,
+    "delay_1_s": 3.720360704323356,
+    "release_time_2_s": 4.88566490244013,
+    "delay_2_s": 3.7704749980723404,
+    "release_time_3_s": 10.157737577136487,
+    "delay_3_s": 3.7180978311642083
+  },
+  "canonical_reconstruction": {
+    "valid": true,
+    "status": "ok",
+    "reason": "evaluated_3_bombs; per_bomb_durations=4.478204,0.000000,0.000000",
+    "q3_evaluation_id": "c3c39a89bf15192ccaf911541ee8b15bc8e89438d57c03746e20d798aba0418c",
+    "sample_level": "fine",
+    "scan_step_s": 0.005,
+    "elapsed_s": 81.65567400003783,
+    "total_union_duration_s": 4.478204178810118,
+    "union_intervals": [
+      [
+        4.713601756710992,
+        9.19180593552111
+      ]
+    ],
+    "single_bomb_evaluator_calls": 3,
+    "bomb_evaluations": [
+      {
+        "valid": true,
+        "status": "ok",
+        "reason": "evaluated",
+        "total_duration_s": 4.478204178810118,
+        "intervals": [
+          [
+            4.713601756710992,
+            9.19180593552111
+          ]
+        ],
+        "release_point": [
+          17684.668179872322,
+          1.6123479696399452,
+          1800.0
+        ],
+        "detonation_time_s": 4.713601756710992,
+        "detonation_point": [
+          17252.672371272125,
+          7.6516835503877045,
+          1732.1786895256605
+        ]
+      },
+      {
+        "valid": true,
+        "status": "ok",
+        "reason": "evaluated",
+        "total_duration_s": 0,
+        "intervals": [],
+        "release_point": [
+          17232.692975811042,
+          7.930997079565077,
+          1800.0
+        ],
+        "detonation_time_s": 8.656139900512471,
+        "detonation_point": [
+          16794.8780634811,
+          14.051684190821847,
+          1730.3392396156657
+        ]
+      },
+      {
+        "valid": true,
+        "status": "ok",
+        "reason": "evaluated",
+        "total_duration_s": 0,
+        "intervals": [],
+        "release_point": [
+          16620.51757694238,
+          16.489257586827534,
+          1800.0
+        ],
+        "detonation_time_s": 13.875835408300695,
+        "detonation_point": [
+          16188.784525584786,
+          22.52491980053621,
+          1732.2611677376708
+        ]
+      }
+    ]
+  },
+  "canonical_reconstruction_profile": "fine",
+  "canonical_reconstruction_scan_step_s": 0.005,
+  "canonical_reconstruction_duration_s": 4.478204178810118,
+  "closure_selection_score_s": 4.478218820691105,
+  "closure_selection_profile": "coarse",
+  "closure_selection_scan_step_s": 0.05,
+  "profile_provenance_correction": {
+    "closure_selection_profile": "coarse",
+    "closure_selection_scan_step_s": 0.05,
+    "closure_selection_score_s": 4.478218820691105,
+    "canonical_high_resolution_profile": "fine",
+    "canonical_high_resolution_scan_step_s": 0.005,
+    "canonical_high_resolution_duration_s": 4.478204178810118,
+    "absolute_profile_difference_s": 1.4641880987653622e-05,
+    "decision_variables_changed": false,
+    "search_rerun_performed": false,
+    "explanation": "The P2C selection score came from a coarse-profile record. P3 reports the same frozen candidate under fine 0.005 reconstruction."
+  },
+  "reconstruction_gate": {
+    "reference_total_union_duration_s": 4.478204178810118,
+    "reconstructed_total_union_duration_s": 4.478204178810118,
+    "abs_diff": 0.0,
+    "tolerance_s": 1e-12,
+    "passed": true
+  },
+  "workbook": {
+    "official_template_path": "题目及模板/2025高教社杯数学建模A题_结果模板.zip",
+    "official_template_sha256": "d1773205296034c0f02ed7f848f8f1e66af633d1e6562938e059450a554b930e",
+    "official_template_member_basename": "result1.xlsx",
+    "output_path": "outputs/submission/result1.xlsx",
+    "output_sha256": "b938a90b96181be14990d5bd3395c2cff72e93035828542617571ddc1d754847",
+    "sheet_names": [
+      "Sheet1"
+    ],
+    "active_sheet": "Sheet1",
+    "header_names": [
+      "无人机运动方向",
+      "无人机运动速度 (m/s)",
+      "烟幕干扰弹编号",
+      "烟幕干扰弹投放点的x坐标 (m)",
+      "烟幕干扰弹投放点的y坐标 (m)",
+      "烟幕干扰弹投放点的z坐标 (m)",
+      "烟幕干扰弹起爆点的x坐标 (m)",
+      "烟幕干扰弹起爆点的y坐标 (m)",
+      "烟幕干扰弹起爆点的z坐标 (m)",
+      "有效干扰时长 (s)"
+    ],
+    "column_mapping": {
+      "A": "heading_deg (degrees(heading_rad) modulo 360)",
+      "B": "speed_mps",
+      "C": "bomb index",
+      "D": "release_point x",
+      "E": "release_point y",
+      "F": "release_point z",
+      "G": "detonation_point x",
+      "H": "detonation_point y",
+      "I": "detonation_point z",
+      "J": "bomb i own total_duration_s (NOT union)"
+    },
+    "three_rows_written": true,
+    "all_cells_numeric": true,
+    "union_duration_written_to_j": false,
+    "round_trip_status": "passed",
+    "official_template_zip_sha256": "f9879c0d36b7bdccb99fb330a8032e62851ab1a1f0a1636c92440a1cdaec658e"
+  },
+  "template_fingerprint": {
+    "sheet_names": [
+      "Sheet1"
+    ],
+    "active_sheet": "Sheet1",
+    "dimensions": "A1:J6",
+    "merged_cells": [],
+    "freeze_panes": null,
+    "max_row": 6,
+    "max_column": 10,
+    "row_heights": {
+      "1": 51.0,
+      "2": null,
+      "3": null,
+      "4": null,
+      "5": null,
+      "6": 65.4000015258789
+    },
+    "col_widths": {
+      "A": 17.258928298950195,
+      "B": 21.276784896850586,
+      "C": 20.241071701049805,
+      "D": 14.580357551574707,
+      "E": 13.0,
+      "F": 13.0,
+      "G": 13.0,
+      "H": 13.0,
+      "I": 13.0,
+      "J": 13.0,
+      "K": 13.0,
+      "L": 13.0,
+      "M": 13.0,
+      "N": 13.0
+    },
+    "non_data_cells": {
+      "A6": "注：以x轴为正向，逆时针方向为正，取值0~360（度）。"
+    },
+    "non_data_formulas": {},
+    "non_data_styles": {
+      "A6": "常规"
+    },
+    "non_data_number_formats": {
+      "A6": "General"
+    },
+    "print_settings": {
+      "orientation": null,
+      "paper_size": null,
+      "fit_to_width": null,
+      "fit_to_height": null
+    }
+  },
+  "status": "result1_xlsx_generated",
+  "output_path": "outputs/submission/result1.xlsx",
+  "artifact_summary_path": "outputs/q3/q3_result1_artifact_summary.json",
+  "result1_run_identity_sha256": "82065aa5fe4d4e6036691a053b38732b9ff1f50497083e3306e262e82a4bfc65",
+  "identity_provenance_closeout": {
+    "p3_starting_head": "843b4a1e5791e67a09c377c2173f16a1105ab944",
+    "p3_execution_head": "cb3dd83c834ec3b5f8c1e85213ddc63301e3d709",
+    "p3_evidence_commit": "a04e158b7848d7d5a3d381ed9e5871961267ed37",
+    "original_result1_run_identity_preserved": true,
+    "closeout_is_docs_metadata_only": true,
+    "q3_evaluation_rerun_performed": false,
+    "result1_regenerated": false,
+    "p3_resume_identity_bound_to": "identity.official_template_sha256 (ZIP archive bytes)",
+    "legacy_identity_official_template_sha256_semantics": "ZIP archive bytes",
+    "legacy_workbook_official_template_sha256_semantics": "ZIP member bytes: result1.xlsx",
+    "legacy_fields_preserved": true,
+    "template_hashes_independently_recomputed_read_only": true,
+    "template_zip_read_only_open_passed": true,
+    "result1_member_unique": true,
+    "measured_official_template_zip_sha256": "f9879c0d36b7bdccb99fb330a8032e62851ab1a1f0a1636c92440a1cdaec658e",
+    "measured_official_template_member_sha256": "d1773205296034c0f02ed7f848f8f1e66af633d1e6562938e059450a554b930e",
+    "template_bytes_modified": false,
+    "result1_bytes_modified": false,
+    "final_audit_status": "NOT_STARTED",
+    "hermes_status": "NOT_STARTED",
+    "task_007_status": "NOT_STARTED",
+    "legacy_identity_field_semantically_equals": "official_template_zip_sha256",
+    "legacy_workbook_field_semantically_equals": "official_template_member_sha256"
+  }
+}

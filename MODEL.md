@@ -1030,3 +1030,862 @@ DOC-ONLY P2 CLOSED → canonical promotion
 ```
 
 不得把 Audit PASS 解释为 local optimum 或 global optimum。
+
+---
+
+## Q3 三弹串接评估合同 (TASK_006-P0P1 / PILOT / NOT A FORMAL Q3 RESULT)
+
+> 已在 `src/q3_three_bombs.py` 实现，通过 `tests/test_q3.py` 单元测试验证。
+> 本节固定 Q3 Three-Bomb Model Contract：8 维决策变量、共享 heading/speed、
+> 投放间隔 ≥ 1 s、union 目标、search-domain pruning 约定与 result1.xlsx J 列约定。
+> 等级: **EXPERIMENTAL Q3 PILOT / NOT A FORMAL Q3 RESULT / RESULT1.XLSX NOT GENERATED**。
+> 独立审查签字 + MAIN 显式立项 TASK_006-P2 后才能升 `BUDGET_LIMITED_BEST_KNOWN` 或
+> 进一步生成 result1.xlsx。
+
+### 1. 官方事实（FACTS.md §4 + §10 + §12 + §13.1）
+
+- **[官]** FY1 投放 3 枚烟幕干扰弹对 M1 实施干扰（FACTS.md §4）。
+- **[官]** 同架相邻两枚投放间隔 ≥ 1 s（FACTS.md §10 / §12）。
+- **[官]** FY1 任务期间只使用一个 heading、一个 speed（FACTS.md §9：本任务指令"一旦确定就不再调整"；
+  本节对 Q3 的工程化解释见 §3 [约定]）。
+- **[官]** FY1 速度 70~140 m/s，等高度匀速直线飞行（FACTS.md §9 / §12）。
+- **[官]** 烟幕干扰弹脱离无人机后受重力作用；起爆后形成半径 R = 10 m 的下沉云团；
+  起爆后有效持续 20 s（FACTS.md §10）。
+- **[官]** 结果保存到 result1.xlsx；模板 10 列 × 3 行（FACTS.md §13.1）。
+
+### 2. 8 维决策变量
+
+```python
+@dataclass(frozen=True)
+class ThreeBombCandidate:
+    heading_rad: float              # θ ∈ [0, 2π), 三枚弹共享
+    speed_mps: float                # v ∈ [70, 140], 三枚弹共享
+    release_time_1_s: float         # ≥ 0
+    delay_1_s: float                # ≥ 0
+    release_time_2_s: float         # ≥ release_time_1_s + 1
+    delay_2_s: float                # ≥ 0
+    release_time_3_s: float         # ≥ release_time_2_s + 1
+    delay_3_s: float                # ≥ 0
+```
+
+候选合同：
+
+- `0 ≤ heading_rad < 2π`
+- `70 ≤ speed_mps ≤ 140`
+- `release_time_i_s ≥ 0`
+- `delay_i_s ≥ 0`
+- `release_time_2_s − release_time_1_s ≥ 1`
+- `release_time_3_s − release_time_2_s ≥ 1`
+
+### 3. 共享 heading / speed（[约定]）
+
+**[约定]** 三枚烟幕干扰弹在任务期间共用同一架 FY1 的 heading 与 speed；
+因此 `ThreeBombCandidate` 中 `heading_rad` 与 `speed_mps` 各只出现一次，三枚弹各自的
+4 元子策略 `SingleBombStrategy(heading_rad, speed_mps, release_time_i_s, delay_i_s)`
+由该候选直接推导。该约定继承自 FACTS.md §9 中"无人机一旦确定航向与速度就不再调整"
+的 [官] 表述；若未来需要按 Q4 / Q5 的多机结构拆分 heading / speed，本合同不再适用。
+
+### 4. 运动学与几何（全部复用 Q2）
+
+每枚弹直接映射为 `SingleBombStrategy`：
+
+```python
+strat_i = SingleBombStrategy(
+    heading_rad=candidate.heading_rad,
+    speed_mps=candidate.speed_mps,
+    release_time_s=candidate.release_time_i_s,
+    delay_s=candidate.delay_i_s,
+)
+```
+
+`evaluate_three_bomb_strategy(...)` 强制调用三次
+`src.q2_single_bomb.evaluate_single_bomb_strategy`（不得复制、不得绕过）。
+返回的 `SingleBombEvaluation` 在 §5 / §6 / §7 中被合并到三弹 union。
+
+### 5. 单弹合法性继承 Q2（保留其语义）
+
+| 状态 | valid | 含义 |
+|---|---|---|
+| `invalid` | False | 物理 / 合同非法（非有限 / 越界 / 起爆 z < -EPS_GROUND） |
+| `pruned_zero` | True | t_detonate > t_arrival（搜索域无损剪枝, 不是官方物理禁令） |
+| `zero_window` | True | 合法但评估窗口为空 |
+| `ok` | True | 物理合法并完成评估 |
+
+继承语义（来自 `src/q2_single_bomb.EPS_GROUND` + `validate_strategy` + `evaluate_single_bomb_strategy`）：
+- 非有限值 → invalid；
+- speed 越界 / release < 0 / delay < 0 / 起爆点明显低于地面 → invalid；
+- t_detonate > t_arrival → pruned_zero（不是物理非法，是合法候选的 0 收益）；
+- zero_window（合法但窗口为空）→ 合法；
+- 程序异常（空可见集、类型错误、内部断言失败）→ 由 evaluator 抛出，不吞掉，
+  外层 Pilot 记录 `system_error` 并停止，不得冒充 zero。
+
+### 6. Q3 整体合法性
+
+- 三枚弹均物理合法 → Q3 candidate valid；
+- 某枚弹 pruned_zero / zero_window → 整组仍 valid，该弹贡献空区间；
+- 某枚弹 invalid → 整组 Q3 candidate invalid；
+- 任一单弹 evaluator 抛出程序异常 → Q3 evaluator 必须抛出，外层 Pilot 记录
+  `system_error` 并停止，不得继续冒充结果。
+
+### 7. Search-domain pruning（[约定] / 搜索域剪枝）
+
+Pilot 候选生成器可以优先生成 `t_detonate < t_arrival` 的候选，作为无损搜索域剪枝。
+这不是官方物理约束，是项目级搜索约定。必须在 MODEL.md 中标记为 **[约定]**：
+> t_detonate > t_arrival 的候选被搜索域剪枝为 `pruned_zero`（valid=True, total=0），
+> 不是物理非法；Q3 candidate 的搜索域为单弹释放时刻 + 延迟满足
+> `(release + delay) < t_arrival`。
+
+### 8. 三弹区间并集目标
+
+每枚弹得到严格有效区间 `I_1, I_2, I_3`（来自 Q2 evaluator）。
+
+Q3 目标：
+
+```
+total_union_duration = measure(union(I_1 ∪ I_2 ∪ I_3))
+```
+
+必须：
+- 重叠部分只计算一次；
+- 不连续区间分别累加；
+- nested interval 正确；
+- touching interval 使用确定性规范化（epsilon = 1e-12 s，固定、极小）；
+- 空区间合法（贡献 0）；
+- 区间排序稳定（按 start 升序，相同 start 按 end 升序）；
+- 不得把三枚单弹 duration 直接相加冒充 union；
+- 不得使用会改变可观测时长的大容差。
+
+实现：
+
+```python
+normalize_intervals(intervals) -> tuple  # 排序 + touching 合并 + epsilon 规范化
+union_intervals(*interval_lists) -> tuple  # 多组区间并集
+total_union_duration(intervals) -> float   # sum(end - start)
+```
+
+### 9. Q3 Evaluator 输出结构
+
+```python
+@dataclass(frozen=True)
+class ThreeBombEvaluation:
+    candidate: ThreeBombCandidate
+    valid: bool
+    status: str           # "invalid" | "zero_union" | "ok"
+    reason: str
+    bomb_evaluations: tuple  # 3 × SingleBombEvaluation
+    union_intervals: tuple
+    total_union_duration_s: float
+    q3_evaluation_id: str
+    sample_level: str
+    scan_step_s: float
+    elapsed_s: float
+    single_bomb_evaluator_calls: int
+```
+
+- `status ∈ {"invalid", "zero_union", "ok"}`；
+- 程序异常不放进普通 status，由 evaluator 抛出并由 Pilot 外层记录 system_error；
+- `q3_evaluation_id` 基于 canonical JSON + SHA-256，至少绑定：
+  - candidate 8 个变量；
+  - `sample_level`；
+  - `scan_step`；
+  - candidate schema version；
+  - Q2 evaluator code SHA；
+  - Pilot config SHA；
+- 同一候选、同一配置必须产生同一 ID。
+
+### 10. result1.xlsx 合同（[约定]，不生成）
+
+- A 列 / B 列：无人机运动方向（度）、速度（m/s）三行相同；
+- C 列：烟幕干扰弹编号 1、2、3；
+- D–F 列：每枚弹的投放点 xyz；
+- G–I 列：每枚弹的起爆点 xyz；
+- J 列：每枚弹自身有效遮蔽时长（单弹 duration，不写 union）；
+- 三弹 union 总时长写入 `outputs/q3/q3_pilot_summary.json` 与 `RESULTS.md`；
+- 方向角规则：+x = 0°，逆时针为正，范围 0~360°（继承 FACTS.md §13.4 [官]）；
+- 本合同标注 **[约定]**，**不得**冒充官方逐字规定。
+
+本轮**禁止**：
+- 创建 `outputs/submission/result1.xlsx`；
+- 复制或修改官方模板；
+- 引入 openpyxl；
+- 写 Excel writer。
+
+### 11. 候选来源（必须标注 `candidate_source`）
+
+Pilot 候选必须标注来源：
+
+1. `q2_canonical_seed_family`：从 canonical Q2 candidate 派生三弹合法 seed family；
+2. `deterministic_random_seed_2025`：seed=2025；
+3. `deterministic_random_seed_2026`：seed=2026；
+4. `profile_calibration`：粗 / 中 / 细各 1 候选（每种 sample grade 的成本校准）；
+5. `finalist_medium_recheck`：从 medium recheck top-K 重评；
+6. `finalist_fine_spotcheck`：从 fine finalist top-2 重评。
+
+Q2 canonical anchor（仅作 seed 来源）：
+```
+heading_rad = 3.126767217560497
+speed_mps   = 116.43351397802584
+release_time_s = 1.2672692031529031
+delay_s    = 3.789202402720746
+```
+
+不得宣称"复制三次就是 Q3 最优"。`candidate_source` 必须出现在每个 Q3 evaluation
+的行日志与 `outputs/q3/q3_pilot_summary.json` 的 per-row 统计中。
+
+### 12. Pilot 固定预算（不冒充）
+
+| 维度 | 上限 |
+|---|---|
+| Pilot 顶层 Q3 candidate evaluation | 96 |
+| Pilot wall-clock | 900 s |
+| 单弹 evaluator 调用上限 | 96 × 3 = 288 |
+| 真实 TASK 测试 Q3 evaluation | 3 |
+
+阶段分配建议：
+
+- Stage A — profile calibration：`2 candidates × coarse/medium/fine` = 6 Q3 evals
+- Stage B — deterministic coarse exploration：≤ 80 Q3 evals
+- Stage C — medium finalist recheck：≤ top 8 Q3 evals
+- Stage D — fine spot-check：≤ top 2 Q3 evals
+
+总计 ≤ 96。执行前检查剩余 budget。
+
+| 触发 | 状态 | 后续 |
+|---|---|---|
+| wall-clock 命中 | `WALL_CLOCK_GATE_HIT` | 原子写 checkpoint；保存 best pilot candidate；不自动延长 |
+| evaluation 预算耗尽 | `EVALUATION_BUDGET_EXHAUSTED` | 原子写 checkpoint；不写 `CODE_TEST_FAILED`；保留 best pilot candidate |
+| TASK 测试失败 | `CODE_TEST_FAILED` | 不进入 Pilot；只修真实失败；`FIX:` 前缀；`contract_version` +1 |
+| 任意单弹 evaluator 异常 | `RUN_SYSTEM_ERROR` | Pilot 立即停止；记录；不冒充结果 |
+
+本轮结果仍只能是 `EXPERIMENTAL`。**不得**因为出现较好候选就升级
+`BUDGET_LIMITED_BEST_KNOWN`（该等级留给 TASK_006-P2 正式预算运行）。
+
+### 13. 当前状态（本轮 P0/P1）
+
+- `src/q3_three_bombs.py` 已实现 `ThreeBombCandidate` / `validate_candidate` /
+  `evaluate_bomb_sequence` / `evaluate_three_bomb_strategy` /
+  `normalize_intervals` / `union_intervals` / `total_union_duration` /
+  `ThreeBombEvaluation` / Pilot CLI `--pilot-only`。
+- `tests/test_q3.py` 已覆盖：interval union（overlapping/disjoint/touching/nested/empty）、
+  非有限输入、speed bounds、release spacing（exactly 1 s accepted / below 1 s rejected）、
+  deterministic evaluation ID、candidate serialization、Q2 one-bomb degeneration exact
+  comparison、三弹共享 heading / speed、three-bomb union consistency、invalid candidate
+  fail-closed、pruned_zero 仍是 legal、system_error 不得变成 zero、checkpoint atomic
+  write、resume success、resume identity mismatch blocked、actual evaluation count、
+  unique evaluation IDs、repeated run determinism。
+- Pilot 已执行；budget / wall-clock / counts / timing / best candidate 全部记录在
+  `outputs/q3/q3_pilot_summary.json`。
+- 等级：`EXPERIMENTAL Q3 PILOT / NOT A FORMAL Q3 RESULT / RESULT1.XLSX NOT GENERATED`。
+- **不**进入 TASK_006-P2（Q3 Formal Search + result1.xlsx）。
+
+### 14. 局限
+
+- Q3 Pilot 是 deterministic uniform pseudorandom + 5 candidate source；
+  **不是**全局最优证明，**不是**解析极值，**不是**官方答案。
+- 本轮不启动完整 16 项 one-var 扰动；不启动 coordinate refinement；
+  不启动 multi-seed 调度；不写 result1.xlsx。
+- 候选生成与 budget 都按 Pilot 固定上限；不冒充正式 Q3 结果。
+- 共享 heading / speed 是项目约定，不是官方物理常量；Q4 / Q5 不复用本合同的共享规则。
+
+---
+
+## Q3 正式 bounded search (TASK_006-P2 / BUDGET_LIMITED_BEST_KNOWN / NOT A PROVEN GLOBAL OPTIMUM)
+
+> 已在 `src/q3_search.py` 实现，通过 `tests/test_q3.py` 新增 ≥ 20 个搜索单元测试
+> （FakeEvaluator only, 不调用真实 Q3 evaluator）验证。
+> 本节固定 Q3 Formal Bounded Search v3 的方法、预算、5 阶段、multi-seed 聚合、
+> checkpoint / resume、stage 优先级、合法性与局限。
+> 等级: **BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE / LOCAL CONVERGENCE NOT ESTABLISHED
+> / NOT A PROVEN GLOBAL OPTIMUM / RESULT1.XLSX NOT GENERATED**。
+> 不得冒充 Q3 VERIFIED / FINAL / 官方答案 / 解析极值 / 全局最优。
+> 独立审查 (Audit CC / Hermes) 签字后才能立项 TASK_006-P3 (result1.xlsx)。
+
+### 1. 基础约束
+
+- 严格基于冻结的 `src/q3_three_bombs.py` (ThreeBombCandidate /
+  validate_candidate / evaluate_three_bomb_strategy / normalize_intervals /
+  union_intervals / total_union_duration / ThreeBombEvaluation)。
+- 严格复用 Q2 single-bomb evaluator（不复制、不绕过）。
+- 候选 generation **仅**是 deterministic uniform pseudorandom + scheduled
+  perturbation；不依赖第三方优化库（不引入 scipy.optimize / 贝叶斯 / NSGA）。
+- Foundation 文件（P0/P1）冻结：不得修改 q3_three_bombs.py / q1 / q2 任何
+  实现文件；不得 modify pilot log / checkpoint。
+
+### 2. 预算分配（hard cap, 5 阶段严格总和 = 512）
+
+| 阶段 | 预算 | Profile | 说明 |
+|---|---|---|---|
+| Stage A — structured coarse exploration | **360** | coarse (0.05) | 3 seeds × 120 = 360 |
+| Stage B — bounded coarse refinement | **120** | coarse (0.05) | 12 parents × 10 perturbations = 120 |
+| Stage C — medium finalist recheck | **24** | medium (0.02) | 12 parents × 2 perturbation sets |
+| Stage D — fine finalist recheck | **6** | fine (0.01) | top-6 finalists |
+| Stage E — high-resolution verification | **2** | fine (0.005) | final top-2 验证 / tie-break |
+| **总计** | **512** | | |
+
+run wall-clock ≤ 1200 s；任一上限达到不自动延长。
+
+### 3. Stage A 子分配（每 seed 120 = 60 + 40 + 20）
+
+| 子块 | 每 seed | 总 | 合同 |
+|---|---|---|---|
+| A1 staggered canonical family | 20 | 60 | release_time_i ∈ {best_pilot_r1 + δ_2, best_pilot_r1 + δ_3}, δ_2 ∈ [3, 5], δ_3 ∈ [δ_2 + 1, 9]; delay_i = best_pilot_delay_i + η_i, η_i ∈ [-0.1, 0.1] |
+| A2 compensated release chain | 13 | 40 | release_time_1 = best_pilot_r1; release_time_2 = release_time_1 + delay_1/2; release_time_3 = release_time_2 + delay_2/2 + 1; delay_i = best_pilot_delay_i + η_i, η_i ∈ [-0.05, 0.05] |
+| A3 bounded directional diversity | 7 | 20 | heading ∈ {best_pilot_h - 0.05, best_pilot_h, best_pilot_h + 0.05}; speed ∈ {best_pilot_s - 2, best_pilot_s, best_pilot_s + 2}; release/delay 沿用 A1 |
+
+每个 seed 独立 random.Random(seed) 实例；同一 (seed, subblock, candidate_source)
+必须产生完全一致的候选顺序。
+
+### 4. Stage B bounded coarse refinement
+
+- parents = Stage A top-12 candidates（按 total_union_duration_s desc 去重）。
+- 每 parent 派生 10 perturbations（heading ±0.02 / speed ±1.0 / release ±0.2 /
+  delay ±0.1 中任选 1-2 个变量）。
+- 同一 parent 多次扰动；同一 candidate 多次被命中时按 schedule 顺序
+  evaluation_id 重复但 status 计为 completed；不重复占用预算。
+- 仅在 coarse (0.05) profile 下评估。
+
+### 5. Stage C / D / E finalist 复评
+
+- Stage C：从 Stage A + B 合并后去重的 top-12 中，每 parent 选 2 组（release
+  微调 + delay 微调）共 24 候选，medium (0.02) 复评。
+- Stage D：从 Stage C 完成后 top-6，fine (0.01) 复评。
+- Stage E：从 Stage D 完成后 top-2，fine (0.005) 复评，最终 tie-break
+  on total_union_duration_s。
+
+### 6. Multi-seed 聚合
+
+- seeds = `[2025, 2026, 2027]`（formal config 强制断言）。
+- 每 seed 独立 dispatch；任一 seed 触发 RUN_SYSTEM_ERROR 或 fail-closed
+  → 整体 BLOCKED，不写 summary。
+- final winner = Stage E top-1 candidate。
+
+### 7. Checkpoint v3 / Resume identity
+
+- 路径：`work/q3_formal/checkpoint.json`。
+- schema_version = 3。
+- 7 字段 resume identity（任一 mismatch → BLOCKED, exit 2）：
+  1. `execution_head_sha`
+  2. `contract_snapshot_sha256`
+  3. `q2_single_bomb_code_sha256`
+  4. `q3_three_bombs_code_sha256`
+  5. `q3_search_code_sha256`
+  6. `formal_config_sha256`
+  7. `candidate_schema_version`
+- atomic write：temp + flush + fsync + os.replace。
+- corrupt / load error → `status = CHECKPOINT_LOAD_ERROR`, exit 2。
+
+### 8. CLI 与退出码
+
+- 默认 `python -m src.q3_search` 仅打印 banner。
+- 正式搜索：`python -u -m src.q3_search --formal-search --budget 512
+  --wall-clock-cap 1200 --seeds 2025 2026 2027`。
+- `--dry-run` / `--fake-evaluator` 用于本地调度 / 测试（不消耗 real eval）。
+- 退出码：0 无 system_error + Stage E 完成；1 system_error；2 arg / config 错误
+  / dirty worktree / fail-closed / 预算耗尽 / wall-clock hit；3 controlled
+  interruption。
+
+### 9. 输出 summary JSON schema (canonical)
+
+`outputs/q3/q3_formal_search_summary.json` 至少含以下字段：
+
+- `phase_id = "TASK_006-P2"`
+- `contract_version = 3`
+- `result_level.declared_level = "BUDGET_LIMITED_BEST_KNOWN"`
+- `result_level.not_a_proven_global_optimum = true`
+- `result_level.local_convergence_established = false`
+- `result_level.result1_xlsx_generated = false`
+- `stage_counts`: {A, B, C, D, E, total} 必须总和 = 512
+- `best_candidate`: 8 维 + `total_union_duration_s` + `union_intervals` +
+  `per_bomb_intervals` (3 items) + `per_bomb_duration_s` (3 items)
+- `identity`: 7-field resume identity SHAs + `formal_run_identity_sha256`
+- `timing`: per-stage wall-clock / median / p90
+- `counts`: completed / system_error / unique_evaluation_ids / single_bomb_calls
+- `status`: pilot_complete / wall_clock_gate_hit / evaluation_budget_exhausted
+  / run_system_error / checkpoint_load_error / resume_identity_mismatch
+
+### 10. 局限
+
+- 候选 generation 是 deterministic uniform pseudorandom + scheduled perturbation；
+  **不是**全局最优证明，**不是**解析极值，**不是**官方答案。
+- Stage B/C/D/E 的 refinement scope 受 5 阶段预算硬约束，未穷尽搜索空间；
+  16 项 one-var perturbation + coordinate descent 未启动（留给 TASK_006-P2C）。
+- multi-seed 仅 3 seeds；统计意义有限。
+- 不声称 Q3 全局最优 / VERIFIED / FINAL / 官方答案 / 解析极值；
+  **不**声称 local convergence。
+- 等级仅 BUDGET_LIMITED_BEST_KNOWN；独立审查签字后才能升 VERIFIED 或进一步
+  生成 result1.xlsx（TASK_006-P3）。
+
+---
+
+## Q3 Candidate Closure (TASK_006-P2C / BUDGET_LIMITED_BEST_KNOWN / NOT A PROVEN GLOBAL OPTIMUM)
+
+> 已在 `src/q3_search.py` 追加 `run_candidate_closure(...)` 函数，通过
+> `tests/test_q3.py` 新增 36 个 P2C 单元测试（FakeEvaluator only）验证。
+> 本节固定 Q3 candidate closure 的方法、预算、F1-F5 顺序传播、累计 resume 语义、
+> schedule SHA、checkpoint v4、selection rule 与局限。
+> 等级: **BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE / LOCAL CONVERGENCE NOT ESTABLISHED
+> / NOT A PROVEN GLOBAL OPTIMUM / RESULT1.XLSX NOT GENERATED**。
+> 不得冒充 Q3 VERIFIED / FINAL / 官方答案 / 解析极值 / 全局最优 / local convergence。
+> 独立审查 (Audit CC / Hermes) 签字后才能立项 TASK_006-P3 (result1.xlsx)。
+
+### 1. 前驱与基础约束
+
+- 严格基于 P2 冻结结果：`outputs/q3/q3_formal_search_summary.json` 的
+  `best_candidate` (8 维) + `best_total_union_duration_s = 4.469013137817385 s`。
+- 严格复用 Q2 single-bomb evaluator + Q3 three-bomb evaluator
+  (via `src/q3_three_bombs.evaluate_three_bomb_strategy`)。
+- Foundation 文件（P0/P1/P2）冻结：不得修改 q3_three_bombs.py / q1 / q2 / q3_search core。
+- **不**重跑 P2 512-evaluation 正式搜索。
+
+### 2. Pre-closure limitation（合同级声明）
+
+P2 阶段的 B/C/D/E schedule 是从 Stage A result pool 一次性 pre-constructed 的；
+该实现正确性已由 P2 实证（512/834.07 s/0 system_error）保证，但其 schedule 不能
+反映"前驱阶段实际产生哪些 candidates"的真实约束。P2C 阶段必须改为 sequential
+propagation：
+
+> B/C/D/E schedules are preconstructed from the Stage A result pool rather than
+> propagated sequentially after each preceding stage completed.
+> (TASK_006-P2C-v4 contract, `pre_closure_stage_selection_limitation` 字段)
+
+P2C closure 必须：
+
+- sequential_propagation: true
+- build_per_stage_only_after_predecessor_complete: true
+- schedule_immutable_after_construction: true
+- closure_schedule_sha256_in_resume_identity: true
+
+### 3. 预算分配（hard cap, F1-F5 严格总和 = 32）
+
+| 阶段 | 预算 | Profile | 说明 |
+|---|---|---|---|
+| F1 — one-variable perturbation | **16** | coarse (0.05) | 8 vars × 2 directions（+/-） |
+| F2 — coordinate combinations | **8** | coarse (0.05) | 8 fixed combinations |
+| F3 — medium recheck | **4** | medium (0.02) | parents = incumbent + top-3 challengers |
+| F4 — fine recheck | **2** | fine (0.01) | parents = F3 top-k |
+| F5 — high-resolution verification | **2** | fine (0.005) | final canonical selection |
+| **总计** | **32** | | |
+| **single_bomb_evaluator_calls** | 96 | | 32 × 3 = 96 |
+
+Run wall-clock ≤ **600 s**；任一上限达到不自动延长。
+
+### 4. F1 one-variable perturbation 步长
+
+| 变量 | 步长（rad/m/s） |
+|---|---|
+| heading_rad | 0.002 |
+| speed_mps | 0.5 |
+| release_time_1_s | 0.10 |
+| delay_1_s | 0.05 |
+| release_time_2_s | 0.10 |
+| delay_2_s | 0.05 |
+| release_time_3_s | 0.10 |
+| delay_3_s | 0.05 |
+
+- 8 变量 × 2 方向 = **16 records**
+- 每 record 复制 incumbent，扰动单变量单方向，其余 7 变量保持 incumbent 值。
+- Fallback scales: `[0.5, 0.25]`；当扰动后 candidate 不满足 `validate_candidate`
+  （release spacing ≥ 1 s 等）时，按 [0.5, 0.25] 缩放步长重试；仍失败则丢弃该 record。
+- Records 在 closure 启动前 pre-built（确定性、seed-locked）。
+
+### 5. F2 coordinate combinations
+
+8 fixed combinations（每个 combination 用 ±1 方向 × main step × combination size）：
+
+| # | combo | 说明 |
+|---|---|---|
+| 1 | heading+speed | 2 变量 |
+| 2 | release_time_1+delay_1 | 2 变量 |
+| 3 | release_time_2+delay_2 | 2 变量 |
+| 4 | release_time_3+delay_3 | 2 变量 |
+| 5 | heading+speed+release_time_1+delay_1 | 4 变量 |
+| 6 | release_time_2+delay_2+release_time_3+delay_3 | 4 变量 |
+| 7 | all_release_delay | 6 变量（release_1/2/3 + delay_1/2/3） |
+| 8 | all_eight | 8 变量 |
+
+- F2 records 与 F1 records 同时 pre-build（不依赖 F1 执行结果；只依赖 incumbent）。
+- Records 在 closure 启动前 pre-built（确定性、seed-locked）。
+
+### 6. F3 / F4 / F5 sequential propagation
+
+| 阶段 | parents | records | profile |
+|---|---|---|---|
+| F3 | incumbent ∪ best-of-(F1+F2) up to top_k=3 | 4 | medium (0.02) |
+| F4 | F3 完成后 top-k | 2 | fine (0.01) |
+| F5 | F4 完成后 top-k | 2 | fine (0.005) |
+
+- F3/F4/F5 records **不能**pre-build；必须在前驱阶段执行完成后才构建。
+- 每阶段记录其 predecessor 结果，按 `total_union_duration_s desc` 排序，
+  取 top-3（含 incumbent）+ pre-defined perturbation patterns 生成下一阶段 records。
+- top_k 默认 = 3；F4/F5 top_k 由合同固定 = 2。
+- per-stage schedule immutable after construction。
+
+### 7. Selection rule
+
+```
+canonical_closure_candidate = argmax total_union_duration_s over all 32 records
+if abs(duration_a - duration_b) <= 1e-12:
+    tie-break on evaluation_id lexicographic
+```
+
+- ε = 1e-12 s（固定、极小）。
+- 仅在 ε 内才有 tie-break；超过 ε 的差异视为 strict improvement。
+
+### 8. Cumulative Wall-Clock
+
+```
+current_process_elapsed = time.perf_counter() - start_time
+cumulative_elapsed = previous_elapsed_seconds_total + current_process_elapsed
+if cumulative_elapsed >= wall_clock_cap_seconds:
+    stop, write checkpoint, status = WALL_CLOCK_GATE_HIT, no auto extension
+```
+
+- On resume: previous_elapsed_seconds_total 从 checkpoint 加载，**不**reset to 0。
+- heartbeat 输出 cumulative elapsed + remaining budget。
+
+### 9. Schedule SHA256
+
+```
+closure_schedule_sha256 = sha256(canonical_json({
+  "F1_records": [...16 deterministic candidate dicts...],
+  "F2_records": [...8 deterministic candidate dicts...]
+}))
+```
+
+- F3/F4/F5 records 不进入 schedule SHA（运行时动态生成）。
+- 同一 incumbent + 同一 f1_steps + 同一 f2_combinations 必须产生同一 schedule SHA。
+- schedule SHA 作为 8-field resume identity 第 8 字段。
+
+### 10. Checkpoint v4 / Resume identity (8 fields)
+
+- 路径：`work/q3_candidate_closure/checkpoint.json`
+- **checkpoint_schema_version = 4**
+- resume 强制校验 **8 字段**（任一 mismatch → BLOCKED, exit 2）：
+  1. `execution_head_sha`
+  2. `contract_snapshot_sha256`
+  3. `q2_single_bomb_code_sha256`
+  4. `q3_three_bombs_code_sha256`
+  5. `q3_search_code_sha256`
+  6. `closure_config_sha256`
+  7. `candidate_schema_version`
+  8. `closure_schedule_sha256`
+- atomic write：temp + flush + fsync + os.replace。
+- corrupt / load error → `status = CHECKPOINT_LOAD_ERROR`, exit 2。
+- identity mismatch → `status = RESUME_IDENTITY_MISMATCH`, exit 2。
+- cumulative wall-clock fields persisted：`previous_elapsed_seconds_total`,
+  `current_process_elapsed_seconds`, `elapsed_seconds_total`。
+
+### 11. CLI 与退出码
+
+- 默认 `python -m src.q3_search` 仅打印 banner。
+- P2 正式搜索：`python -u -m src.q3_search --formal-search --budget 512
+  --wall-clock-cap 1200 --seeds 2025 2026 2027`。
+- P2C candidate closure：`python -u -m src.q3_search --candidate-closure
+  --budget 32 --wall-clock-cap 600 --snapshot-path work/task_contracts/TASK_006-P2C-v4.json`。
+- `--dry-run` / `--fake-evaluator` 用于本地调度 / 测试（不消耗 real eval）。
+- 退出码：0 无 system_error + F5 完成；1 system_error；2 arg / config 错误
+  / dirty worktree / fail-closed / 预算耗尽 / wall-clock hit；3 controlled
+  interruption。
+
+### 12. P2C 输出 summary JSON schema (canonical)
+
+`outputs/q3/q3_candidate_closure_summary.json` 至少含以下字段：
+
+- `phase_id = "TASK_006-P2C"`
+- `contract_version = 4`
+- `result_level.declared_level = "BUDGET_LIMITED_BEST_KNOWN"`
+- `result_level.not_a_proven_global_optimum = true`
+- `result_level.local_convergence_established = false`
+- `result_level.not_a_formal_q3_result = true`
+- `result_level.result1_xlsx_generated = false`
+- `stage_counts`: {A=0, B=0, C=0, D=0, E=0, F1=16, F2=8, F3=4, F4=2, F5=2, total=32}
+- `counts`: {completed_q3_evaluations=32, single_bomb_evaluator_calls=96,
+   system_error_count=0, unique_q3_evaluation_ids=32}
+- `canonical_q3_candidate`: 8 维 canonical candidate
+- `canonical_q3_evidence`: {rehydrated_from_completed_records: true, total_union_duration_s}
+- `canonical_total_union_duration_s`: 4.478218820691105
+- `comparison`: {incumbent_reference_total_union_duration_s=4.469013137817385,
+   absolute_improvement_s=0.009205682873719923, relative_improvement=0.0020598916561287784}
+- `incumbent_high_resolution`: {candidate (8 维), p2_evidence_commit,
+   p2_execution_head, reference_total_union_duration_s, source}
+- `original_p2_evidence_preservation`: {original_p2_execution_head,
+   original_p2_evidence_commit, original_512_evaluations_preserved=true,
+   original_834_07s_wall_clock_preserved=true, p2_search_rerun_performed=false}
+- `identity`: 8-field resume identity SHAs + closure_run_identity_sha256
+- `timing`: per-stage wall-clock / median / p90
+- `status`: pilot_complete / wall_clock_gate_hit / evaluation_budget_exhausted
+  / run_system_error / checkpoint_load_error / resume_identity_mismatch
+- `p2c_contract_snapshot_path`: `work/task_contracts/TASK_006-P2C-v4.json`
+
+P2 summary 同步修正：
+`outputs/q3/q3_formal_search_summary.json` 增加 `evidence_closure` 块 +
+`formal_schedule_complete: true` + `pilot_complete_legacy_field: true`。
+原始 P2 512/834.07 s/HEAD=70a4dd7 事实保留不变。
+
+### 13. 局限
+
+- F1-F5 closure 是 bounded refinement over P2 stage E top-1 incumbent；
+  **不是**全局最优证明，**不是**解析极值，**不是**官方答案。
+- F1/F2 步长固定（heading ±0.002 rad / speed ±0.5 m/s / release ±0.10 s / delay ±0.05 s），
+  F1 fallback scales [0.5, 0.25]；未做 Pareto frontier / 多起点 / 自适应步长。
+- F3/F4/F5 top-k 选择固定（top_k=3 / 2 / 2）；未做 cross-stage 双向传播。
+- selection rule 仅在 ε=1e-12 s 内有 tie-break；超过 ε 视为 strict improvement。
+- F5 high-resolution 复评后 canonical 总时长相对 P2 incumbent 仅 +0.21%，
+  表明 P2 stage E 局部收敛近似完成；不构成"局部极值证明"。
+- 不声称 Q3 全局最优 / VERIFIED / FINAL / 官方答案 / 解析极值；
+  **不**声称 local convergence。
+- 等级仅 BUDGET_LIMITED_BEST_KNOWN；独立审查签字后才能升 VERIFIED 或进一步
+  生成 result1.xlsx（TASK_006-P3）。
+
+---
+
+## Q3 result1 artifact generation (TASK_006-P3 / BUDGET_LIMITED_BEST_KNOWN / NOT A PROVEN GLOBAL OPTIMUM)
+
+> 已在 `scripts/build_result1.py` 实现；通过 `tests/test_q3.py` 新增 ≥ 22 个
+> result1 模块单元测试（FakeEvaluator + temporary workbook，**不**调用真实
+> Q3 evaluator）验证。本节固定 Q3 result1.xlsx 生成的官方模板处理、列写入合同、
+> heading conversion、J 列约定、reconstruction gate、template preservation contract、
+> workbook round-trip 与局限。
+> 等级: **BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE WITH GENERATED AND ROUND-TRIP-VERIFIED
+> RESULT1.XLSX / LOCAL CONVERGENCE NOT ESTABLISHED / NOT A PROVEN GLOBAL OPTIMUM**。
+> 不得冒充 Q3 VERIFIED / FINAL / 官方答案 / 解析极值 / 全局最优 / local convergence。
+
+### 0. Closeout 状态（DOCS/METADATA ONLY, 不重跑）
+
+- **TASK_006-P3 COMPLETE**
+- result1.xlsx **GENERATED** + **ROUND-TRIP VERIFIED**
+- 冻结的 8-dimensional candidate 未改变；P3 是 artifact generation, **不是** 新 optimization
+- 当前 Gate: **FINAL AUDIT / HERMES PENDING**
+- TASK_007 NOT STARTED
+- p3_starting_head = `843b4a1e5791e67a09c377c2173f16a1105ab944`
+- p3_execution_head = `cb3dd83c834ec3b5f8c1e85213ddc63301e3d709`
+- p3_evidence_commit = `a04e158b7848d7d5a3d381ed9e5871961267ed37`
+- result1.xlsx SHA = `b938a90b96181be14990d5bd3395c2cff72e93035828542617571ddc1d754847`
+- P2C closure selection score (coarse/0.05) = `4.478218820691105 s` (历史证据)
+- P3 canonical reconstruction (fine/0.005) = `4.478204178810118 s` (result1.xlsx 几何来源)
+- absolute profile difference = `1.4641880987653622e-05 s`
+- official_template_zip_sha256 = `f9879c0d36b7bdccb99fb330a8032e62851ab1a1f0a1636c92440a1cdaec658e`
+- official_template_member_sha256 = `d1773205296034c0f02ed7f848f8f1e66af633d1e6562938e059450a554b930e`
+
+历史过程 commit (`03ddda3` PLAN, `0597028` WORKING, `108d21b` headers-fix) 是 P3
+身份链内的施工过程；真实 `p3_execution_head` = `cb3dd83c`, 真实 `p3_evidence_commit`
+= `a04e158b`. 若任何叙述把 `108d21b` 当作 execution-head, 属
+**HISTORICAL COMMIT ROLE REQUIRES FINAL AUDIT ANCESTRY CHECK**, 不由本 closeout
+自行重定义, 不重跑 P3.
+
+独立 Final Audit (Audit CC) + Hermes 签字后才能正式合并 PR #13.
+
+### 1. 官方模板处理
+
+- 源：`题目及模板/2025高教社杯数学建模A题_结果模板.zip`。
+- 仅以 read-only ZIP 打开（`zipfile.ZipFile(..., mode="r")`，**不得**写入或覆盖）。
+- 成员 basename 必须正好为 `result1.xlsx`（唯一）。
+- 通过 `io.BytesIO` 加载到内存；openpyxl 打开 in-memory bytes。
+- **不得**修改原 ZIP、原成员字节；模板 SHA-256 记录在 resume identity 中。
+- `outputs/submission/result1.xlsx` 必须由官方模板 in-memory edit 后另存得到。
+
+### 2. 模板结构识别（10 列 × 3 数据行）
+
+- 头 10 列必须严格 contiguous 且按下列顺序出现：
+  1. `无人机运动方向`
+  2. `无人机运动速度 (m/s)`
+  3. `烟幕干扰弹编号`
+  4. `烟幕干扰弹投放点的x坐标 (m)`
+  5. `烟幕干扰弹投放点的y坐标 (m)`
+  6. `烟幕干扰弹投放点的z坐标 (m)`
+  7. `烟幕干扰弹起爆点的x坐标 (m)`
+  8. `烟幕干扰弹起爆点的y坐标 (m)`
+  9. `烟幕干扰弹起爆点的z坐标 (m)`
+  10. `有效干扰时长 (s)`
+
+注：实际官方模板表头含单位后缀（`(m/s)`、`(m)`、`(s)`），与 FACTS.md §13.1
+的纯字段名描述略有差异；本合同的 canonical 表头以官方模板实际字符为准。
+- 缺失 / 重复 / 顺序错 / 任意列多 / 任意列少 → BLOCKED, exit 2。
+- 数据行必须严格 3 行（与官方模板一致）。
+
+### 3. 行写入映射
+
+| 列 | 内容 | 行重复规则 |
+|---|---|---|
+| A | heading_deg | 三行相同（继承共享 heading） |
+| B | speed_mps | 三行相同（继承共享 speed） |
+| C | 1, 2, 3 | 顺序炸弹编号 |
+| D-F | release_point i xyz | 逐弹独立 |
+| G-I | detonation_point i xyz | 逐弹独立 |
+| J | bomb i own total_duration_s | 逐弹自身 duration，**不是 union** |
+
+### 4. Heading conversion（[约定]）
+
+- `heading_rad ∈ [0, 2π)` → `heading_deg = degrees(heading_rad) % 360`,
+  保证 `0 ≤ heading_deg < 360`。
+- 继承 FACTS.md §13.4 [官]：+x = 0°，逆时针为正，范围 0~360°。
+- 三行 A 列写入相同 heading_deg 值；不做四舍五入（保留浮点精度，仅做模 360）。
+- 测试覆盖：heading_rad = 0, π/2, π, 3π/2, 2π, 2π+0.001,
+  -0.001, 6.2831853 都应输出合法 [0, 360) 度数。
+
+### 5. J 列逐弹 duration 约定（[约定]）
+
+- J 列 = bomb i own `total_duration_s`（来自 `SingleBombEvaluation.total_duration_s`）。
+- 三弹 union 总时长 4.478218820691105 **不**写入 J 列。
+- 仅写入 `q3_result1_artifact_summary.json` 的 `union_total_union_duration_s` 字段、
+  `RESULTS.md` 与 PR body。
+- 写入顺序：C=1 对应 bomb 1 的 total_duration_s；C=2 对应 bomb 2 的；
+  C=3 对应 bomb 3 的。
+
+### 6. Canonical reconstruction gate（1 次真实 Q3 调用）
+
+- 输入：冻结的 8 维 candidate。
+- 调用：`src/q3_three_bombs.evaluate_three_bomb_strategy(candidate,
+  sample_level="fine", scan_step=0.005)`（exactly 1 次）。
+- 期望 `total_union_duration_s ≈ 4.478204178810118` (P3 canonical reconstruction reference).
+- 验收：`abs(reconstructed - 4.478204178810118) <= 1e-12`.
+- 不通过 → BLOCKED, exit 2；不写入 `outputs/submission/result1.xlsx`；不冒充
+  RESULT1.XLSX GENERATED。
+- 预算：max_expensive_evaluations = 1；max_run_wall_clock_seconds = 300；
+  max_test_wall_clock_seconds = 300。任一上限达到 → BLOCKED。
+
+#### Profile provenance（重要区分）
+
+- P3 canonical reconstruction (fine / 0.005) → **4.478204178810118 s**
+  (the P3 reconstruction reference / result1.xlsx 填写用的几何)
+- P2C closure selection score (coarse / 0.05) → **4.478218820691105 s**
+  (P2C 历史证据, 不是 P3 高精度重建参考)
+- 绝对差 (fine vs coarse): **1.4641880987653622e-05 s** (10^-5 量级)
+- 不混用: 不得把 fine / 0.005 结果与 coarse / 0.05 reference 做 1e-12 比较,
+  也不得放宽 tolerance 到 2e-5. 两个数值各自保留, profile 来源明确.
+
+### 7. Template preservation contract
+
+下列任一改变 → FAIL：
+
+- workbook sheet names（含 case）
+- active sheet
+- sheet dimensions
+- merged-cell ranges
+- freeze panes
+- header row values（10 个 canonical header）
+- annotation / footer text
+- row heights
+- column widths
+- non-data cell values / formulas / style_id
+- number formats
+- print settings（当可读时）
+
+模板 fingerprint 必须在 in-memory edit 前后 / save → reopen 后均一致。
+
+### 8. 所有单元格类型合同
+
+- 全部 A:J 数据 cell 必须为数值类型（`int` / `float`）。
+- **不得**写带单位字符串（如 `"120 m/s"`），不得写公式（`=...`），不得写
+  JSON 字符串，不得写 `NaN` / `Inf` / `None`。
+- 非数值 cell 写入 → BLOCKED, exit 2。
+- 数据 cell 类型检查：`isinstance(cell.value, (int, float)) and
+  math.isfinite(cell.value)`。
+
+### 9. Round-trip 核验
+
+- save → 关闭 workbook → 从磁盘重新打开（`load_workbook(output_path)`）→
+  逐格读取三行 A:J。
+- 数值比较：abs_tol = 1e-10；rel_tol = 1e-12。
+- 模板 fingerprint 二次核验（同 §7）。
+- 任意不通过 → FAIL, exit 2；不得伪造 PASS。
+
+### 10. Resume identity (7 字段, checkpoint_schema_version=5)
+
+- 路径：`work/q3_result1/checkpoint.json`。
+- 7 字段（任一 mismatch → BLOCKED, exit 2）：
+  1. `execution_head_sha` — 当前 commit HEAD
+  2. `contract_snapshot_sha256` — `work/task_contracts/TASK_006-P3-v5.json` 的 SHA-256
+  3. `q2_single_bomb_code_sha256` — `src/q2_single_bomb.py` 的 SHA-256
+  4. `q3_three_bombs_code_sha256` — `src/q3_three_bombs.py` 的 SHA-256
+  5. `result1_builder_code_sha256` — `scripts/build_result1.py` 的 SHA-256
+  6. `canonical_candidate_sha256` — 冻结 8 维 candidate 的 SHA-256
+  7. `official_template_sha256` — `题目及模板/..._结果模板.zip` 整文件字节的 SHA-256
+     （legacy 字段；P3 closeout 新增 `official_template_member_sha256` 给出
+     `result1.xlsx` member 字节的 SHA-256；新增 `official_template_zip_sha256` 给出
+     ZIP 整文件字节的 SHA-256。两个新字段的语义在
+     `outputs/q3/q3_result1_artifact_summary.json` `identity_provenance_closeout`
+     块中明确说明, 不替换 legacy 字段。）
+- atomic write：temp + flush + fsync + os.replace。
+- corrupt / load error → `status = CHECKPOINT_LOAD_ERROR`, exit 2。
+- identity mismatch → `status = RESUME_IDENTITY_MISMATCH`, exit 2。
+
+### 11. Artifact summary JSON schema
+
+`outputs/q3/q3_result1_artifact_summary.json` 至少含：
+
+- `phase_id = "TASK_006-P3"`
+- `contract_version = 5`
+- `result_level.declared_level = "BUDGET_LIMITED_BEST_KNOWN"` + `result1_xlsx_generated`
+- `identity`: 7 字段 SHA + `result1_run_identity_sha256`
+- `canonical_candidate`: 8 维 frozen candidate
+- `canonical_reconstruction`: 1 call 的真实输出（含 bomb_evaluations, union_intervals,
+  total_union_duration_s, sample_level=fine, scan_step=0.005, q3_evaluation_id,
+  elapsed_s, single_bomb_evaluator_calls=3）
+- `reconstruction_gate`: abs(reconstructed - reference) ≤ 1e-12 ✓
+- `workbook`: official_template_sha256, output_path, output_sha256,
+  template_member_basename, sheet_names, active_sheet, header_names,
+  column_mapping, three_rows_written, all_cells_numeric, union_duration_written_to_j
+  (必须为 false), round_trip_status
+- `template_fingerprint`: 保存前后 + save→reopen 后均一致的所有非数据 cell 元数据
+- `status`: result1_xlsx_generated / template_mismatch / round_trip_fail /
+  checkpoint_load_error / resume_identity_mismatch
+- `output_path`: `outputs/submission/result1.xlsx`
+
+### 12. 测试（≥ 22 新增，0 real Q3 evaluation in tests）
+
+`tests/test_q3.py` 新增至少 22 个 result1 模块测试（全部用 FakeEvaluator 或
+temporary workbook，**不**调用真实 Q3 evaluator）：
+
+1. heading rad → degree（含 wrap-around / 负值 / 2π+ 等）
+2. header detection（10 列 contiguous + canonical 顺序）
+3. 缺失 header blocked
+4. 重复 header blocked
+5. workbook creation（from ZIP, read-only）
+6. 三行严格 3 行（C=1, 2, 3）
+7. C 列 bomb index 顺序 [1, 2, 3]
+8. A / B 列三行相同
+9. D-F 与 release_points 对应
+10. G-I 与 detonation_points 对应
+11. J 列 per-bomb duration（非 union）
+12. union NOT written into J cells（写入 4.47821… 必须 BLOCKED）
+13. NaN / Inf 写入 BLOCKED
+14. 字符串 / 公式 / JSON 写入 BLOCKED
+15. structural fingerprint preserved（headers, freeze panes, merged cells, etc.）
+16. non-data formula preserved
+17. styles preserved
+18. round-trip read（save → reopen → verify 全部 10×3 cell）
+19. official template unchanged（SHA-256 不变）
+20. output SHA-256 recorded
+21. summary JSON round-trip（artifact summary 可读回 / 字段完整）
+22. reconstruction mismatch fail-closed（mock evaluator 输出 4.4782189 → fail）
+
+### 13. CLI 与退出码
+
+- 默认 `python -m scripts.build_result1` 执行 P3 流程：
+  1. 验证 7 字段 resume identity（start from clean HEAD）；
+  2. 从官方 ZIP 加载 result1.xlsx 到内存；
+  3. 验证 10 列 contiguous + 3 行；
+  4. 调用 `evaluate_three_bomb_strategy(candidate, sample_level="fine",
+     scan_step=0.005)` 一次；
+  5. 验证 reconstruction gate（abs diff ≤ 1e-12）；
+  6. 写入 A:J 三行；
+  7. 保存到 `outputs/submission/result1.xlsx`；
+  8. 关闭并重新打开，round-trip 核验；
+  9. 写 `q3_result1_artifact_summary.json`。
+- `--dry-run`：跳过步骤 4-7，仅做结构识别与 resume identity 校验。
+- 退出码：0 PASS；1 system_error；2 arg / identity mismatch / reconstruction
+  gate fail / round-trip fail / template fingerprint mismatch。
+
+### 14. 局限
+
+- 不重跑 Pilot / P2 / P2C；冻结的 8 维 candidate 是 P3 唯一输入。
+- 一次 fine / 0.005 重建是 deterministic re-evaluation，**不是**新的搜索、
+  **不是** challenger、**不是** refinement。
+- shared heading / speed / interval union 来自 P2C 合同，不在本阶段改写。
+- 不声称 Q3 全局最优 / VERIFIED / FINAL / 官方答案 / 解析极值；
+  **不**声称 local convergence。
+- 等级仅 BUDGET_LIMITED_BEST_KNOWN；Final Audit + Hermes 签字后才能升
+  VERIFIED 或进一步生成 result2.xlsx / result3.xlsx / 启动 Q4 / Q5。
+- 模板 fingerprint 校验保证官方模板未被破坏，但**不**验证模板本身的数学正确性。
+- 不引入 openpyxl 之外的新依赖；仅 openpyxl + zipfile + stdlib。

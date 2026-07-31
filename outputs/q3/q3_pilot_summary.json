@@ -1,0 +1,188 @@
+{
+  "best_pilot_candidate": {
+    "candidate": {
+      "delay_1_s": 3.7238593454001645,
+      "delay_2_s": 3.7378011061070766,
+      "delay_3_s": 3.637016476748259,
+      "heading_rad": 3.129077304371891,
+      "release_time_1_s": 1.2583116888277712,
+      "release_time_2_s": 2.2592064941885104,
+      "release_time_3_s": 5.205790545673161,
+      "speed_mps": 116.7252038036431
+    },
+    "detonation_points": [
+      [17218.50061489501, 7.2780478750537485, 1732.0510707208118],
+      [17100.05288696753, 8.760539957813025, 1731.541330166805],
+      [16767.90238415872, 12.91773654836358, 1735.1833446245223]
+    ],
+    "evaluation_id": "f98d28e99c3901be135a9d2a25b93849ad19e7391a10846431ca6138f51478ff",
+    "per_bomb_duration_s": [3.7881687521934495, 0, 0],
+    "per_bomb_intervals": [
+      [[5.551472308646765, 9.339641060840215]],
+      [],
+      []
+    ],
+    "physical_validity": "ok",
+    "release_points": [
+      [17653.13481446203, 1.838165058989677, 1800.0],
+      [17536.31431394659, 3.300290759063504, 1800.0],
+      [17192.40062605289, 7.604715405917969, 1800.0]
+    ],
+    "sample_level": "coarse",
+    "scan_step": 0.05,
+    "total_union_duration_s": 3.7881687521934495,
+    "union_intervals": [[5.551472308646765, 9.339641060840215]]
+  },
+  "budget_recommendation": {
+    "recommendation_status": "MAIN_DECISION_REQUIRED",
+    "reason": "pilot timing available; MAIN decides between efficient and conservative scenarios",
+    "efficient_scenario": {
+      "coarse_evaluations": 480,
+      "medium_evaluations": 8,
+      "fine_evaluations": 4,
+      "total_q3_evaluations": 492,
+      "p90_raw_seconds": 486.9116268050852,
+      "safety_factor": 1.5,
+      "recommended_wall_clock_seconds": 730
+    },
+    "conservative_scenario": {
+      "coarse_evaluations": 480,
+      "medium_evaluations": 24,
+      "fine_evaluations": 8,
+      "total_q3_evaluations": 512,
+      "p90_raw_seconds": 742.5675736050848,
+      "safety_factor": 1.5,
+      "recommended_wall_clock_seconds": 1114
+    },
+    "recommended_refinement_evaluations": null,
+    "recommended_verification_q3_calls": null,
+    "calculation_basis": "stage-weighted: sum(profile_count * profile_p90) * safety. coarse_p90=0.5750075000s (count=82), medium_p90=5.5934900000s (count=8), fine_p90=41.5400267000s (count=4); pilot completed 94 evals; safety_factor=1.5",
+    "safety_factor": 1.5
+  },
+  "contract": {
+    "phase_id": "TASK_006-P0P1-CLOSURE",
+    "contract_version": 2,
+    "previous_phase_id": "TASK_006-P0P1",
+    "previous_contract_version": 1,
+    "previous_contract_snapshot_path": "work/task_contracts/TASK_006-P0P1-v1.json",
+    "target_acceptance_level": "EXPERIMENTAL",
+    "pilot_evaluation_cap": 96,
+    "pilot_wall_clock_seconds": 900,
+    "result_claim": "EXPERIMENTAL Q3 PILOT / NOT A FORMAL Q3 RESULT / RESULT1.XLSX NOT GENERATED / LOCAL CONVERGENCE NOT ESTABLISHED / NOT A PROVEN GLOBAL OPTIMUM"
+  },
+  "counts": {
+    "accepted_candidates": 94,
+    "attempted_candidates": 94,
+    "q3_candidate_evaluations": 94,
+    "rejected_candidates": 0,
+    "single_bomb_evaluator_calls": 282,
+    "system_error_count": 0,
+    "unique_q3_evaluation_ids": 86
+  },
+  "evidence_corrections": {
+    "original_pilot_execution_head": "4d442a7a16127ca0166d1114656b5fe4d5546b4d",
+    "original_evidence_commit": "59999f9aba063e90d8428f5f783d8cc4abf10d62",
+    "pilot_rerun_performed": false,
+    "targeted_reconstruction_q3_calls": 1,
+    "corrected_fields": [
+      "stage_counts",
+      "best_pilot_candidate.per_bomb_intervals",
+      "budget_recommendation",
+      "resume_identity.schedule_sha256",
+      "validate_candidate.heading_rad_strict_range"
+    ],
+    "corrected_stage_counts": {
+      "calibration": 6,
+      "coarse_exploration": 80,
+      "medium_recheck": 6,
+      "fine_spotcheck": 2,
+      "total": 94
+    },
+    "note": "Original 94-evaluation Pilot run (commit 59999f9a) was NOT rerun. Closure v2 only (a) recomputes stage_counts correctly (6/80/6/2), (b) re-serializes per_bomb_intervals as exactly 3 lists, (c) recomputes budget_recommendation with stage-weighted formula, (d) tightens resume identity with schedule_sha256 + fail-closed behavior, (e) enforces heading_rad raw [0, 2π) range. 1 targeted reconstruction Q3 call (coarse profile, scan_step=0.05) confirms reproducibility of duration 3.788169s = original 3.788169s (f98d28e9...)."
+  },
+  "identity": {
+    "base_sha": "007b93d301db73c9a73904337de34d1b4e13467e",
+    "candidate_schema_version": 1,
+    "checkpoint_path": "work/q3_pilot/checkpoint.json",
+    "contract_snapshot_path": "work/task_contracts/TASK_006-P0P1-v2.json",
+    "contract_snapshot_sha256": "bd55cde375cb740886ec5d06d5235b6c3894d135f2188c4025cf85aaa9e54989",
+    "execution_head_sha": "4d442a7a16127ca0166d1114656b5fe4d5546b4d",
+    "pilot_config_sha256": "c1fdd149097ec9647a9a1740d8f6955d7f5903a312284c22dc202a83c4c950c6",
+    "q2_single_bomb_code_sha256": "b3ee61216a996404e76d4fc361d0adfe84cd5c76847746062e01a3acda7dd75a",
+    "checkpoint_schema_version": 2,
+    "schedule_sha256": "c9a937d145a93051d323cd325db144367f9ceae7bda0c24ee01dae8b6da1a047",
+    "targeted_reconstruction_q3_id": "f98d28e99c3901be135a9d2a25b93849ad19e7391a10846431ca6138f51478ff",
+    "targeted_reconstruction_q3_call_count": 1,
+    "targeted_reconstruction_wall_clock_seconds": 0.5362902999622747
+  },
+  "result_level": {
+    "declared_level": "EXPERIMENTAL",
+    "local_convergence_established": false,
+    "not_a_formal_q3_result": true,
+    "not_a_proven_global_optimum": true,
+    "result1_xlsx_generated": false
+  },
+  "stage_counts": {
+    "calibration": 6,
+    "coarse_exploration": 80,
+    "medium_recheck": 6,
+    "fine_spotcheck": 2,
+    "total": 94
+  },
+  "status": {
+    "code_test_failed": false,
+    "evaluation_budget_exhausted": false,
+    "pilot_complete": true,
+    "raw_status": "pilot_complete",
+    "resume_identity_mismatch": false,
+    "checkpoint_load_error": false,
+    "run_system_error": false,
+    "wall_clock_gate_hit": false
+  },
+  "timing": {
+    "median_q3_evaluation_seconds_by_profile": {
+      "coarse": 0.52273685002001,
+      "fine": 41.287226750020636,
+      "medium": 5.360435600014171
+    },
+    "median_single_bomb_seconds_by_profile": {
+      "coarse": 0.17424561667333666,
+      "fine": 13.762408916673547,
+      "medium": 1.7868118666713904
+    },
+    "p90_q3_evaluation_seconds_by_profile": {
+      "coarse": 0.5750075000105426,
+      "fine": 41.54002670000773,
+      "medium": 5.593489999999292
+    },
+    "p90_single_bomb_seconds_by_profile": {
+      "coarse": 0.19166916667018086,
+      "fine": 13.846675566669242,
+      "medium": 1.8644966666664307
+    },
+    "per_profile": {
+      "coarse": {
+        "count": 82,
+        "median_q3_evaluation_seconds": 0.52273685002001,
+        "median_single_bomb_seconds": 0.17424561667333666,
+        "p90_q3_evaluation_seconds": 0.5750075000105426,
+        "p90_single_bomb_seconds": 0.19166916667018086
+      },
+      "fine": {
+        "count": 4,
+        "median_q3_evaluation_seconds": 41.287226750020636,
+        "median_single_bomb_seconds": 13.762408916673547,
+        "p90_q3_evaluation_seconds": 41.54002670000773,
+        "p90_single_bomb_seconds": 13.846675566669242
+      },
+      "medium": {
+        "count": 8,
+        "median_q3_evaluation_seconds": 5.360435600014171,
+        "median_single_bomb_seconds": 1.7868118666713904,
+        "p90_q3_evaluation_seconds": 5.593489999999292,
+        "p90_single_bomb_seconds": 1.8644966666664307
+      }
+    },
+    "total_wall_clock_seconds": 243.1241612000158
+  }
+}

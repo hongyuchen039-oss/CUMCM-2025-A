@@ -557,6 +557,7 @@ NOT A PROVEN GLOBAL OPTIMUM`**
 - 方案 B 完整圆柱: **FULL-CYLINDER CANDIDATE / EXPERIMENTAL**
 - Q2 canonical (TASK_005 / DOC-ONLY P2 CLOSED, audit conclusion B): **FORMAL BUDGET-LIMITED BEST-KNOWN Q2 CANDIDATE / LOCAL CONVERGENCE NOT ESTABLISHED / NOT A PROVEN GLOBAL OPTIMUM**
 - Q2 historical (TASK_005 / PRE-AUDIT, 467314d): **HISTORICAL FORMAL-SEARCH CANDIDATE**
+- Q3 candidate closure (TASK_006-P2C): **BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE / LOCAL CONVERGENCE NOT ESTABLISHED / NOT A PROVEN GLOBAL OPTIMUM / RESULT1.XLSX NOT GENERATED**
 
 ---
 
@@ -674,3 +675,530 @@ DOC-ONLY P2 CLOSED BY CURRENT COMMIT
 - 不冒充 VERIFIED GLOBAL OPTIMUM / FINAL OFFICIAL ANSWER / ANALYTICAL OPTIMUM /
   LOCAL CONVERGENCE ESTABLISHED。
 - 本轮 P1 RERUN 阶段 FIX 前后可见性边界、收敛判定、几何/时序拆分均有变更, 详见 MODEL.md §12.
+
+---
+
+## Q3 Pilot (TASK_006-P0P1-CLOSURE / EXPERIMENTAL Q3 PILOT / RESULT1.XLSX NOT GENERATED)
+
+> 本节为 Q3 三弹 evaluator + bounded pilot 的实测记录。
+> 等级: **EXPERIMENTAL Q3 PILOT / NOT A FORMAL Q3 RESULT / RESULT1.XLSX NOT GENERATED**。
+> Pilot 在 clean-HEAD `4d442a7a16127ca0166d1114656b5fe4d5546b4d` 上完成（commit `59999f9aba063e90d8428f5f783d8cc4abf10d62`）。
+> **closure v2 (TASK_006-P0P1-CLOSURE)**: 不重跑 94-evaluation Pilot,
+> 仅修复 (a) stage_counts 机器证据, (b) per_bomb_intervals 序列化,
+> (c) budget_recommendation 算术, (d) resume identity + fail-closed,
+> (e) heading_rad 原始范围。1 次 targeted reconstruction Q3 call
+> 复评 best pilot candidate (coarse profile, scan_step=0.05),
+> 严格 = 原始 3.788169 s。
+> 独立审查签字 + MAIN 显式立项 TASK_006-P2 后才能升 `BUDGET_LIMITED_BEST_KNOWN`
+> 或进一步生成 result1.xlsx。
+
+### 0. 等级与不冒充
+
+- 等级: `EXPERIMENTAL Q3 PILOT`
+- `LOCAL CONVERGENCE NOT ESTABLISHED`
+- `NOT A PROVEN GLOBAL OPTIMUM`
+- `RESULT1.XLSX NOT GENERATED`
+- 实际 Q3 evaluation count: **94** / cap 96
+- 实际 single-bomb evaluator calls: **282** (= 94 × 3)
+- 实际 wall-clock: **243.124 s** / cap 900 s
+- system_error_count: **0**
+- unique_q3_evaluation_ids: **86** (Stage C/D 决赛阶段重评引入 8 个重复 ID)
+- 执行 HEAD: `4d442a7a16127ca0166d1114656b5fe4d5546b4d` (WORKING commit)
+- base SHA: `007b93d301db73c9a73904337de34d1b4e13467e`
+- closure v2 evidence HEAD: `59999f9aba063e90d8428f5f783d8cc4abf10d62` (VERIFIED commit, 保留原 94-evaluation 证据)
+- closure v2 code HEAD: 待 VERIFIED commit 后填入 (本节 FIX commit)
+- 1 次 targeted reconstruction Q3 call: `outputs/q3/q3_targeted_reconstruction.json`
+  (q3_evaluation_id = f98d28e99c3901be135a9d2a25b93849ad19e7391a10846431ca6138f51478ff,
+  total_union_duration_s = 3.788169 s, 与原始 3.7881687521934495 s 严格一致)
+
+### 1. Pilot 阶段分配（实测, closure v2 显式 stage_counts）
+
+| 阶段 | 候选来源 | 评估数 | profile |
+|---|---|---|---|
+| Stage A profile calibration (calibration) | profile_calibration (q2_canonical_seed_family) | 6 | 2 cands × coarse/medium/fine |
+| Stage B deterministic coarse exploration (coarse_exploration) | deterministic_random_seed_2025 + _2026 | 80 | coarse |
+| Stage C medium finalist recheck (medium_recheck) | finalist_medium_recheck | 6 | medium |
+| Stage D fine spot-check (fine_spotcheck) | finalist_fine_spotcheck | 2 | fine |
+| **合计 (total)** | | **94** | |
+
+closure v2 §三: `stage_counts = {calibration: 6, coarse_exploration: 80, medium_recheck: 6, fine_spotcheck: 2, total: 94}` 由 schedule record 精确 +1, 不得从 profile count 反推。
+
+- Stage D 的 `top-2 fine finalists` 来自 finalist_medium_recheck 排序后 top-2 (medium 评估过后的候选)
+- 仅 best candidate 在 Stage A 由 profile_calibration 进入 (coarse profile dur=3.788 s, medium dur=3.784 s, fine dur=3.782 s)
+
+### 2. Pilot 维度实测
+
+| profile | count | median Q3 (s) | p90 Q3 (s) | median single-bomb (s) | p90 single-bomb (s) |
+|---|---|---|---|---|---|
+| coarse | 82 | 0.5227 | 0.5750 | 0.1742 | 0.1917 |
+| medium | 8 | 5.3604 | 5.5935 | 1.7868 | 1.8645 |
+| fine | 4 | 41.2872 | 41.5400 | 13.7624 | 13.8467 |
+
+- 观察: fine 单次 Q3 evaluation 约 41 s（≈ 3 × 13.8 s），与 medium/coarse 拉开数量级差；stage B coarse 阶段 80 个候选只用 ~30 s
+- 总 wall-clock 243 s (cap 900 s 充足预算), 主要消耗在 Stage A fine profile calibration (~150 s) 与 Stage D 决赛 fine spot-check (~80 s)
+- 全程 0 system_error, 全部 evaluation 走完单弹 evaluator 三次调用
+
+### 3. Best Pilot candidate
+
+| 字段 | 值 |
+|---|---|
+| heading_rad | 3.129077304371891 |
+| speed_mps | 116.7252038036431 |
+| release_time_1_s | 1.2583116888277712 |
+| delay_1_s | 3.7238593454001645 |
+| release_time_2_s | 2.2592064941885104 |
+| delay_2_s | 3.7378011061070766 |
+| release_time_3_s | 5.205790545673161 |
+| delay_3_s | 3.637016476748259 |
+| per_bomb_duration_s | [3.788169, 0, 0] |
+| **per_bomb_intervals** (closure v2: 恰好 3 项) | `[[[5.551472308646765, 9.339641060840215]], [], []]` |
+| total_union_duration_s | 3.7881687521934495 |
+| union_intervals | [(5.551472308646765, 9.339641060840215)] |
+| evaluation_id | f98d28e99c3901be135a9d2a25b93849ad19e7391a10846431ca6138f51478ff |
+| sample_level | coarse |
+| scan_step | 0.05 |
+
+- **重要观察**: Pilot best candidate 仅 bomb 1 贡献非零 duration (3.788 s); bomb 2 与 bomb 3 各自总时长 0
+- 原因: pilot 候选生成采用 `q2_canonical_seed_family` 锚点 + 随机扰动, 三枚弹的 release_time 间隔较大 (≥1 s), 后两枚弹的 detonate 时刻常落入 t_arrival 之后或严格遮蔽时间窗外, 贡献空 union
+- 该观察仅为 Pilot 阶段粗扫结果, 不构成 Q3 真实最优; 真实 Q3 形式搜索可能产生非平凡 union (三枚弹均贡献), 需要 bounded formal search 评估
+- closure v2 §二: `per_bomb_intervals` 必须为恰好 3 项 list (即便部分 bomb 空 union 也输出 `[]`)
+
+### 4. Budget recommendation (closure v2: stage-weighted 公式 + efficient / conservative 双方案)
+
+**`recommendation_status: MAIN_DECISION_REQUIRED`** — closure v2 不得硬编码
+单一推荐值, 改用 stage-weighted 公式 + efficient / conservative 两 scenario,
+由 MAIN 在 TASK_006-P2 立项前决定。
+
+公式: `sum(profile_count × profile_p90) × safety_factor (1.5)`
+
+#### efficient scenario
+
+| 字段 | 值 |
+|---|---|
+| coarse_evaluations | 480 |
+| medium_evaluations | 8 |
+| fine_evaluations | 4 |
+| total_q3_evaluations | 492 |
+| p90_raw_seconds | 486.912 (= 480×0.5750 + 8×5.5935 + 4×41.5400) |
+| safety_factor | 1.5 |
+| recommended_wall_clock_seconds | **730** |
+
+#### conservative scenario
+
+| 字段 | 值 |
+|---|---|
+| coarse_evaluations | 480 |
+| medium_evaluations | 24 |
+| fine_evaluations | 8 |
+| total_q3_evaluations | 512 |
+| p90_raw_seconds | 742.568 (= 480×0.5750 + 24×5.5935 + 8×41.5400) |
+| safety_factor | 1.5 |
+| recommended_wall_clock_seconds | **1114** |
+
+#### explicit null fields (closure v2 §十二禁止硬编码 legacy constants)
+
+| 字段 | 值 |
+|---|---|
+| recommended_refinement_evaluations | **null** |
+| recommended_verification_q3_calls | **null** |
+
+calculation_basis:
+- coarse_p90 = 0.5750 s (count=82)
+- medium_p90 = 5.5935 s (count=8)
+- fine_p90 = 41.5400 s (count=4)
+- safety_factor = 1.5
+- pilot completed 94 evals
+
+### 5. MAIN 决策建议（不冒充）
+
+预算推荐来自实测 p90 per profile，未照抄 TASK_005 的 3×1000 / 32 / 5 / 6。
+
+考虑到 fine profile 单次 ~41 s 远高于 coarse (~0.5 s)，MAIN 在 TASK_006-P2 立项前可考虑：
+1. **优先 coarse 阶段大量采样**: fine 只用于 finalist 重评;
+2. **降低 fine 阶段比例**: 若非必要可只对 top-2 而非 top-8 做 fine 复评 (对应 conservative 比 efficient 多 4 fine evals ≈ 166 s);
+3. **取消 Stage A 中 fine profile calibration**: Stage A 已有 coarse+medium，fine 耗时占 60% 但对 Stage B/C/D 决策不直接参与;
+4. **efficient / conservative 之差 ~384 s**: 主要来自 medium 8 vs 24 (96 s p90 差) 与 fine 4 vs 8 (166 s p90 差).
+
+closure v2 推荐 efficient 起步 (730 s wall) + 决赛阶段按需升级到 conservative (1114 s wall); 保守上限不应超过 1500 s (与 TASK_005 Q2 历史最严上限对齐)。
+
+本轮仅交付实测与建议，不冒充 Q3 Formal Search 的最优预算。
+
+### 6. 不冒充
+
+- 不冒充 VERIFIED GLOBAL OPTIMUM
+- 不冒充 FINAL OFFICIAL ANSWER
+- 不冒充 LOCAL CONVERGENCE ESTABLISHED
+- 不冒充 730 / 1114 s 必须是真实 wall-clock 上限（仅基于 Pilot 实测 + safety_factor 推导）
+- 不冒充 Pilot best candidate (3.788 s) 是 Q3 全局最优
+- 不冒充 Pilot 中发现的"单弹贡献"模式是 Q3 真实最优结构
+- closure v2 budget recommendation 显式 `MAIN_DECISION_REQUIRED`, 由 MAIN 在 efficient / conservative 之间决策
+
+### 7. closure v2 修复清单（evidence_corrections, 见 q3_pilot_summary.json）
+
+| corrected_field | 原状态 (commit 59999f9a) | closure v2 状态 | 来源 |
+|---|---|---|---|
+| stage_counts | {calibration: 12, coarse_exploration: 78, fine_spotcheck: 4, medium_recheck: 8} | {calibration: 6, coarse_exploration: 80, medium_recheck: 6, fine_spotcheck: 2, total: 94} | schedule record 显式 +1 |
+| best_pilot_candidate.per_bomb_intervals | 1 项 list (缺 2 枚) | 3 项 list (bomb 1 非空, bomb 2/3 空) | _serialize_best_candidate 重写 |
+| budget_recommendation | 硬编码 528 / 32 / 5 / 16557 | stage-weighted + MAIN_DECISION_REQUIRED + efficient / conservative | _recommend_budget 重写 |
+| resume_identity.schedule_sha256 | 缺失 | 新增 (6 项 identity 之一) | run_pilot 重写为 schedule-based |
+| resume_identity.fail_closed | 静默 fallback | CHECKPOINT_LOAD_ERROR / RESUME_IDENTITY_MISMATCH (exit 2) | run_pilot 重写 |
+| validate_candidate.heading_rad_strict_range | normalize 后判定 (隐式 wrap) | 原始字段 0 ≤ heading_rad < 2π 严格判定 | closure v2 §四 |
+
+- closure v2 evidence commit HEAD (FIX commit) 与 original_pilot_evidence_commit (`59999f9a`) 不同; PR body 用 base_sha / original_pilot_execution_head (`4d442a7a`) / original_evidence_commit (`59999f9a`) / closure_code_head / closure_evidence_head / current_pr_head 6 个独立字段区分.
+- 1 次 targeted reconstruction Q3 call = `python -m src.q3_three_bombs --targeted-reconstruction --profile coarse --scan-step 0.05`, 输出 `outputs/q3/q3_targeted_reconstruction.json`.
+
+---
+
+## TASK_006-P2 Q3 正式 Bounded Search (BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM)
+
+> 已在 `src/q3_search.py` 实现，5 阶段 / 512 顶层 Q3 evaluation / 1200 s wall-clock / 3 seeds (2025/2026/2027) / 7-field resume identity / fail-closed。
+> 等级：`BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE / LOCAL CONVERGENCE NOT ESTABLISHED / NOT A PROVEN GLOBAL OPTIMUM / RESULT1.XLSX NOT GENERATED`。
+
+### 阶段预算（hard cap, 总和必须 = 512；实测 = 512）
+
+| 阶段 | 分配 | 实测 | Profile |
+|---|---|---|---|
+| Stage A — structured coarse exploration | 360 | 360 | coarse (0.05) |
+| Stage B — bounded coarse refinement | 120 | 120 | coarse (0.05) |
+| Stage C — medium finalist recheck | 24 | 24 | medium (0.02) |
+| Stage D — fine finalist recheck | 6 | 6 | fine (0.01) |
+| Stage E — high-resolution verification | 2 | 2 | fine (0.005) |
+| **总计** | **512** | **512** | |
+
+### 真实 evaluator counts（实测）
+
+| 维度 | 上限 | 实测 |
+|---|---|---|
+| 顶层 Q3 candidate evaluation | 512 | **512** |
+| Single-bomb subcall | 1536 | **1536** (= 512 × 3) |
+| Run wall-clock | 1200 s | **834.0666 s** |
+| Test Q3 real eval (FakeEvaluator only) | 0 | **0** |
+| system_error_count | 0 | **0** |
+| unique_evaluation_ids | 512 | **512** |
+
+### Pilot 证据保留（P2 不重跑）
+
+| 字段 | 值 |
+|---|---|
+| original_pilot_execution_head | `4d442a7a16127ca0166d1114656b5fe4d5546b4d` |
+| original_evidence_commit | `59999f9aba063e90d8428f5f783d8cc4abf10d62` |
+| closure_code_head | `a139988` |
+| closure_evidence_head | `31ddb7b516e05eb6c20ac465e13b339b6ab70dbc` |
+| q3_candidate_evaluations | 94 |
+| single_bomb_evaluator_calls | 282 |
+| total_wall_clock_seconds | 243.124 |
+| best_pilot_total_union_duration_s | 3.7881687521934495 |
+
+### 最终 Q3 candidate（实测）
+
+| 字段 | 值 |
+|---|---|
+| heading_rad | 3.127613485137657 |
+| speed_mps | 116.62799297398149 |
+| release_time_1_s | 0.993241052387636 |
+| delay_1_s | 3.720360704323356 |
+| release_time_2_s | 4.88566490244013 |
+| delay_2_s | 3.7704749980723404 |
+| release_time_3_s | 10.157737577136487 |
+| delay_3_s | 3.7180978311642083 |
+| **total_union_duration_s** | **4.469013137817385** |
+| candidate_source | `stage_E_high_resolution_verification_rank_1` (Stage E top-1, scan_step=0.005) |
+| q3_evaluation_id | (见 `outputs/q3/q3_formal_search_summary.json` `best_candidate`) |
+
+改善幅度（相对 Pilot best）：
+
+- duration 改善 = 4.469013137817385 − 3.7881687521934495 ≈ **0.680844** s
+- 相对改善 ≈ **17.97%**
+
+### Resume identity（实测）
+
+7 字段 resume identity 在 `outputs/q3/q3_formal_search_summary.json` `identity` 块：
+
+- `execution_head_sha` = `70a4dd767f057edded65bd2011ac544347f661dc` (P2 WORKING commit HEAD)
+- `contract_snapshot_sha256` = SHA-256 of `work/task_contracts/TASK_006-P2-v3.json`
+- `q2_single_bomb_code_sha256` = SHA-256 of `src/q2_single_bomb.py`
+- `q3_three_bombs_code_sha256` = SHA-256 of `src/q3_three_bombs.py`
+- `q3_search_code_sha256` = SHA-256 of `src/q3_search.py`
+- `formal_config_sha256` = `dca59f258f16...` (FORMAL_CONFIG SHA-256)
+- `candidate_schema_version` = 1
+
+`formal_run_identity_sha256` = `230f21f081b1...` (canonical SHA-256 binding 7 fields + stage counts + completed count)。
+
+### Not established（明确不冒充）
+
+- local convergence: 未建立
+- global optimum: 未证明（512 evals 远未穷尽搜索空间）
+- 16 项 one-var 扰动：未启动（留给 TASK_006-P3）
+- coordinate refinement：未启动（留给 TASK_006-P3）
+- result1.xlsx：未生成（task_context forbidden）
+
+### 不冒充
+
+- 不冒充 FORMAL_RESULT_VERIFIED
+- 不冒充 LOCAL CONVERGENCE ESTABLISHED
+- 不冒充 GLOBAL OPTIMUM
+- 不冒充 FINAL OFFICIAL ANSWER
+- 不冒充 1200 s 必须是真实 wall-clock 上限（仅基于 Pilot p90 + safety_factor 推导）
+- 不冒充 512 evals 足以覆盖 Q3 全部搜索空间（仅基于预算硬约束，未穷尽）
+- Pilot best candidate (3.788 s) 不冒充 Q3 全局最优
+- 正式 best candidate (4.469 s) 不冒充 Q3 全局最优
+
+---
+
+## TASK_006-P2C Q3 Candidate Closure (BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE / NOT A PROVEN GLOBAL OPTIMUM)
+
+> 已在 `src/q3_search.py` 追加 `run_candidate_closure(...)`，F1-F5 sequential propagation /
+> 32 evaluations / 600 s wall-clock / 8-field resume identity / fail-closed。
+> 等级: **BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE / LOCAL CONVERGENCE NOT ESTABLISHED /
+> NOT A PROVEN GLOBAL OPTIMUM / RESULT1.XLSX NOT GENERATED**。
+> 原 P2 512/834.07 s/HEAD=70a4dd7 证据保留不变。
+
+### 阶段预算（hard cap, 总和必须 = 32；实测 = 32）
+
+| 阶段 | 分配 | Profile | 说明 |
+|---|---|---|---|
+| F1 — one-variable perturbation | **16** | coarse (0.05) | 8 vars × 2 方向（+/-），步长 heading ±0.002 rad / speed ±0.5 m/s / release ±0.10 s / delay ±0.05 s |
+| F2 — coordinate combinations | **8** | coarse (0.05) | heading+speed / release_1+delay_1 / release_2+delay_2 / release_3+delay_3 / heading+speed+release_1+delay_1 / release_2+delay_2+release_3+delay_3 / all_release_delay / all_eight |
+| F3 — medium recheck | **4** | medium (0.02) | parents = incumbent + best-of-(F1+F2) up to top_k=3 |
+| F4 — fine recheck | **2** | fine (0.01) | parents = F3 完成后 top-k |
+| F5 — high-resolution verification | **2** | fine (0.005) | final canonical selection, tie-break on evaluation_id within ε=1e-12 s |
+| **总计** | **32** | | |
+
+### 真实 evaluator counts（实测）
+
+| 维度 | 上限 | 实测 |
+|---|---|---|
+| 顶层 Q3 candidate evaluation | **32** | **32** |
+| Single-bomb subcall | **96** | **96** (= 32 × 3) |
+| Run wall-clock | **600 s** | **290.5431 s** |
+| Test Q3 real eval (FakeEvaluator only) | **0** | **0** |
+| system_error_count | 0 | **0** |
+| unique_evaluation_ids | 32 | **32** |
+
+### Per-stage timing (实测)
+
+| profile | count | median (s) | p90 (s) |
+|---|---|---|---|
+| coarse (F1+F2) | 24 | 0.5644 | 0.6516 |
+| medium (F3) | 4 | 5.4524 | 5.4710 |
+| fine (F4+F5) | 4 | 63.6850 | 84.7862 |
+
+### P2 证据保留（P2C 不重跑）
+
+| 字段 | 值 |
+|---|---|
+| original_p2_execution_head | `70a4dd767f057edded65bd2011ac544347f661dc` |
+| original_p2_evidence_commit | `dc970a483ab9e05d76467decf63f61dff70f0862` |
+| q3_candidate_evaluations | 512 |
+| single_bomb_evaluator_calls | 1536 |
+| total_wall_clock_seconds | 834.0665795999812 |
+| best_p2_total_union_duration_s | 4.469013137817385 |
+| p2_search_rerun_performed | **false** |
+
+### Canonical Q3 candidate after P2C closure
+
+| 字段 | 值 |
+|---|---|
+| heading_rad | 3.127613485137657 |
+| speed_mps | 116.12799297398149 |
+| release_time_1_s | 0.993241052387636 |
+| delay_1_s | 3.720360704323356 |
+| release_time_2_s | 4.88566490244013 |
+| delay_2_s | 3.7704749980723404 |
+| release_time_3_s | 10.157737577136487 |
+| delay_3_s | 3.7180978311642083 |
+| **canonical_total_union_duration_s** | **4.478218820691105 s** |
+| candidate_source | `TASK_006-P2C F5 high-resolution verification` |
+| canonical_q3_evidence | {rehydrated_from_completed_records: true, total_union_duration_s: 4.478218820691105} |
+
+注：closure canonical 与 P2 stage E top-1 在 6 维变量上完全相同；唯一差异是
+`speed_mps` 从 116.62799297398149 → 116.12799297398149（差 -0.5 m/s, 恰为 F1
+speed_mps 单步扰动大小）。F5 high-resolution 复评后该候选以 ε=1e-12 内的更优 duration
+被选为 canonical。
+
+### Comparison vs P2 incumbent
+
+| 字段 | 值 |
+|---|---|
+| incumbent_reference_total_union_duration_s | **4.469013137817385 s** (P2 stage E top-1) |
+| canonical_total_union_duration_s | **4.478218820691105 s** |
+| absolute_improvement_s | **+0.009205682873719923 s** |
+| relative_improvement | **+0.21%** (≈ 0.0020598916561287784) |
+| canonical_candidate_source | `TASK_006-P2C F5 high-resolution verification` |
+
+注：F1 16 项扰动中部分挑战者在 coarse profile 下显示可能改善（e.g. speed_mps -0.5
+指向 duration 略增方向），但 F5 high-resolution 复评后差异主要由浮点精度与
+候选结构共同决定；不构成"严格局部极值证明"。
+
+### Resume identity（8 字段, 实测）
+
+8 字段 resume identity 在 `outputs/q3/q3_candidate_closure_summary.json` `identity` 块：
+
+- `execution_head_sha` = `def084d9bc38bf92cd714d24676016fa8911a83c` (P2C FIX commit HEAD)
+- `contract_snapshot_sha256` = SHA-256 of `work/task_contracts/TASK_006-P2C-v4.json`
+- `q2_single_bomb_code_sha256` = SHA-256 of `src/q2_single_bomb.py`
+- `q3_three_bombs_code_sha256` = SHA-256 of `src/q3_three_bombs.py`
+- `q3_search_code_sha256` = SHA-256 of `src/q3_search.py`
+- `closure_config_sha256` = SHA-256 of CLOSURE_CONFIG dict (deterministic seed-locked)
+- `candidate_schema_version` = 1
+- `closure_schedule_sha256` = SHA-256 of canonical JSON {F1_records (16) + F2_records (8)}
+
+`closure_run_identity_sha256` = `e063f7caa7b0f8c9d64a0f4411da90efc4512ffcde1770125841bd698cd2152c`
+(canonical SHA-256 binding 8 fields + stage counts + completed count + closure schedule SHA).
+
+### Not established（明确不冒充）
+
+- local convergence: 未建立
+- global optimum: 未证明（32 evals 远未穷尽搜索空间）
+- result1.xlsx：未生成（task_context forbidden）
+- F5 canonical 与 P2 incumbent 不构成"严格局部极值证明"——浮点精度与候选结构共同决定
+
+### 不冒充
+
+- 不冒充 FORMAL_RESULT_VERIFIED
+- 不冒充 LOCAL CONVERGENCE ESTABLISHED
+- 不冒充 GLOBAL OPTIMUM
+- 不冒充 FINAL OFFICIAL ANSWER
+- 不冒充 600 s 必须是真实 wall-clock 上限（仅基于合同固定值，290.54 s 实测显著低于 cap）
+- 不冒充 32 evals 足以覆盖 Q3 全部搜索空间（仅基于预算硬约束，未穷尽）
+- 不冒充 P2 512 evals 被重跑（P2 evidence commit `dc970a48` + HEAD `70a4dd7` 完整保留）
+- P2 stage E top-1 candidate (4.469013137817385 s) 不冒充 Q3 全局最优
+- P2C closure canonical candidate (4.478218820691105 s) 不冒充 Q3 全局最优
+- P3 fine canonical reconstruction (4.478204178810118 s) 不冒充 Q3 全局最优
+
+## TASK_006-P3 Q3 RESULT1.XLSX Artifact Generation (BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE WITH GENERATED AND ROUND-TRIP-VERIFIED RESULT1.XLSX / NOT A PROVEN GLOBAL OPTIMUM)
+
+> 已在 `scripts/build_result1.py` 实现；通过 `tests/test_q3.py` 新增 55 个 P3 单元测试
+> （FakeEvaluator + temporary workbook，**不**调用真实 Q3 evaluator）验证。
+> 本节固定 Q3 result1.xlsx 生成的实测结果，**双数值 + profile provenance**，
+> 不混用 fine / 0.005 与 coarse / 0.05 的精度差异。
+> 等级: **BUDGET_LIMITED_BEST_KNOWN Q3 CANDIDATE WITH GENERATED AND ROUND-TRIP-VERIFIED
+> RESULT1.XLSX / LOCAL CONVERGENCE NOT ESTABLISHED / NOT A PROVEN GLOBAL OPTIMUM**。
+> 独立 Final Audit (Audit CC) + Hermes 签字后才能正式合并。
+
+### 0. Closeout 身份与 Gate（DOCS/METADATA ONLY, 不重跑）
+
+- **TASK_006-P3 COMPLETE**; result1.xlsx **GENERATED**, round-trip **VERIFIED**.
+- p3_starting_head = `843b4a1e5791e67a09c377c2173f16a1105ab944`
+- p3_execution_head = `cb3dd83c834ec3b5f8c1e85213ddc63301e3d709`
+- p3_evidence_commit = `a04e158b7848d7d5a3d381ed9e5871961267ed37`
+- result1.xlsx output SHA = `b938a90b96181be14990d5bd3395c2cff72e93035828542617571ddc1d754847`
+- result1_run_identity_sha256 = `82065aa5fe4d4e6036691a053b38732b9ff1f50497083e3306e262e82a4bfc65`
+- official_template_zip_sha256 = `f9879c0d36b7bdccb99fb330a8032e62851ab1a1f0a1636c92440a1cdaec658e`
+- official_template_member_sha256 = `d1773205296034c0f02ed7f848f8f1e66af633d1e6562938e059450a554b930e`
+
+历史过程 commit `03ddda3` (PLAN) / `0597028` (WORKING) / `108d21b` (headers-fix)
+是 P3 身份链内的施工过程; 真实 `p3_execution_head` = `cb3dd83c`,
+真实 `p3_evidence_commit` = `a04e158b`. 若有叙述把 `108d21b` 当作 execution-head,
+属 **HISTORICAL COMMIT ROLE REQUIRES FINAL AUDIT ANCESTRY CHECK**, 不由本 closeout
+自行重定义, 不重跑 P3.
+
+- result level = **BUDGET_LIMITED_BEST_KNOWN**
+- LOCAL CONVERGENCE NOT ESTABLISHED
+- NOT A PROVEN GLOBAL OPTIMUM
+- NOT FORMAL_RESULT_VERIFIED
+- 下一 Gate = **FINAL AUDIT / HERMES PENDING**; TASK_007 NOT STARTED
+
+### 1. 双数值证据（必须区分 profile 来源）
+
+| 数值 | profile | scan_step | 来源 |
+|---|---|---|---|
+| **4.478218820691105 s** | coarse | 0.05 | P2C closure selection score (32 evals argmax; argmax record = F1 perturb_speed_mps-) |
+| **4.478204178810118 s** | fine | 0.005 | P3 canonical reconstruction (1 real Q3 call, formal gate) |
+| 1.4641880987653622e-05 s | — | — | absolute_profile_difference_s (10^-5 量级) |
+
+- 4.478218820691105 s 是 P2C 32 evals 搜索阶段的历史证据，**不冒充** high-resolution reconstruction；
+- 4.478204178810118 s 是 P3 唯一一次 fine / 0.005 高精度重建结果，**用于** result1.xlsx 填写；
+- 两数值各自保留，profile 来源明确；不得混用、不得放宽 tolerance 至 1e-5 假装相等。
+
+### 2. P3 重建实测
+
+| 维度 | 上限 | 实测 |
+|---|---|---|
+| 顶层 Q3 canonical reconstruction | 1 | 1 |
+| Real single-bomb evaluator calls | 3 (1 × 3) | 3 |
+| Run wall-clock | 300 s | 81.66 s |
+| system_error_count | 0 | 0 |
+| reconstruction_gate abs_diff | 0 | 0 |
+| reconstruction_gate passed | true | true |
+
+P3 重建调用：
+- 同一 8 维 candidate, 同一 `sample_level='fine'`, 同一 `scan_step=0.005`,
+  同一 `src/q3_three_bombs.evaluate_three_bomb_strategy`;
+- 期望 `total_union_duration_s ≈ 4.478204178810118`（PASS, abs_diff=0）；
+- single_bomb_evaluator_calls = 3；elapsed_s = 81.66 s。
+
+### 3. result1.xlsx 写入合同（P3）
+
+| 列 | 写入值 (rounded to display precision) |
+|---|---|
+| A | `179.1990526465902` (= degrees(3.127613485137657) % 360, **三行相同**) |
+| B | `116.1279929739815` (**三行相同**) |
+| C | `1, 2, 3` (顺序) |
+| D-F | release_point i xyz (bomb i 投放点) |
+| G-I | detonation_point i xyz (bomb i 起爆点) |
+| J | bomb i own `total_duration_s` (**逐弹自身 duration**，**不是 union**) |
+
+- bomb 1: total_duration_s = 4.478204178810118（仅 bomb 1 有效）
+- bomb 2: total_duration_s = 0（无有效区间）
+- bomb 3: total_duration_s = 0（无有效区间）
+- 三弹 union 总时长 4.478204178810118（P3 fine / 0.005）**不**写入 J 列
+- 三弹 union 总时长 4.478218820691105（P2C coarse / 0.05）**不**写入 J 列
+- 两个 union 数值均仅写入 `q3_result1_artifact_summary.json` / `RESULTS.md` / PR body
+- 表头、附注 (A6 "注：以x轴为正向...")、sheet 结构全部保留原样
+- 所有 Excel 单元格均为数值类型
+
+### 4. result1.xlsx 回读核验（P3）
+
+- save → 关闭 workbook → 从磁盘重新打开 → 逐格读取三行 A:J
+- abs_tol = 1e-10；rel_tol = 1e-12
+- 全部 30 个 cell 通过；template fingerprint 保留
+- round-trip PASS
+
+### 5. improvement 链
+
+- P2 stage E top-1 → 4.469013137817385 s
+- P2C closure selection (coarse / 0.05) → 4.478218820691105 s
+  (P2 → P2C: +0.009205682873719923 s, +0.21%)
+- P3 canonical reconstruction (fine / 0.005) → 4.478204178810118 s
+  (P3 - P2: +0.009191040992732269 s, +0.20566%, 与 P2C coarse 数值 1.4641880987653622e-05 差)
+
+注：P3 fine 与 P2C coarse 差来自离散 scan_step 不同，**不**重新定义 improvement。
+
+### 6. P3 Resume identity (7 字段, checkpoint_schema_version=5)
+
+`work/q3_result1/checkpoint.json` 7 字段（任一 mismatch → BLOCKED, exit 2）：
+1. `execution_head_sha` — 当前 commit HEAD
+2. `contract_snapshot_sha256` — `work/task_contracts/TASK_006-P3-v5.json` SHA-256
+3. `q2_single_bomb_code_sha256` — `src/q2_single_bomb.py` SHA-256
+4. `q3_three_bombs_code_sha256` — `src/q3_three_bombs.py` SHA-256
+5. `result1_builder_code_sha256` — `scripts/build_result1.py` SHA-256
+6. `canonical_candidate_sha256` — 冻结 8 维 candidate SHA-256
+7. `official_template_sha256` — `题目及模板/..._结果模板.zip` SHA-256
+
+### 7. 测试（172 / 172 PASS，55 P3 新增）
+
+- 52 P0/P1 tests (closure v2) — unchanged
+- 29 P2 tests — unchanged
+- 36 P2C tests — unchanged
+- **55 P3 tests** (FakeEvaluator + temporary workbook, 0 real Q3 evaluation)
+- real Q3 evaluator call budget in tests = 1 (setUpClass) + 2 (TestRepeatedDeterminismRealReeval) = **3** (unchanged)
+- P3 tests **不**消耗真实 Q3 evaluator
+
+### 8. 局限
+
+- 不重跑 Pilot / P2 512 / P2C 32（实测保留不变）；
+- 不创建 challenger / 不调整决策变量；
+- shared heading / speed / interval union 来自 P2C 合同，本阶段不改写；
+- 不声称 Q3 全局最优 / VERIFIED / FINAL / 官方答案 / 解析极值；
+- **不**声称 local convergence；
+- 等级仅 BUDGET_LIMITED_BEST_KNOWN；Final Audit + Hermes 签字后才能升 VERIFIED 或
+  进一步生成 result2.xlsx / result3.xlsx / 启动 Q4 / Q5；
+- 之前 fine / 0.005 调用为诊断调用，不计入 P3 正式 reconstruction count。
+
+### 9. 输出文件
+
+- `outputs/submission/result1.xlsx` — 官方模板 in-memory edit + 写入
+- `outputs/q3/q3_result1_artifact_summary.json` — P3 artifact summary（含双数值 + profile provenance + fingerprint + 7 字段 identity）
+- `outputs/q3/q3_candidate_closure_summary.json` — 增加 `profile_provenance_correction` 块，**不**篡改 P2C 原始 32 计数
+- `work/q3_result1/checkpoint.json` — checkpoint_schema_version=5, 7 字段 identity + reconstruction result

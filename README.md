@@ -13,6 +13,61 @@
 
 ## 当前状态
 
+**TASK_006-P3 COMPLETE** — Q3 RESULT1.XLSX GENERATED, ROUND-TRIP VERIFIED.
+
+- PR #13 = Open / Draft / Unmerged / Mergeable.
+- FINAL AUDIT / HERMES PENDING.
+- TASK_007 NOT STARTED.
+
+**P3 双数值证据（profile provenance, 不混用）**:
+- Q3 canonical fine reconstruction: `4.478204178810118 s` (profile=fine, scan_step=0.005)
+- P2C closure selection score: `4.478218820691105 s` (profile=coarse, scan_step=0.05, 历史证据)
+- profile_difference: `1.4641880987653622e-05 s`
+
+**result1.xlsx**:
+- 输出路径: `outputs/submission/result1.xlsx` (5911 bytes)
+- 来源模板 ZIP: `题目及模板/2025高教社杯数学建模A题_结果模板.zip` 内 `result1.xlsx` member
+- 输出 SHA: `b938a90b96181be14990d5bd3395c2cff72e93035828542617571ddc1d754847`
+- round-trip: PASS (abs_tol=1e-10, rel_tol=1e-12, 12-field fingerprint preserved)
+
+**身份链（锁定）**:
+
+| 字段 | SHA |
+|---|---|
+| main HEAD | `007b93d301db73c9a73904337de34d1b4e13467e` |
+| p3_starting_head | `843b4a1e5791e67a09c377c2173f16a1105ab944` |
+| p3_execution_head | `cb3dd83c834ec3b5f8c1e85213ddc63301e3d709` |
+| p3_evidence_commit | `a04e158b7848d7d5a3d381ed9e5871961267ed37` |
+| official_template_zip_sha256 | `f9879c0d36b7bdccb99fb330a8032e62851ab1a1f0a1636c92440a1cdaec658e` |
+| official_template_member_sha256 | `d1773205296034c0f02ed7f848f8f1e66af633d1e6562938e059450a554b930e` |
+| result1_run_identity_sha256 | `82065aa5fe4d4e6036691a053b38732b9ff1f50497083e3306e262e82a4bfc65` |
+
+**P2 / P2C 证据（锁定，不重跑）**:
+- P2: 512 evals / 834.07 s, best = 4.469013137817385 s, HEAD=70a4dd7, evidence=dc970a48
+- P2C: 32 evals / 290.54 s, closure_selection_score = 4.478218820691105 s, evidence=843b4a1
+
+**禁止事项**:
+- 重跑 P3 / P2 512 / P2C 32 / Pilot
+- 修改 foundation (Q1 / Q2 / q3_three_bombs)
+- 修改官方模板 ZIP
+- 生成 result2.xlsx / result3.xlsx
+- 启动 Final Audit CC / Hermes / Q4 / Q5 (MAIN 决定)
+- 自动 Ready / merge
+- 声称 FORMAL_RESULT_VERIFIED / local convergence / global optimum / 官方答案
+
+**任务编号（固定, 取消 TASK_006-P4 / TASK_006-P5）**:
+- `TASK_006` = Q3 + result1.xlsx
+- `TASK_007` = Q4 + result2.xlsx
+- `TASK_008` = Q5 + result3.xlsx
+- `TASK_009` = unified recomputation / sensitivity / robustness / figures
+- `TASK_010` = paper / consistency / final package
+
+`TASK_006-P4` / `TASK_006-P5` 编号方案作废 — **HISTORICAL INCORRECT TASK LABEL — DO NOT USE**.
+
+P2C 详细结果见 [RESULTS.md](./RESULTS.md) / [MODEL.md §"Q3 Candidate Closure"]；
+P3 详细合同见 [MODEL.md §"Q3 result1 artifact generation (TASK_006-P3)"] /
+[NEXT_TASK.md](./NEXT_TASK.md)。
+
 TASK_005 Q2 FORMAL SEARCH + BOUNDED REFINEMENT + CLEAN-HEAD VERIFICATION IDENTITY CLOSURE + INDEPENDENT AUDIT 已收口，canonical Q2 result 已晋升：
 
 - **Q2 canonical candidate**:
@@ -73,5 +128,38 @@ TASK_005 Q2 FORMAL SEARCH + BOUNDED REFINEMENT + CLEAN-HEAD VERIFICATION IDENTIT
 
 TASK_005 canonical Q2 output 是 **FORMAL BUDGET-LIMITED BEST-KNOWN**，
 **NOT A PROVEN GLOBAL OPTIMUM**，**LOCAL CONVERGENCE NOT ESTABLISHED**。
-要继续推进到 Q3 / Q4 / Q5 / result1/2/3.xlsx / 论文，必须先经过 Hermes 只读核验
-（不修改任何文件），然后由 MAIN / 用户决定 Ready / merge，并另立 TASK_006。
+PR #12（TASK_GOV_003 bounded verification Skill v0.1）已 merged；TASK_006 启动。
+
+## TASK_006 当前阶段（Q3 三弹 evaluator + bounded pilot + candidate closure + result1.xlsx artifact generation）
+
+- branch: `task/TASK_006-q3-three-bombs`（基于 `main` = `007b93d3…`）
+- P0/P1 phase: `TASK_006-P0P1`（PILOT 94 evals evidence commit `59999f9a`）— **完成，保留**
+- P2 phase: `TASK_006-P2`（Q3 THREE-BOMB FORMAL BOUNDED SEARCH 512 evals / 834.07 s）— **完成**
+- P2C phase: `TASK_006-P2C`（Q3 CANDIDATE CLOSURE 32 evals / 290.54 s）— **完成**
+- P3 phase: `TASK_006-P3`（Q3 RESULT1.XLSX ARTIFACT GENERATION，1 fine / 0.005 reconstruction + 官方模板生成 + 回读）— **PLAN 已冻结，WORKING 待启动**
+- P0/P1 contract_version: —（P0/P1 evidence commit `59999f9a`）
+- P2 contract_version: 3（P2 v3 snapshot: `work/task_contracts/TASK_006-P2-v3.json`, locally preserved NOT committed）
+- P2C contract_version: 4（P2C v4 snapshot: `work/task_contracts/TASK_006-P2C-v4.json`, locally preserved NOT committed）
+- P3 contract_version: 5（P3 v5 snapshot: `work/task_contracts/TASK_006-P3-v5.json`, locally preserved NOT committed）
+- 本轮 P3 目标：
+  - 1 次 fine / scan_step=0.005 高精度重建；
+  - `abs(reconstructed - 4.478204178810118) ≤ 1e-12` (P3 reconstruction gate);
+  - P2C closure selection score = 4.478218820691105 (coarse/0.05) 保留为历史证据；
+  - 7 字段 resume identity（含 `canonical_candidate_sha256` + `official_template_sha256`，新增）；
+  - 官方模板 ZIP in-memory edit（不修改原 ZIP 字节）→ 写 `outputs/submission/result1.xlsx`；
+  - 程序从磁盘回读，逐格核验 10 列 × 3 行（abs_tol=1e-10, rel_tol=1e-12）；
+  - 模板指纹保留（sheet names / merged cells / freeze panes / header / 附注等）；
+  - 输出 `outputs/q3/q3_result1_artifact_summary.json`；
+  - ≥ 22 个新 result1 模块单元测试（FakeEvaluator + temporary workbook，**不**调用真实 Q3 evaluator）；
+  - 3 个 commit：PLAN (本文档同步) → WORKING (scripts/build_result1.py + tests) → VERIFIED (artifact + result1.xlsx + 5 docs 同步)。
+- 本轮**不**执行：
+  - 重跑 Pilot / P2 / P2C（实测保留不变）；
+  - 修改 Q1 / Q2 / q3_three_bombs 任何实现；
+  - 修改官方模板 ZIP 或其成员字节；
+  - 生成 result2.xlsx / result3.xlsx；
+  - 启动 Q4 / Q5；
+  - 启动 Final Audit CC / Hermes（MAIN 决定）；
+  - 自动 Ready / merge；
+  - 声称 FORMAL_RESULT_VERIFIED / local convergence / global optimum / 官方答案。
+- 最终等级只能是 `BUDGET_LIMITED_BEST_KNOWN`（沿用 P2C 等级，P3 不升 VERIFIED）。
+- 详细任务边界见 [NEXT_TASK.md](./NEXT_TASK.md)；模型合同见 [MODEL.md](./MODEL.md) §"Q3 result1 artifact generation (TASK_006-P3)"；预算见 [bounded_verification/templates/task-contract.md](./.claude/skills/bounded-verification/templates/task-contract.md) Phase contract lifecycle。

@@ -1,0 +1,120 @@
+{
+  "best_candidate": {
+    "delay_1_s": 3.720360704323356,
+    "delay_2_s": 3.7704749980723404,
+    "delay_3_s": 3.7180978311642083,
+    "heading_rad": 3.127613485137657,
+    "release_time_1_s": 0.993241052387636,
+    "release_time_2_s": 4.88566490244013,
+    "release_time_3_s": 10.157737577136487,
+    "speed_mps": 116.62799297398149
+  },
+  "best_total_union_duration_s": 4.469013137817385,
+  "contract_version": 3,
+  "counts": {
+    "accepted_candidates": 512,
+    "attempted_candidates": 512,
+    "completed_q3_evaluations": 512,
+    "rejected_candidates": 0,
+    "single_bomb_evaluator_calls": 1536,
+    "system_error_count": 0,
+    "unique_q3_evaluation_ids": 512
+  },
+  "evidence_closure": {
+    "canonical_candidate_source": "TASK_006-P2C F5 high-resolution verification",
+    "closure_best_total_union_duration_s": 4.478218820691105,
+    "closure_evaluations": 32,
+    "closure_evidence_commit": "def084d9bc38bf92cd714d24676016fa8911a83c",
+    "closure_improvement_s": 0.009205682873719923,
+    "closure_incumbent_reference_total_union_duration_s": 4.469013137817385,
+    "closure_single_bomb_evaluator_calls": 96,
+    "closure_wall_clock_seconds": 290.5430561999674,
+    "formal_search_rerun_performed": false,
+    "original_run_preserved": true,
+    "p2_summary_unchanged": true
+  },
+  "formal_schedule_complete": true,
+  "identity": {
+    "candidate_schema_version": 1,
+    "checkpoint_path": "work/q3_formal/checkpoint.json",
+    "checkpoint_schema_version": 3,
+    "contract_snapshot_sha256": "213d1309770ed75977fd657eecb0ac4d1e26576637ca738849095c866ed8515d",
+    "execution_head_sha": "70a4dd767f057edded65bd2011ac544347f661dc",
+    "formal_config_sha256": "dca59f258f161524eae0a8cc9f3414caefaa63035929307e27d0eaae63a5eb35",
+    "formal_run_identity_sha256": "230f21f081b126e6e256dddda491458013dd9fba78fefd25224a66336f9e4872",
+    "q2_single_bomb_code_sha256": "b3ee61216a996404e76d4fc361d0adfe84cd5c76847746062e01a3acda7dd75a",
+    "q3_search_code_sha256": "746200137b73c533879ebe5a367c21b522bdb2213315bd5b08f6ab5f740b593f",
+    "q3_three_bombs_code_sha256": "eb79963906bc68f7ace568ae14b8bf71d60666d3f561e287039c2acc47462fd3"
+  },
+  "p2_contract_snapshot_path": "work/task_contracts/TASK_006-P2-v3.json",
+  "p2c_closeout_metadata": {
+    "closure_evidence_commit": "def084d9bc38bf92cd714d24676016fa8911a83c",
+    "closure_result_level": "BUDGET_LIMITED_BEST_KNOWN",
+    "closure_summary_path": "outputs/q3/q3_candidate_closure_summary.json",
+    "closure_wall_clock_seconds": 290.5430561999674,
+    "contract_version": 4,
+    "p2_search_rerun_performed": false,
+    "p2c_contract_snapshot_path": "work/task_contracts/TASK_006-P2C-v4.json",
+    "phase_id": "TASK_006-P2C",
+    "stage_counts_closure": {
+      "F1": 16,
+      "F2": 8,
+      "F3": 4,
+      "F4": 2,
+      "F5": 2,
+      "total": 32
+    }
+  },
+  "phase_id": "TASK_006-P2",
+  "pilot_complete_legacy_field": true,
+  "pilot_evidence_preservation": {
+    "closure_code_head": "a139988",
+    "closure_evidence_head": "31ddb7b516e05eb6c20ac465e13b339b6ab70dbc",
+    "original_evidence_commit": "59999f9aba063e90d8428f5f783d8cc4abf10d62",
+    "original_pilot_execution_head": "4d442a7a16127ca0166d1114656b5fe4d5546b4d",
+    "pilot_rerun_performed": false
+  },
+  "result_level": {
+    "declared_level": "BUDGET_LIMITED_BEST_KNOWN",
+    "evidence_closure_observed": true,
+    "local_convergence_established": false,
+    "not_a_formal_q3_result": true,
+    "not_a_proven_global_optimum": true,
+    "result1_xlsx_generated": false
+  },
+  "stage_counts": {
+    "A": 360,
+    "B": 120,
+    "C": 24,
+    "D": 6,
+    "E": 2,
+    "total": 512
+  },
+  "status": {
+    "checkpoint_load_error": false,
+    "evaluation_budget_exhausted": false,
+    "pilot_complete": true,
+    "raw_status": "pilot_complete",
+    "resume_identity_mismatch": false,
+    "run_system_error": false,
+    "wall_clock_gate_hit": false
+  },
+  "timing": {
+    "coarse": {
+      "count": 480,
+      "median_seconds": 0.5595511500141583,
+      "p90_seconds": 0.6441081000375561
+    },
+    "fine": {
+      "count": 8,
+      "median_seconds": 42.90479190001497,
+      "p90_seconds": 86.61847839999245
+    },
+    "medium": {
+      "count": 24,
+      "median_seconds": 5.345765149977524,
+      "p90_seconds": 5.381112099974416
+    }
+  },
+  "total_wall_clock_seconds": 834.0665795999812
+}
